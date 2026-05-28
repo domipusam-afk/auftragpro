@@ -1,0 +1,280 @@
+import { useQuery } from "@tanstack/react-query";
+import { Link } from "wouter";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Plus,
+  Briefcase,
+  Clock,
+  Hammer,
+  CheckCircle2,
+  AlertTriangle,
+  ArrowRight,
+  TrendingUp,
+  Banknote,
+  CheckSquare,
+} from "lucide-react";
+import type { Auftrag, Stats, Rechnung } from "@shared/schema";
+import { STATUS_LABEL } from "@shared/schema";
+import { STATUS_BADGE, PRIO_BADGE, formatCHF, formatDate } from "@/lib/format";
+import { cn } from "@/lib/utils";
+
+function KpiCard({
+  label,
+  value,
+  icon: Icon,
+  tone,
+}: {
+  label: string;
+  value: number | string;
+  icon: any;
+  tone: "primary" | "amber" | "orange" | "green";
+}) {
+  const tones: Record<string, string> = {
+    primary: "bg-primary/10 text-primary",
+    amber: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-200",
+    orange: "bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-200",
+    green: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-200",
+  };
+  return (
+    <Card className="p-3 md:p-5 bg-card">
+      <div className="flex items-start justify-between">
+        <div className="min-w-0 flex-1">
+          <div className="text-xs md:text-sm text-muted-foreground truncate">{label}</div>
+          <div
+            className="text-xl md:text-3xl font-bold mt-1"
+            style={{ fontFamily: "var(--font-display)" }}
+            data-testid={`kpi-${label.toLowerCase()}`}
+          >
+            {value}
+          </div>
+        </div>
+        <div className={cn("h-10 w-10 rounded-md flex items-center justify-center", tones[tone])}>
+          <Icon className="h-5 w-5" />
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+export default function Dashboard() {
+  const { data: stats, isLoading: lStats } = useQuery<Stats>({
+    queryKey: ["/api/stats"],
+  });
+  const { data: auftraege, isLoading: lA } = useQuery<Auftrag[]>({
+    queryKey: ["/api/auftraege"],
+  });
+
+  const { data: rechnungen = [] } = useQuery<Rechnung[]>({
+    queryKey: ["/api/rechnungen"],
+  });
+
+  // Finanzen Übersicht
+  const now = new Date();
+  const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const monatsumsatz = (rechnungen as any[])
+    .filter((r: any) => r.datum && r.datum.startsWith(thisMonth))
+    .reduce((s: number, r: any) => s + (Number(r.betrag) || 0), 0);
+  const offenePosten = (rechnungen as any[])
+    .filter((r: any) => r.status !== "bezahlt")
+    .reduce((s: number, r: any) => s + (Number(r.betrag) || 0), 0);
+  const bezahlt = (rechnungen as any[])
+    .filter((r: any) => r.status === "bezahlt")
+    .reduce((s: number, r: any) => s + (Number(r.betrag) || 0), 0);
+
+  // Last 6 months for chart
+  const last6Months = Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const label = d.toLocaleString("de-CH", { month: "short" });
+    const total = (rechnungen as any[])
+      .filter((r: any) => r.datum && r.datum.startsWith(key))
+      .reduce((s: number, r: any) => s + (Number(r.betrag) || 0), 0);
+    return { key, label, total };
+  });
+  const maxMonth = Math.max(...last6Months.map((m) => m.total), 1);
+
+  const dringend = (auftraege || []).filter(
+    (a) => a.prioritaet === "dringend" && a.status !== "abgeschlossen" && a.status !== "storniert"
+  );
+  const latest = (auftraege || []).slice(0, 5);
+
+  return (
+    <div className="p-4 md:p-8 max-w-7xl mx-auto">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-xl font-bold" style={{ fontFamily: "var(--font-display)" }}>
+            Dashboard
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Übersicht aller laufenden Aufträge
+          </p>
+        </div>
+        <Link href="/neu">
+          <a>
+            <Button data-testid="button-new-order" className="bg-secondary hover:bg-secondary/90 text-white">
+              <Plus className="h-4 w-4 mr-2" />
+              Neuer Auftrag
+            </Button>
+          </a>
+        </Link>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-8">
+        {lStats ? (
+          <>
+            <Skeleton className="h-24" />
+            <Skeleton className="h-24" />
+            <Skeleton className="h-24" />
+            <Skeleton className="h-24" />
+          </>
+        ) : (
+          <>
+            <KpiCard label="Gesamt" value={stats?.gesamt ?? 0} icon={Briefcase} tone="primary" />
+            <KpiCard label="Offen" value={stats?.offen ?? 0} icon={Clock} tone="amber" />
+            <KpiCard
+              label="In Bearbeitung"
+              value={stats?.in_bearbeitung ?? 0}
+              icon={Hammer}
+              tone="orange"
+            />
+            <KpiCard
+              label="Abgeschlossen"
+              value={stats?.abgeschlossen ?? 0}
+              icon={CheckCircle2}
+              tone="green"
+            />
+          </>
+        )}
+      </div>
+
+      {/* Finanzen Übersicht */}
+      <div className="mb-6">
+        <h2 className="text-base font-semibold mb-3" style={{ fontFamily: "var(--font-display)" }}>
+          Finanzen Übersicht
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+          <KpiCard label="Monatsumsatz" value={formatCHF(monatsumsatz)} icon={TrendingUp} tone="green" />
+          <KpiCard label="Offene Posten" value={formatCHF(offenePosten)} icon={AlertTriangle} tone="amber" />
+          <KpiCard label="Bezahlt" value={formatCHF(bezahlt)} icon={CheckSquare} tone="primary" />
+        </div>
+        {/* Bar chart last 6 months */}
+        <div className="bg-card rounded-lg border p-4">
+          <p className="text-xs text-muted-foreground font-medium mb-3 uppercase tracking-wide">Umsatz letzte 6 Monate</p>
+          <div className="overflow-x-auto">
+            <div className="flex items-end gap-2 h-28 min-w-[280px]">
+              {last6Months.map((m) => (
+                <div key={m.key} className="flex-1 flex flex-col items-center gap-1 min-w-[36px]">
+                  <span className="text-[9px] text-muted-foreground font-medium">{m.total > 0 ? formatCHF(m.total).replace("CHF ","").replace("'","'") : ""}</span>
+                  <div
+                    className="w-full rounded-sm transition-all"
+                    style={{
+                      height: `${Math.max((m.total / (maxMonth || 1)) * 72, m.total > 0 ? 4 : 2)}px`,
+                      background: m.key === thisMonth ? "#e8620a" : "#1a3a6b",
+                      opacity: m.key === thisMonth ? 1 : 0.65,
+                    }}
+                    title={`${m.label}: ${formatCHF(m.total)}`}
+                  />
+                  <span className="text-[9px] text-muted-foreground text-center leading-tight">{m.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
+        <Card className="p-5 lg:col-span-2 bg-card">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-semibold" style={{ fontFamily: "var(--font-display)" }}>
+              Neueste Aufträge
+            </h2>
+            <Link href="/auftraege">
+              <a className="text-sm text-primary hover:underline flex items-center gap-1">
+                Alle ansehen <ArrowRight className="h-3 w-3" />
+              </a>
+            </Link>
+          </div>
+          {lA ? (
+            <div className="space-y-3">
+              <Skeleton className="h-12" />
+              <Skeleton className="h-12" />
+              <Skeleton className="h-12" />
+            </div>
+          ) : latest.length === 0 ? (
+            <div className="text-sm text-muted-foreground py-8 text-center">
+              Noch keine Aufträge. Erstelle deinen ersten Auftrag.
+            </div>
+          ) : (
+            <div className="divide-y">
+              {latest.map((a) => (
+                <Link key={a.id} href={`/auftraege/${a.id}`}>
+                  <a
+                    data-testid={`row-auftrag-${a.id}`}
+                    className="flex items-center justify-between py-3 hover:bg-muted/40 px-2 -mx-2 rounded cursor-pointer"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-mono text-muted-foreground">{a.nr}</span>
+                        <span className="font-medium truncate">{a.titel}</span>
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-0.5 truncate">
+                        {a.kunde} · {formatDate(a.erstellt)}
+                      </div>
+                    </div>
+                    <Badge variant="outline" className={cn("ml-2", STATUS_BADGE[a.status])}>
+                      {STATUS_LABEL[a.status]}
+                    </Badge>
+                  </a>
+                </Link>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        <Card className="p-5 bg-card">
+          <div className="flex items-center gap-2 mb-4">
+            <AlertTriangle className="h-4 w-4 text-destructive" />
+            <h2 className="font-semibold" style={{ fontFamily: "var(--font-display)" }}>
+              Dringend
+            </h2>
+          </div>
+          {lA ? (
+            <Skeleton className="h-12" />
+          ) : dringend.length === 0 ? (
+            <div className="text-sm text-muted-foreground py-4">
+              Keine dringenden Aufträge.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {dringend.map((a) => (
+                <Link key={a.id} href={`/auftraege/${a.id}`}>
+                  <a
+                    data-testid={`dringend-${a.id}`}
+                    className="block p-2 -mx-2 rounded hover:bg-muted/40 cursor-pointer"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-mono text-muted-foreground">{a.nr}</span>
+                      <Badge variant="outline" className={PRIO_BADGE[a.prioritaet]}>
+                        {a.prioritaet}
+                      </Badge>
+                    </div>
+                    <div className="text-sm font-medium mt-1 truncate">{a.titel}</div>
+                    <div className="text-xs text-muted-foreground truncate">{a.kunde}</div>
+                    {a.angebots_betrag != null && (
+                      <div className="text-xs mt-1 font-medium">
+                        {formatCHF(a.angebots_betrag, a.waehrung)}
+                      </div>
+                    )}
+                  </a>
+                </Link>
+              ))}
+            </div>
+          )}
+        </Card>
+      </div>
+    </div>
+  );
+}

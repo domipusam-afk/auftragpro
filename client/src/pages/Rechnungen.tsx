@@ -1,0 +1,381 @@
+import { useState } from "react";
+import { EmailModal } from "@/components/EmailModal";
+import { useQuery } from "@tanstack/react-query";
+import { Link } from "wouter";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { apiRequest } from "@/lib/queryClient";
+import type { Rechnung, Auftrag } from "@shared/schema";
+import { formatCHF, formatDate } from "@/lib/format";
+import { Download, FileSpreadsheet, FileText, AlertCircle, CheckCircle2, Clock, Mail } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+
+const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
+
+function statusBadge(r: Rechnung) {
+  if (!r.faellig_datum) {
+    return (
+      <Badge variant="outline" className="text-xs">Offen</Badge>
+    );
+  }
+  const faellig = new Date(r.faellig_datum);
+  const heute = new Date();
+  heute.setHours(0, 0, 0, 0);
+  if (faellig < heute) {
+    return (
+      <Badge className="text-xs gap-1 bg-red-100 text-red-700 border-red-200 hover:bg-red-100">
+        <AlertCircle className="w-3 h-3" />
+        Überfällig
+      </Badge>
+    );
+  }
+  const diffDays = Math.ceil((faellig.getTime() - heute.getTime()) / (1000 * 60 * 60 * 24));
+  if (diffDays <= 7) {
+    return (
+      <Badge className="text-xs gap-1 bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-100">
+        <Clock className="w-3 h-3" />
+        Fällig in {diffDays}d
+      </Badge>
+    );
+  }
+  return (
+    <Badge className="text-xs gap-1 bg-green-100 text-green-700 border-green-200 hover:bg-green-100">
+      <CheckCircle2 className="w-3 h-3" />
+      Offen
+    </Badge>
+  );
+}
+
+export default function Rechnungen() {
+  const { toast } = useToast();
+  const [exportZeitraum, setExportZeitraum] = useState("jahr");
+  const [exportLoading, setExportLoading] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState<string | null>(null);
+  const [emailModal, setEmailModal] = useState<{ open: boolean; to: string; subject: string; body: string; refId: string } | null>(null);
+
+  const { data: rechnungen, isLoading } = useQuery<Rechnung[]>({
+    queryKey: ["/api/rechnungen"],
+    queryFn: async () => {
+      const r = await apiRequest("GET", "/api/rechnungen");
+      return r.json();
+    },
+  });
+
+  const { data: auftraege } = useQuery<Auftrag[]>({
+    queryKey: ["/api/auftraege"],
+  });
+  const aMap = new Map((auftraege || []).map((a) => [a.id, a]));
+
+  // Q3 / Banana Export
+  const handleQ3Export = async () => {
+    setExportLoading(true);
+    try {
+      const r = await apiRequest("GET", `/api/export/q3?zeitraum=${exportZeitraum}`);
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Banana-Export_${exportZeitraum}_${new Date().getFullYear()}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast({ title: "Export erfolgreich", description: "CSV-Datei wurde heruntergeladen. In Banana: Datei → Zeilen importieren." });
+    } catch {
+      toast({ title: "Fehler", description: "Export fehlgeschlagen.", variant: "destructive" });
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
+  // PDF Download — verwendet apiRequest (korrekte URL auch in deployed preview)
+  const handlePdf = async (r: Rechnung) => {
+    const auftrag = aMap.get(r.auftrag_id);
+    if (!auftrag) {
+      toast({ title: "Fehler", description: "Auftrag nicht gefunden.", variant: "destructive" });
+      return;
+    }
+    setPdfLoading(r.id);
+    try {
+      const res = await apiRequest(
+        "POST",
+        `/api/auftraege/${auftrag.id}/rechnungen/${r.id}/pdf`,
+        {}
+      );
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Rechnung-${r.nr}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast({ title: "PDF heruntergeladen", description: `Rechnung ${r.nr}` });
+    } catch (e: any) {
+      toast({ title: "Fehler", description: e.message || "PDF konnte nicht generiert werden.", variant: "destructive" });
+    } finally {
+      setPdfLoading(null);
+    }
+  };
+
+  const total = (rechnungen || []).reduce((s, r) => s + (Number(r.betrag) || 0), 0);
+  const ueberfaellig = (rechnungen || []).filter(r => {
+    if (!r.faellig_datum) return false;
+    return new Date(r.faellig_datum) < new Date();
+  });
+
+  return (
+    <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold" style={{ fontFamily: "var(--font-display)" }}>
+            Rechnungen
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {rechnungen?.length ?? 0} Rechnungen · Gesamt {formatCHF(total, "CHF")}
+            {ueberfaellig.length > 0 && (
+              <span className="ml-2 text-red-600 font-medium">
+                · {ueberfaellig.length} überfällig
+              </span>
+            )}
+          </p>
+        </div>
+
+        {/* FIBU-Export (Abacus/Banana/Bexio) */}
+        <Card className="p-3 flex flex-col gap-2 border-dashed border-2 bg-muted/20 shrink-0">
+          <div className="flex items-center gap-2">
+            <FileSpreadsheet className="w-4 h-4 text-muted-foreground shrink-0" />
+            <p className="text-sm font-medium">FIBU-Export (Abacus/Banana/Bexio)</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" style={{ borderColor: "#1a3a6b", color: "#1a3a6b" }}
+              onClick={() => { window.open(`${API_BASE}/api/export/fibu?typ=ausgangsrechnungen`, "_blank"); }}>
+              <Download className="w-3.5 h-3.5" /> Ausgangsrechnungen CSV
+            </Button>
+            <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" style={{ borderColor: "#6b4c2a", color: "#6b4c2a" }}
+              onClick={() => { window.open(`${API_BASE}/api/export/fibu?typ=eingangsrechnungen`, "_blank"); }}>
+              <Download className="w-3.5 h-3.5" /> Eingangsrechnungen CSV
+            </Button>
+            <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" style={{ borderColor: "#e8620a", color: "#e8620a" }}
+              onClick={() => { window.open(`${API_BASE}/api/export/fibu`, "_blank"); }}>
+              <Download className="w-3.5 h-3.5" /> Alles exportieren
+            </Button>
+          </div>
+        </Card>
+
+        {/* Banana / Q3 Export */}
+        <Card className="p-3 flex flex-col sm:flex-row items-stretch sm:items-center gap-2 border-dashed border-2 bg-muted/20 shrink-0">
+          <div className="flex items-center gap-2">
+            <FileSpreadsheet className="w-4 h-4 text-muted-foreground shrink-0" />
+            <div>
+              <p className="text-sm font-medium whitespace-nowrap">Banana / Q3 Export</p>
+              <p className="text-xs text-muted-foreground">CSV für Buchhaltung</p>
+            </div>
+          </div>
+          <Select value={exportZeitraum} onValueChange={setExportZeitraum}>
+            <SelectTrigger className="h-8 text-xs w-full sm:w-36" data-testid="select-q3-zeitraum">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="monat">Aktueller Monat</SelectItem>
+              <SelectItem value="quartal">Aktuelles Quartal</SelectItem>
+              <SelectItem value="jahr">Aktuelles Jahr</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleQ3Export}
+            disabled={exportLoading}
+            data-testid="button-q3-export"
+            className="h-8 text-xs gap-1.5 whitespace-nowrap"
+            style={{ borderColor: "#6b4c2a", color: "#6b4c2a" }}
+          >
+            <Download className="w-3.5 h-3.5" />
+            {exportLoading ? "Exportiere…" : "CSV herunterladen"}
+          </Button>
+        </Card>
+      </div>
+
+      {/* Desktop Tabelle */}
+      <Card className="bg-card overflow-hidden hidden md:block">
+        {isLoading ? (
+          <div className="p-6 space-y-3">
+            <Skeleton className="h-10" />
+            <Skeleton className="h-10" />
+            <Skeleton className="h-10" />
+          </div>
+        ) : !rechnungen || rechnungen.length === 0 ? (
+          <div className="p-12 text-center text-muted-foreground text-sm">
+            <FileText className="w-10 h-10 mx-auto mb-3 opacity-30" />
+            Noch keine Rechnungen erstellt.<br />
+            <span className="text-xs">Rechnungen werden im Auftrag unter dem Tab "Rechnung" erstellt.</span>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground border-b">
+                <tr>
+                  <th className="text-left px-4 py-3 font-medium">Nr.</th>
+                  <th className="text-left px-4 py-3 font-medium">Auftrag</th>
+                  <th className="text-left px-4 py-3 font-medium">Kunde</th>
+                  <th className="text-right px-4 py-3 font-medium">Betrag CHF</th>
+                  <th className="text-center px-4 py-3 font-medium">Status</th>
+                  <th className="text-right px-4 py-3 font-medium">Fällig</th>
+                  <th className="text-right px-4 py-3 font-medium">Erstellt</th>
+                  <th className="text-right px-4 py-3 font-medium">PDF</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {rechnungen.map((r) => {
+                  const a = aMap.get(r.auftrag_id);
+                  return (
+                    <tr key={r.id} className="hover:bg-muted/30 transition-colors" data-testid={`row-rechnung-${r.id}`}>
+                      <td className="px-4 py-3 font-mono text-xs font-semibold">{r.nr}</td>
+                      <td className="px-4 py-3">
+                        {a ? (
+                          <Link href={`/auftraege/${a.id}`}>
+                            <a className="font-medium hover:underline" style={{ color: "#6b4c2a" }}>
+                              {a.nr} · {a.titel}
+                            </a>
+                          </Link>
+                        ) : (
+                          <span className="text-muted-foreground text-xs">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">{a?.kunde || "—"}</td>
+                      <td className="px-4 py-3 text-right font-semibold tabular-nums">
+                        {formatCHF(r.betrag, r.waehrung)}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {statusBadge(r)}
+                      </td>
+                      <td className="px-4 py-3 text-right text-muted-foreground text-xs tabular-nums">
+                        {formatDate(r.faellig_datum)}
+                      </td>
+                      <td className="px-4 py-3 text-right text-muted-foreground text-xs tabular-nums">
+                        {formatDate(r.erstellt)}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0"
+                          disabled={pdfLoading === r.id}
+                          onClick={() => handlePdf(r)}
+                          title="PDF herunterladen"
+                          data-testid={`button-pdf-${r.id}`}
+                        >
+                          {pdfLoading === r.id
+                            ? <span className="text-xs animate-pulse">…</span>
+                            : <Download className="w-3.5 h-3.5" />}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0 text-muted-foreground hover:text-blue-600"
+                          title="E-Mail senden"
+                          onClick={() => setEmailModal({
+                            open: true,
+                            to: (a as any)?.email || "",
+                            subject: `Rechnung ${r.nr}`,
+                            body: `Guten Tag,
+
+erbeiliegend senden wir Ihnen Ihre Rechnung ${r.nr} über CHF ${r.betrag?.toFixed(2) || "—"}.
+
+Freundliche Grüsse
+Schneggenburger GmbH`,
+                            refId: r.id,
+                          })}
+                        >
+                          <Mail className="w-3.5 h-3.5" />
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot className="border-t bg-muted/30">
+                <tr>
+                  <td colSpan={3} className="px-4 py-3 text-sm font-semibold">
+                    Total ({rechnungen.length} Rechnungen)
+                  </td>
+                  <td className="px-4 py-3 text-right font-bold tabular-nums" style={{ color: "#6b4c2a" }}>
+                    {formatCHF(total, "CHF")}
+                  </td>
+                  <td colSpan={4} />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      {/* Mobile Cards */}
+      <div className="md:hidden space-y-3">
+        {isLoading ? (
+          <><Skeleton className="h-28" /><Skeleton className="h-28" /></>
+        ) : !rechnungen || rechnungen.length === 0 ? (
+          <Card className="p-10 text-center text-muted-foreground text-sm">
+            <FileText className="w-8 h-8 mx-auto mb-2 opacity-30" />
+            Noch keine Rechnungen erstellt.
+          </Card>
+        ) : (
+          rechnungen.map((r) => {
+            const a = aMap.get(r.auftrag_id);
+            return (
+              <Card key={r.id} className="p-4 space-y-2" data-testid={`card-rechnung-${r.id}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <span className="font-mono text-xs font-bold">{r.nr}</span>
+                    {a && (
+                      <Link href={`/auftraege/${a.id}`}>
+                        <a className="block text-sm font-medium mt-0.5 hover:underline" style={{ color: "#6b4c2a" }}>
+                          {a.nr} · {a.titel}
+                        </a>
+                      </Link>
+                    )}
+                    <p className="text-xs text-muted-foreground mt-0.5">{a?.kunde || "—"}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="font-bold tabular-nums text-base">{formatCHF(r.betrag, r.waehrung)}</p>
+                    <div className="mt-1">{statusBadge(r)}</div>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between pt-1 border-t">
+                  <div className="text-xs text-muted-foreground">
+                    {formatDate(r.erstellt)}
+                    {r.faellig_datum && <span className="ml-2">· Fällig {formatDate(r.faellig_datum)}</span>}
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs gap-1"
+                    disabled={pdfLoading === r.id}
+                    onClick={() => handlePdf(r)}
+                    data-testid={`button-mobile-pdf-${r.id}`}
+                  >
+                    <Download className="w-3 h-3" />
+                    {pdfLoading === r.id ? "…" : "PDF"}
+                  </Button>
+                </div>
+              </Card>
+            );
+          })
+        )}
+      </div>
+      {emailModal && (
+        <EmailModal
+          open={emailModal.open}
+          onClose={() => setEmailModal(null)}
+          to={emailModal.to}
+          subject={emailModal.subject}
+          body={emailModal.body}
+          type="rechnung"
+          refId={emailModal.refId}
+        />
+      )}
+    </div>
+  );
+}
