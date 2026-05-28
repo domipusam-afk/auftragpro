@@ -921,14 +921,21 @@ export async function registerRoutes(
         </div>
       </div>`;
     } else {
-      headerHtml = `<div style="padding:20px 40px 14px;display:flex;align-items:center;gap:16px;${logoPos==="rechts"?"flex-direction:row-reverse":""}">
-        <div style="flex-shrink:0">${logoHtml}</div>
-        <div style="flex:1;${logoPos==="rechts"?"text-align:left":"text-align:right"}">
-          <div style="font-size:13pt;font-weight:700;color:#1a3a6b;">${data.firma}</div>
-          <div style="font-size:9pt;color:#888;">${slogan}</div>
+      // Design A: Klassisch — Logo links, Dokument-Titel/Nr/Datum rechts (wie Frontend-Vorschau)
+      headerHtml = `<div style="padding:20px 40px 14px;display:flex;align-items:flex-start;justify-content:space-between;gap:16px;${logoPos==="rechts"?"flex-direction:row-reverse":""}">
+        <div style="flex-shrink:0">
+          ${logoHtml}
+          ${slogan ? `<div style="font-size:8pt;color:#888;margin-top:3px;">${slogan}</div>` : ""}
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:14pt;font-weight:700;color:#222;">${data.titel}</div>
+          <div style="font-size:8.5pt;color:#555;margin-top:3px;">Nr: ${data.nummer}</div>
+          <div style="font-size:8.5pt;color:#555;">Datum: ${data.datum}</div>
+          ${data.faelligDatum ? `<div style="font-size:8.5pt;color:#555;">Fällig: ${data.faelligDatum}</div>` : ""}
+          ${data.gueltigBis ? `<div style="font-size:8.5pt;color:#555;">Gültig bis: ${data.gueltigBis}</div>` : ""}
         </div>
       </div>
-      <div style="height:1px;background:${hc};margin:0 40px;"></div>`;
+      <div style="height:2px;background:${hc};margin:0 40px 0;"></div>`;
     }
 
     // Positionen Tabelle
@@ -974,6 +981,9 @@ export async function registerRoutes(
           ${showContact ? `<div>${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt}<br/>${data.firmaTel} · ${data.firmaEmail}</div>` : "<div></div>"}
           ${showPageNum ? `<div>Seite 1 / 1</div>` : ""}
         </div>`;
+
+    // Für Design A: Titel ist bereits im Header — nicht nochmals im Body zeigen
+    const titelImHeader = design === "A";
 
     // Design D: Zweifarbig braucht speziellen Wrapper mit linker Spalte
     if (design === "D") {
@@ -1051,8 +1061,8 @@ export async function registerRoutes(
             ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
             ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
           </div>
-          <div style="font-size:16pt;font-weight:700;color:${fc};margin:12px 0 4px;">${data.titel} Nr. ${data.nummer}</div>
-          <div style="font-size:8.5pt;color:#555;margin-bottom:10px;display:flex;flex-wrap:wrap;gap:16px;">${metaHtml}</div>
+          ${!titelImHeader ? `<div style="font-size:16pt;font-weight:700;color:${fc};margin:12px 0 4px;">${data.titel} Nr. ${data.nummer}</div>
+          <div style="font-size:8.5pt;color:#555;margin-bottom:10px;display:flex;flex-wrap:wrap;gap:16px;">${metaHtml}</div>` : ""}
           ${einl ? `<div class="intro" style="margin-bottom:12px;">${einl}</div>` : ""}
           ${data.extraHtml || ""}
           <table>
