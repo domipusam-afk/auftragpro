@@ -1420,7 +1420,7 @@ export async function registerRoutes(
 
       const pdfBuf = await renderPdfFromHtml(html);
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="Rechnung-${rechnung.nr || rid}.pdf"`);
+      res.setHeader("Content-Disposition", `inline; filename="Rechnung-${rechnung.nr || rid}.pdf"`);
       res.send(pdfBuf);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
@@ -1573,7 +1573,7 @@ export async function registerRoutes(
       const filename = `Banana-Export_${datumVon}_${datumBis}.csv`;
 
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
-      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
       res.send("\uFEFF" + csvContent); // BOM für Excel-Kompatibilität
     } catch (e) {
       res.status(500).json({ message: asError(e) });
@@ -2351,7 +2351,7 @@ export async function registerRoutes(
 
       const pdfBuf = await renderPdfFromHtml(html);
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="Mahnung-${mahnung.nr || id}.pdf"`);
+      res.setHeader("Content-Disposition", `inline; filename="Mahnung-${mahnung.nr || id}.pdf"`);
       res.send(pdfBuf);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
@@ -2644,7 +2644,7 @@ export async function registerRoutes(
 
       const pdfBuf = await renderPdfFromHtml(html);
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="Offerte-${offerte.nr || req.params.id}.pdf"`);
+      res.setHeader("Content-Disposition", `inline; filename="Offerte-${offerte.nr || req.params.id}.pdf"`);
       res.send(pdfBuf);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
@@ -2699,7 +2699,7 @@ export async function registerRoutes(
 
       const pdfBuf = await renderPdfFromHtml(html);
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="Offerte-${offerte.offerten_nr || offerte.nr || req.params.id}.pdf"`);
+      res.setHeader("Content-Disposition", `inline; filename="Offerte-${offerte.offerten_nr || offerte.nr || req.params.id}.pdf"`);
       res.send(pdfBuf);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
@@ -2802,7 +2802,7 @@ export async function registerRoutes(
 
       const pdfBuf = await renderPdfFromHtml(html);
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="Lohnabrechnung-${mitarbeiter_name}-${mName}-${jahr}.pdf"`);
+      res.setHeader("Content-Disposition", `inline; filename="Lohnabrechnung-${mitarbeiter_name}-${mName}-${jahr}.pdf"`);
       res.send(pdfBuf);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
@@ -2877,7 +2877,7 @@ export async function registerRoutes(
 
       const pdfBuf = await renderPdfFromHtml(html);
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="Stundenabrechnung-${startDt}-${endDt}.pdf"`);
+      res.setHeader("Content-Disposition", `inline; filename="Stundenabrechnung-${startDt}-${endDt}.pdf"`);
       res.send(pdfBuf);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
@@ -3768,7 +3768,7 @@ export async function registerRoutes(
         ? `Vorkalkulation-${auftrag.nr}.pdf`
         : `Nachkalkulation-${auftrag.nr}.pdf`;
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
       res.end(Buffer.from(bytes));
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
@@ -4334,7 +4334,7 @@ export async function registerRoutes(
 
       const pdfBuf = await renderPdfFromHtml(html);
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="Lieferschein-${auftrag.nr || id}.pdf"`);
+      res.setHeader("Content-Disposition", `inline; filename="Lieferschein-${auftrag.nr || id}.pdf"`);
       res.send(pdfBuf);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
@@ -4395,7 +4395,7 @@ export async function registerRoutes(
 
       const pdfBuf = await renderPdfFromHtml(html);
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="Auftragsbestaetigung-${auftrag.nr || id}.pdf"`);
+      res.setHeader("Content-Disposition", `inline; filename="Auftragsbestaetigung-${auftrag.nr || id}.pdf"`);
       res.send(pdfBuf);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
@@ -4498,7 +4498,7 @@ export async function registerRoutes(
 
       const bytes = await pdfDoc.save();
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="Abnahmeprotokoll-${auftrag.nr || id}.pdf"`);
+      res.setHeader("Content-Disposition", `inline; filename="Abnahmeprotokoll-${auftrag.nr || id}.pdf"`);
       res.end(Buffer.from(bytes));
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
@@ -4913,7 +4913,7 @@ export async function registerRoutes(
         }
       }
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
-      res.setHeader("Content-Disposition", `attachment; filename="FIBU-Export-${new Date().toISOString().slice(0,10)}.csv"`);
+      res.setHeader("Content-Disposition", `inline; filename="FIBU-Export-${new Date().toISOString().slice(0,10)}.csv"`);
       res.send("\uFEFF" + lines.join("\r\n")); // BOM for Excel
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });

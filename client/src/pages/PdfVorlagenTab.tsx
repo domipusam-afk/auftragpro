@@ -310,7 +310,7 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
             </div>
           </div>
           <div style="border-bottom:2px solid ${header_color};margin:8px 0 6px 0;"></div>
-          <div style="margin-top:${(absender_top_mm||55)*0.45}px;margin-left:${(absender_left_mm||0)*2.8}px;font-size:7.5px;color:#555;margin-bottom:6px;${absender_pos_h==='rechts'?'text-align:right;':''}${absender_pos_h==='mitte'?'text-align:center;':''}">
+          <div style="margin-top:${Math.max(0,(absender_top_mm||55)-20)*2.286}px;margin-left:${(absender_left_mm||0)*2.286}px;font-size:7.5px;color:#555;margin-bottom:6px;${absender_pos_h==='rechts'?'text-align:right;':''}${absender_pos_h==='mitte'?'text-align:center;':''}">
             <div style="font-weight:600;color:#222;">Empfänger</div>
             <div>Musterfirma AG</div>
             <div>Musterstrasse 42</div>
@@ -356,7 +356,7 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
         </div>
         <div style="padding:8px 14px 0 14px;position:relative;z-index:2;">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
-            <div style="font-size:7.5px;color:#555;margin-left:${(absender_left_mm||0)*1.7}px;">
+            <div style="font-size:7.5px;color:#555;margin-left:${(absender_left_mm||0)*2.286}px;">
               <div style="font-weight:600;color:#222;">Empfänger</div>
               <div>Musterfirma AG</div>
               <div>Musterstrasse 42</div>
@@ -406,7 +406,7 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
             </div>
           </div>
           <div style="border-top:2px solid ${header_color};margin-bottom:6px;"></div>
-          <div style="font-size:7.5px;color:#555;margin-bottom:6px;margin-left:${(absender_left_mm||0)*1.7}px;">
+          <div style="font-size:7.5px;color:#555;margin-bottom:6px;margin-left:${(absender_left_mm||0)*2.286}px;">
             <div style="font-weight:600;color:#222;">Empfänger</div>
             <div>Musterfirma AG</div><div>Musterstrasse 42</div><div>8001 Zürich</div>
           </div>
@@ -449,7 +449,7 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
             </div>
           </div>
           <div style="height:2.5px;background:linear-gradient(90deg,${header_color},${footer_color});margin:5px 0;border-radius:2px;"></div>
-          <div style="font-size:7.5px;color:#555;margin-bottom:6px;margin-left:${(absender_left_mm||0)*1.7}px;">
+          <div style="font-size:7.5px;color:#555;margin-bottom:6px;margin-left:${(absender_left_mm||0)*2.286}px;">
             <div style="font-weight:600;color:#222;font-style:italic;">Empfänger</div>
             <div>Musterfirma AG</div><div>Musterstrasse 42</div><div>8001 Zürich</div>
           </div>
@@ -500,7 +500,7 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
           </div>
         </div>
         <div style="padding:10px 16px 0;position:relative;z-index:2;">
-          <div style="font-size:7.5px;color:#555;margin-bottom:6px;margin-left:${(absender_left_mm||0)*1.7}px;">
+          <div style="font-size:7.5px;color:#555;margin-bottom:6px;margin-left:${(absender_left_mm||0)*2.286}px;">
             <div style="font-weight:600;color:#222;">Empfänger</div>
             <div>Musterfirma AG</div><div>Musterstrasse 42</div><div>8001 Zürich</div>
           </div>
@@ -542,10 +542,10 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
             </div>
           </div>
           <div style="border-bottom:0.5px solid #ccc;margin:8px 0;"></div>
-          <div style="margin-top:${(absender_top_mm||55)*0.45}px;margin-left:${(absender_left_mm||0)*2.8}px;font-size:7px;color:#888;margin-bottom:8px;">
+          <div style="margin-top:${Math.max(0,(absender_top_mm||55)-20)*2.286}px;margin-left:${(absender_left_mm||0)*2.286}px;font-size:7px;color:#888;margin-bottom:8px;">
             <div>Schneggenburger GmbH &middot; Hefenhoferstrasse 7 &middot; 8580 Sommeri</div>
           </div>
-          <div style="font-size:7.5px;color:#444;margin-bottom:10px;line-height:1.6;margin-left:${(absender_left_mm||0)*1.7}px;${absender_pos_h==='rechts'?'text-align:right;':''}${absender_pos_h==='mitte'?'text-align:center;':''}">
+          <div style="font-size:7.5px;color:#444;margin-bottom:10px;line-height:1.6;margin-left:${(absender_left_mm||0)*2.286}px;${absender_pos_h==='rechts'?'text-align:right;':''}${absender_pos_h==='mitte'?'text-align:center;':''}">
             <div style="font-weight:600;color:#222;">Musterfirma AG</div>
             <div>Musterstrasse 42</div>
             <div>8001 Z&uuml;rich</div>
@@ -596,7 +596,7 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
           </div>
           <div style="height:1.5px;background:#222;margin-bottom:1px;"></div>
           <div style="height:0.5px;background:#bbb;margin-bottom:10px;"></div>
-          <div style="font-size:7.5px;color:#444;margin-bottom:10px;line-height:1.6;margin-left:${(absender_left_mm||0)*1.7}px;">
+          <div style="font-size:7.5px;color:#444;margin-bottom:10px;line-height:1.6;margin-left:${(absender_left_mm||0)*2.286}px;">
             <div style="font-weight:600;color:#222;">Musterfirma AG</div>
             <div>Musterstrasse 42</div>
             <div>8001 Z&uuml;rich</div>
@@ -654,7 +654,7 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
             </div>
           </div>
           <div style="border-bottom:0.5px solid #ccc;margin-bottom:10px;"></div>
-          <div style="font-size:7.5px;color:#444;margin-bottom:10px;line-height:1.6;margin-left:${(absender_left_mm||0)*1.7}px;">
+          <div style="font-size:7.5px;color:#444;margin-bottom:10px;line-height:1.6;margin-left:${(absender_left_mm||0)*2.286}px;">
             <div style="font-weight:600;color:#222;">Musterfirma AG</div>
             <div>Musterstrasse 42</div>
             <div>8001 Z&uuml;rich</div>
@@ -706,7 +706,7 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
           <div style="font-size:12px;font-weight:300;color:#333;letter-spacing:0.5px;">${docTitle}</div>
           <div style="font-size:7.5px;color:#888;">Nr: ${docTyp.substring(0,2).toUpperCase()}-2024-001 &nbsp;|&nbsp; 15.04.2024</div>
         </div>
-        <div style="font-size:7.5px;color:#555;margin-bottom:6px;margin-left:${(absender_left_mm||0)*1.7}px;">
+        <div style="font-size:7.5px;color:#555;margin-bottom:6px;margin-left:${(absender_left_mm||0)*2.286}px;">
           <div style="font-weight:600;color:#222;">Empfänger</div>
           <div>Musterfirma AG</div>
           <div>Musterstrasse 42</div>

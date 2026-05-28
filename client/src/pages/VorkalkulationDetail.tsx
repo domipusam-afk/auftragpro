@@ -118,6 +118,9 @@ function StundenBereichBlock({ auftragId, bereich, saetze }: { auftragId: string
       setNewRow(p => ({ ...p, soll_stunden: "" }));
       toast({ title: "Zeile hinzugefügt" });
     },
+    onError: (e: any) => {
+      toast({ title: "Fehler beim Speichern", description: e?.message || String(e), variant: "destructive" });
+    },
   });
 
   const deleteMutation = useMutation({
