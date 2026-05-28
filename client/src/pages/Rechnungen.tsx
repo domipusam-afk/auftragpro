@@ -67,6 +67,11 @@ export default function Rechnungen() {
     },
   });
 
+  const { data: mitarbeiterListe = [] } = useQuery<any[]>({
+    queryKey: ["/api/mitarbeiter"],
+    queryFn: () => apiRequest("GET", "/api/mitarbeiter").then(r => r.json()),
+  });
+
   const { data: auftraege } = useQuery<Auftrag[]>({
     queryKey: ["/api/auftraege"],
   });
@@ -383,20 +388,52 @@ Schneggenburger GmbH`,
             <div className="space-y-3 mb-5">
               <div className="space-y-1">
                 <Label className="text-xs text-gray-600">Intern (Mitarbeiter / Verantwortlicher)</Label>
+                <Select
+                  value={pdfDialog.intern}
+                  onValueChange={(v) => setPdfDialog(d => d ? { ...d, intern: v } : d)}
+                >
+                  <SelectTrigger className="h-8 text-sm">
+                    <SelectValue placeholder="Mitarbeiter wählen..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">– Keiner –</SelectItem>
+                    {mitarbeiterListe.map((m: any) => (
+                      <SelectItem key={m.id} value={m.name || m.vorname + " " + m.nachname}>
+                        {m.name || (m.vorname + " " + m.nachname)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Input
                   value={pdfDialog.intern}
                   onChange={(e) => setPdfDialog(d => d ? { ...d, intern: e.target.value } : d)}
-                  placeholder="z.B. Max Muster"
-                  className="h-8 text-sm"
+                  placeholder="oder manuell eingeben..."
+                  className="h-7 text-xs mt-1"
                 />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs text-gray-600">Extern (Ansprechperson beim Kunden)</Label>
+                <Select
+                  value={pdfDialog.extern}
+                  onValueChange={(v) => setPdfDialog(d => d ? { ...d, extern: v } : d)}
+                >
+                  <SelectTrigger className="h-8 text-sm">
+                    <SelectValue placeholder="Kontakt wählen..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">– Keiner –</SelectItem>
+                    {mitarbeiterListe.map((m: any) => (
+                      <SelectItem key={m.id} value={m.name || m.vorname + " " + m.nachname}>
+                        {m.name || (m.vorname + " " + m.nachname)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Input
                   value={pdfDialog.extern}
                   onChange={(e) => setPdfDialog(d => d ? { ...d, extern: e.target.value } : d)}
-                  placeholder="z.B. Maria Muster"
-                  className="h-8 text-sm"
+                  placeholder="oder manuell eingeben..."
+                  className="h-7 text-xs mt-1"
                 />
               </div>
             </div>

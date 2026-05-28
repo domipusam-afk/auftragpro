@@ -1065,6 +1065,195 @@ export async function registerRoutes(
       </body></html>`;
     }
 
+    // ─── Design G: Swiss Classic ─────────────────────────────────────────────
+    if (design === "G") {
+      return `<!DOCTYPE html><html><head><meta charset="utf-8">
+      <style>
+        * { box-sizing:border-box; }
+        body { font-family:Arial,Helvetica,sans-serif;font-size:10pt;color:#222;margin:0;padding:0; }
+        table { width:100%;border-collapse:collapse; }
+        th { background:#f5f5f5;color:#333;padding:8px 4px;text-align:left;font-size:8.5pt;border-bottom:1.5px solid #222; }
+        td { font-size:9pt; }
+        .intro,.schluss { font-size:9pt;color:#444;white-space:pre-line; }
+      </style></head>
+      <body style="position:relative;">
+        ${wmHtml}
+        <div style="position:relative;z-index:1;min-height:100vh;display:flex;flex-direction:column;">
+          <div style="padding:28px 40px 0;border-top:2px solid ${hc};">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;${logoPos==="rechts"?"flex-direction:row-reverse;":""}">
+              <div style="flex-shrink:0">
+                ${logoHtml}
+                ${slogan ? `<div style="font-size:8pt;color:#888;margin-top:3px;">${slogan}</div>` : ""}
+              </div>
+              <div style="text-align:right;font-size:8.5pt;color:#555;line-height:1.6;">
+                <div style="font-weight:700;color:#222;">${data.firma}</div>
+                <div>${data.firmaAdresse}</div>
+                <div>${data.firmaPlzOrt}</div>
+                <div>${data.firmaTel}</div>
+                <div>${data.firmaEmail}</div>
+              </div>
+            </div>
+            <div style="height:0.5px;background:#ccc;margin:16px 0 12px;"></div>
+            <div style="font-size:8pt;color:#aaa;margin-bottom:3px;">${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
+            <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:10mm;font-size:10pt;color:#333;${absenderPosH === "rechts" ? "text-align:right;" : absenderPosH === "mitte" ? "text-align:center;" : ""}">
+              <div>${data.empfaenger}</div>
+              ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
+              ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;">
+              <div style="font-size:15pt;font-weight:700;color:#111;">${data.titel} Nr. ${data.nummer}</div>
+              <div style="font-size:8.5pt;color:#555;text-align:right;line-height:1.6;">
+                <div><b style="color:#999;font-weight:400">Datum: </b>${data.datum}</div>
+                ${data.gueltigBis ? `<div><b style="color:#999;font-weight:400">Gültig bis: </b>${data.gueltigBis}</div>` : ""}
+                ${data.faelligDatum ? `<div><b style="color:#999;font-weight:400">Zahlbar bis: </b>${data.faelligDatum}</div>` : ""}
+              </div>
+            </div>
+          </div>
+          <div style="padding:0 40px;flex:1;">
+            ${apBlock}
+            ${einl ? `<div class="intro" style="margin-bottom:12px;">${einl}</div>` : ""}
+            ${data.extraHtml || ""}
+            <table>
+              <thead><tr>
+                <th style="width:28px">${ptPos}</th><th>${ptBeschr}</th>
+                <th style="width:65px;text-align:right">${ptMenge}</th>
+                <th style="width:90px;text-align:right">${ptPreis}</th>
+                <th style="width:90px;text-align:right">${ptTotal}</th>
+              </tr></thead>
+              <tbody>${posHtml}</tbody>
+            </table>
+            ${totalsHtml}
+            ${schl ? `<div class="schluss" style="margin-top:14px;">${schl}</div>` : ""}
+          </div>
+          ${footerHtml}
+        </div>
+      </body></html>`;
+    }
+
+    // ─── Design H: Helvetica Pro ─────────────────────────────────────────────
+    if (design === "H") {
+      return `<!DOCTYPE html><html><head><meta charset="utf-8">
+      <style>
+        * { box-sizing:border-box; }
+        body { font-family:Arial,Helvetica,sans-serif;font-size:10pt;color:#222;margin:0;padding:0; }
+        table { width:100%;border-collapse:collapse; }
+        th { background:white;color:#333;padding:8px 4px;text-align:left;font-size:8.5pt;border-bottom:1.5px solid #222; }
+        td { font-size:9pt; }
+        .intro,.schluss { font-size:9pt;color:#444;white-space:pre-line; }
+      </style></head>
+      <body style="position:relative;">
+        ${wmHtml}
+        <div style="position:relative;z-index:1;min-height:100vh;display:flex;flex-direction:column;">
+          <div style="padding:22px 40px 0;${logoPos==="rechts"?"flex-direction:row-reverse;":""}">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+              <div style="flex-shrink:0">
+                ${logoHtml}
+                ${slogan ? `<div style="font-size:8pt;color:#aaa;margin-top:3px;">${slogan}</div>` : ""}
+              </div>
+              <div style="text-align:right;font-size:8pt;color:#aaa;line-height:1.6;">
+                <div style="font-weight:700;color:#333;">${data.firma}</div>
+                <div>${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
+              </div>
+            </div>
+            <div style="height:1.5px;background:#222;margin:10px 0 1px;"></div>
+            <div style="height:0.5px;background:#bbb;margin-bottom:14px;"></div>
+            <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:10mm;font-size:10pt;color:#333;${absenderPosH === "rechts" ? "text-align:right;" : absenderPosH === "mitte" ? "text-align:center;" : ""}">
+              <div>${data.empfaenger}</div>
+              ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
+              ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;">
+              <div style="font-size:14pt;font-weight:700;color:#111;text-transform:uppercase;letter-spacing:1px;">${data.titel} Nr. ${data.nummer}</div>
+              <div style="font-size:8pt;color:#777;text-align:right;line-height:1.6;">
+                <div>${data.datum}</div>
+                ${data.gueltigBis ? `<div>Gültig bis: ${data.gueltigBis}</div>` : ""}
+                ${data.faelligDatum ? `<div>Zahlbar bis: ${data.faelligDatum}</div>` : ""}
+              </div>
+            </div>
+          </div>
+          <div style="padding:0 40px;flex:1;">
+            ${apBlock}
+            ${einl ? `<div class="intro" style="margin-bottom:12px;">${einl}</div>` : ""}
+            ${data.extraHtml || ""}
+            <table>
+              <thead><tr>
+                <th style="width:28px">${ptPos}</th><th>${ptBeschr}</th>
+                <th style="width:65px;text-align:right">${ptMenge}</th>
+                <th style="width:90px;text-align:right">${ptPreis}</th>
+                <th style="width:90px;text-align:right">${ptTotal}</th>
+              </tr></thead>
+              <tbody>${posHtml}</tbody>
+            </table>
+            ${totalsHtml}
+            ${schl ? `<div class="schluss" style="margin-top:14px;">${schl}</div>` : ""}
+          </div>
+          ${footerHtml}
+        </div>
+      </body></html>`;
+    }
+
+    // ─── Design I: Corporate Slim ─────────────────────────────────────────────
+    if (design === "I") {
+      return `<!DOCTYPE html><html><head><meta charset="utf-8">
+      <style>
+        * { box-sizing:border-box; }
+        body { font-family:Arial,Helvetica,sans-serif;font-size:10pt;color:#222;margin:0;padding:0; }
+        table { width:100%;border-collapse:collapse; }
+        th { background:${hc}20;color:#333;padding:8px 4px;text-align:left;font-size:8.5pt;border-bottom:1.5px solid ${hc}; }
+        td { font-size:9pt; }
+        .intro,.schluss { font-size:9pt;color:#444;white-space:pre-line; }
+      </style></head>
+      <body style="position:relative;display:flex;min-height:100vh;">
+        ${wmHtml}
+        <div style="width:5px;background:${hc};flex-shrink:0;z-index:2;"></div>
+        <div style="flex:1;display:flex;flex-direction:column;position:relative;z-index:1;">
+          <div style="padding:22px 36px 0;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;${logoPos==="rechts"?"flex-direction:row-reverse;":""}">
+              <div style="flex-shrink:0">
+                ${logoHtml}
+                ${slogan ? `<div style="font-size:8pt;color:#999;margin-top:3px;">${slogan}</div>` : ""}
+              </div>
+              <div style="text-align:right;font-size:8pt;color:#777;line-height:1.6;">
+                <div style="font-weight:700;color:#333;">${data.firma}</div>
+                <div>${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
+              </div>
+            </div>
+            <div style="height:0.5px;background:#ccc;margin:14px 0;"></div>
+            <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:10mm;font-size:10pt;color:#333;${absenderPosH === "rechts" ? "text-align:right;" : absenderPosH === "mitte" ? "text-align:center;" : ""}">
+              <div>${data.empfaenger}</div>
+              ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
+              ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;">
+              <div style="font-size:14pt;font-weight:700;color:${hc};">${data.titel} Nr. ${data.nummer}</div>
+              <div style="font-size:8.5pt;color:#555;text-align:right;line-height:1.6;">
+                <div><b style="color:#999;font-weight:400">Datum: </b>${data.datum}</div>
+                ${data.gueltigBis ? `<div><b style="color:#999;font-weight:400">Gültig bis: </b>${data.gueltigBis}</div>` : ""}
+                ${data.faelligDatum ? `<div><b style="color:#999;font-weight:400">Zahlbar bis: </b>${data.faelligDatum}</div>` : ""}
+              </div>
+            </div>
+          </div>
+          <div style="padding:0 36px;flex:1;">
+            ${apBlock}
+            ${einl ? `<div class="intro" style="margin-bottom:12px;">${einl}</div>` : ""}
+            ${data.extraHtml || ""}
+            <table>
+              <thead><tr>
+                <th style="width:28px">${ptPos}</th><th>${ptBeschr}</th>
+                <th style="width:65px;text-align:right">${ptMenge}</th>
+                <th style="width:90px;text-align:right">${ptPreis}</th>
+                <th style="width:90px;text-align:right">${ptTotal}</th>
+              </tr></thead>
+              <tbody>${posHtml}</tbody>
+            </table>
+            ${totalsHtml}
+            ${schl ? `<div class="schluss" style="margin-top:14px;">${schl}</div>` : ""}
+          </div>
+          ${footerHtml}
+        </div>
+      </body></html>`;
+    }
+
     return `<!DOCTYPE html><html><head><meta charset="utf-8">
     <style>
       * { box-sizing:border-box; }
