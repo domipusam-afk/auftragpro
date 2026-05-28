@@ -114,14 +114,10 @@ export default function Lohnabrechnung() {
       });
       if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
       const blob = await r.blob();
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement("a");
+      const url = URL.createObjectURL(blob);
       const mName = MONATE.find(m => m.value === monat)?.label || monat;
-      a.href = url;
-      a.download = `Lohnabrechnung-${mitarbeiter}-${mName}-${jahr}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast({ title: "PDF erstellt", description: `Lohnabrechnung ${mName} ${jahr} für ${mitarbeiter}` });
+      window.open(url, "_blank");
+      toast({ title: "PDF erstellt", description: `Lohnabrechnung ${mName} ${jahr} für ${mitarbeiter} — im Browser-Tab geöffnet` });
     } catch (e: any) {
       toast({ title: "Fehler", description: e.message, variant: "destructive" });
     } finally {

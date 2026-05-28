@@ -848,9 +848,26 @@ export async function registerRoutes(
     ansprechpersonExtern?: string;
     ansprechpersonManuell?: string;
   }): Promise<string> {
-    // Vorlage aus DB laden
-    const { data: vd } = await supabase.from("pdf_vorlagen").select("*").eq("doc_typ", docTyp).single();
+    // Vorlage aus DB laden (mit Retry + Logo-Fallback aus Offerte-Vorlage)
+    let vd: any = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const { data: vdTry, error: vdErr } = await supabase.from("pdf_vorlagen").select("*").eq("doc_typ", docTyp).single();
+      if (vdTry) { vd = vdTry; break; }
+      if (vdErr) console.warn(`[PDF] Vorlage Laden Versuch ${attempt+1} (doc_typ=${docTyp}):`, vdErr.message);
+      if (attempt < 2) await new Promise(r => setTimeout(r, 600));
+    }
+    if (!vd) console.error(`[PDF] Vorlage nach 3 Versuchen nicht gefunden (doc_typ=${docTyp})`);
     const v = vd || {};
+    // Logo-Fallback: wenn aktuelle Vorlage kein Logo hat, hole es aus der Offerte-Vorlage
+    if (!v.logo_data_url && docTyp !== "offerte") {
+      const { data: offVorlage } = await supabase.from("pdf_vorlagen").select("logo_data_url,logo_scale,logo_pos").eq("doc_typ", "offerte").single();
+      if (offVorlage?.logo_data_url) {
+        v.logo_data_url = offVorlage.logo_data_url;
+        if (!v.logo_scale) v.logo_scale = offVorlage.logo_scale;
+        if (!v.logo_pos)   v.logo_pos   = offVorlage.logo_pos;
+        console.log(`[PDF] Logo-Fallback aus Offerte-Vorlage verwendet für doc_typ=${docTyp}`);
+      }
+    }
     const hc  = v.header_color   || "#6b4c2a";
     const fc  = v.footer_color   || "#1a3a6b";
     const design     = v.design       || "A";

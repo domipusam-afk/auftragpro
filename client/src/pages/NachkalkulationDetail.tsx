@@ -22,10 +22,8 @@ async function downloadKalkulationPdf(auftragId: string, typ: "vorkalkulation" |
   if (!r.ok) { const err = await r.json().catch(() => ({ message: "PDF Fehler" })); toast({ title: "PDF Fehler", description: err.message, variant: "destructive" }); return; }
   const blob = await r.blob();
   const url = URL.createObjectURL(blob);
-  const a = document.createElement("a"); a.href = url;
-  a.download = `Nachkalkulation-${auftragId}.pdf`;
-  a.click(); URL.revokeObjectURL(url);
-  toast({ title: "PDF erstellt ✓" });
+  window.open(url, "_blank");
+  toast({ title: "PDF erstellt ✓ — im Browser-Tab geöffnet" });
 }
 const chf = (v: number) => `CHF ${v.toFixed(2)}`;
 const num = (v: any) => parseFloat(v) || 0;

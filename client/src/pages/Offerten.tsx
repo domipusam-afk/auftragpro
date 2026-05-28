@@ -84,11 +84,9 @@ export default function Offerten() {
       if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url; a.download = `Offerte-${nr}.pdf`; a.click();
-      URL.revokeObjectURL(url);
+      window.open(url, "_blank");
       setPdfDialog(null);
-      toast({ title: "PDF erstellt", description: `Offerte ${nr}` });
+      toast({ title: "PDF erstellt", description: `Offerte ${nr} — im Browser-Tab geöffnet` });
     } catch (e: any) {
       toast({ title: "PDF Fehler", description: (e as any).message, variant: "destructive" });
     }

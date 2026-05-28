@@ -453,14 +453,8 @@ function RechnungenTab({
       if (!r.ok) throw new Error(await r.text());
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `Rechnung-${nr}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      toast({ title: "PDF generiert", description: `Rechnung ${nr} wurde heruntergeladen.` });
+      window.open(url, "_blank");
+      toast({ title: "PDF erstellt", description: `Rechnung ${nr} — im Browser-Tab geöffnet` });
     } catch (e: any) {
       toast({ title: "Fehler", description: e.message, variant: "destructive" });
     }
@@ -722,10 +716,8 @@ function OffertenTab({ id, auftrag }: { id: string; auftrag: Auftrag }) {
       if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url; a.download = `Offerte-${nr}.pdf`; a.click();
-      URL.revokeObjectURL(url);
-      toast({ title: "PDF erstellt", description: `Offerte ${nr}` });
+      window.open(url, "_blank");
+      toast({ title: "PDF erstellt", description: `Offerte ${nr} — im Browser-Tab geöffnet` });
     } catch (e: any) {
       toast({ title: "PDF Fehler", description: e.message, variant: "destructive" });
     } finally { setPdfLoading(null); }

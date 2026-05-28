@@ -120,13 +120,9 @@ export default function Stundenauswertung() {
       if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
       const mo = new Date(year, month, 1).toLocaleString("de-CH", { month: "long" });
-      a.href = url;
-      a.download = `Stundenabrechnung-${fullName}-${mo}-${year}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast({ title: "PDF erstellt", description: `Stundenabrechnung ${mo} ${year} für ${fullName}` });
+      window.open(url, "_blank");
+      toast({ title: "PDF erstellt", description: `Stundenabrechnung ${mo} ${year} für ${fullName} — im Browser-Tab geöffnet` });
     } catch (e: any) {
       toast({ title: "Fehler", description: e.message, variant: "destructive" });
     } finally {

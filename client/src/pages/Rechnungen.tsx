@@ -119,13 +119,9 @@ export default function Rechnungen() {
       );
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `Rechnung-${rechnung.nr}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
+      window.open(url, "_blank");
       setPdfDialog(null);
-      toast({ title: "PDF heruntergeladen", description: `Rechnung ${rechnung.nr}` });
+      toast({ title: "PDF erstellt", description: `Rechnung ${rechnung.nr} — im Browser-Tab geöffnet` });
     } catch (e: any) {
       toast({ title: "Fehler", description: (e as any).message || "PDF konnte nicht generiert werden.", variant: "destructive" });
     } finally {
