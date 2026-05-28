@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -820,31 +820,32 @@ export default function PdfVorlagenTab() {
   const [savedVorlagen, setSavedVorlagen] = useState<Record<string, PdfVorlage>>({});
 
   // ─── Fetch all vorlagen ───────────────────────────────
-  const { isLoading } = useQuery<PdfVorlage[]>({
+  const { isLoading, data: fetchedVorlagen } = useQuery<PdfVorlage[]>({
     queryKey: ["/api/pdf-vorlagen"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/pdf-vorlagen");
       return res.json();
     },
-    onSuccess: (data: PdfVorlage[]) => {
-      if (!data || !Array.isArray(data)) return;
-      setVorlagen((prev) => {
-        const next = { ...prev };
-        data.forEach((v) => {
-          if (v.doc_typ) next[v.doc_typ] = { ...DEFAULT_VORLAGE(v.doc_typ), ...v };
-        });
-        return next;
+  });
+
+  // TanStack Query v5: onSuccess wurde entfernt → useEffect verwenden
+  useEffect(() => {
+    if (!fetchedVorlagen || !Array.isArray(fetchedVorlagen)) return;
+    setVorlagen((prev) => {
+      const next = { ...prev };
+      fetchedVorlagen.forEach((v) => {
+        if (v.doc_typ) next[v.doc_typ] = { ...DEFAULT_VORLAGE(v.doc_typ), ...v };
       });
-      // Also update savedVorlagen so we know what's persisted
-      setSavedVorlagen((prev) => {
-        const next = { ...prev };
-        data.forEach((v) => {
-          if (v.doc_typ) next[v.doc_typ] = { ...DEFAULT_VORLAGE(v.doc_typ), ...v };
-        });
-        return next;
+      return next;
+    });
+    setSavedVorlagen((prev) => {
+      const next = { ...prev };
+      fetchedVorlagen.forEach((v) => {
+        if (v.doc_typ) next[v.doc_typ] = { ...DEFAULT_VORLAGE(v.doc_typ), ...v };
       });
-    },
-  } as any);
+      return next;
+    });
+  }, [fetchedVorlagen]);
 
   // ─── Save mutation ────────────────────────────────────
   const saveMutation = useMutation({
@@ -852,11 +853,11 @@ export default function PdfVorlagenTab() {
       const res = await apiRequest("PUT", `/api/pdf-vorlagen/${vorlage.doc_typ}`, vorlage);
       return res.json();
     },
-    onSuccess: (saved: PdfVorlage) => {
+    onSuccess: (_saved: PdfVorlage, submitted: PdfVorlage) => {
       queryClient.invalidateQueries({ queryKey: ["/api/pdf-vorlagen"] });
-      // Update savedVorlagen with the just-saved version
-      setSavedVorlagen((prev) => ({ ...prev, [activeDoc]: vorlage }));
-      toast({ title: "Vorlage gespeichert ✓", description: `${getDocTitle(activeDoc)} wurde erfolgreich gespeichert.` });
+      // Update savedVorlagen with the just-saved version (submitted kommt vom mutate-Aufruf)
+      setSavedVorlagen((prev) => ({ ...prev, [submitted.doc_typ]: submitted }));
+      toast({ title: "Vorlage gespeichert ✓", description: `${getDocTitle(submitted.doc_typ)} wurde erfolgreich gespeichert.` });
     },
     onError: () => {
       toast({ title: "Fehler beim Speichern", description: "Bitte versuchen Sie es erneut.", variant: "destructive" });

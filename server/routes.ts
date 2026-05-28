@@ -2408,194 +2408,53 @@ export async function registerRoutes(
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
-  // PDF-Export für Offerte
+  // PDF-Export für Offerte (GET) — nutzt buildPdfHtml() mit gespeicherter Vorlage
   app.get("/api/offerten/:id/pdf", async (req, res) => {
     try {
-      const { data: offerte, error } = await supabase
-        .from("offerten")
-        .select("*")
-        .eq("id", req.params.id)
-        .single();
+      const { data: offerte, error } = await supabase.from("offerten").select("*").eq("id", req.params.id).single();
       if (error || !offerte) return res.status(404).json({ message: "Offerte nicht gefunden" });
 
-      // Firmendaten laden
-      const { data: einstellungen = [] } = await supabase.from("einstellungen").select("schluessel,wert");
-      const s: Record<string, string> = {};
-      for (const e of (einstellungen || [])) s[e.schluessel] = e.wert;
-
-      const firma = s.firmenname || "Schneggenburger GmbH";
-      const adresse = s.adresse || "Hefenhoferstrasse 7";
-      const plzOrt = s.plz_ort || "8580 Sommeri";
-      const tel = s.telefon || "071 411 16 87";
-      const email = s.email || "info@schneggenburger.ch";
-      const mwstSatz = parseFloat(s.mwst_satz || "8.1") / 100;
+      const { data: settingsArr } = await supabase.from("einstellungen").select("schluessel,wert");
+      const sMap: Record<string, string> = {};
+      for (const s of (settingsArr || [])) sMap[s.schluessel] = s.wert;
 
       const positionen: any[] = Array.isArray(offerte.positionen) ? offerte.positionen : (typeof offerte.positionen === "string" ? JSON.parse(offerte.positionen) : []);
-      const subtotal = positionen.reduce((s: number, p: any) => s + (parseFloat(p.menge || 1) * parseFloat(p.einzelpreis || 0)), 0);
-      const mwstBetrag = subtotal * mwstSatz;
-      const total = subtotal + mwstBetrag;
+      const subtotal   = positionen.reduce((s: number, p: any) => s + Number(p.total ?? (Number(p.menge||0)*Number(p.einzelpreis||0))), 0);
+      const mwstPct    = Number(offerte.mwst_prozent) || 8.1;
+      const mwstBetrag = subtotal * (mwstPct / 100);
+      const totalInkl  = subtotal + mwstBetrag;
 
-      const formatCHF = (n: number) => `CHF ${n.toFixed(2)}`;
+      const datumStr = offerte.datum
+        ? new Date(offerte.datum).toLocaleDateString("de-CH", { day: "2-digit", month: "long", year: "numeric" })
+        : new Date().toLocaleDateString("de-CH", { day: "2-digit", month: "long", year: "numeric" });
+      const gueltigBisStr = offerte.gueltig_bis
+        ? new Date(offerte.gueltig_bis).toLocaleDateString("de-CH", { day: "2-digit", month: "long", year: "numeric" })
+        : undefined;
 
-      // Vorlage aus DB laden
-      const { data: vorlageData } = await supabase
-        .from("pdf_vorlagen")
-        .select("*")
-        .eq("doc_typ", "offerte")
-        .single();
-      const vorlage = vorlageData || {};
+      const html = await buildPdfHtml("offerte", {
+        titel: "OFFERTE",
+        nummer: offerte.offerten_nr || offerte.nr || req.params.id.substring(0, 8).toUpperCase(),
+        datum: datumStr,
+        gueltigBis: gueltigBisStr,
+        empfaenger: offerte.empfaenger_name || offerte.anrede || offerte.kunde || "",
+        empfaengerStrasse: offerte.empfaenger_strasse || "",
+        empfaengerPlzOrt: offerte.empfaenger_plz_ort || "",
+        firma:        sMap.firmenname || "Schneggenburger GmbH",
+        firmaAdresse: sMap.adresse    || "Hefenhoferstrasse 7",
+        firmaPlzOrt:  sMap.plz_ort   || "8580 Sommeri",
+        firmaTel:     sMap.telefon   || "071 411 16 87",
+        firmaEmail:   sMap.email     || "info@schneggenburger.ch",
+        positionen,
+        subtotal, mwstPct, mwstBetrag, total: totalInkl,
+        einleitung: offerte.intro_text || "",
+        schluss: offerte.schluss_text || "",
+        showTotals: true,
+      });
 
-      const headerColor = vorlage.header_color || "#6b4c2a";
-      const footerColor = vorlage.footer_color || "#1a3a6b";
-      const design = vorlage.design || "A";
-      const logoScale = vorlage.logo_scale || 100;
-      const logoDataUrl = vorlage.logo_data_url || null;
-      const slogan = vorlage.slogan || "Ihr Partner für Metallbau & Schreinerei";
-      const logoPos = vorlage.logo_pos || "links";
-      const einleitung = vorlage.einleitung || "";
-      const schluss = vorlage.schluss || "";
-      const showContact = vorlage.show_contact !== false;
-      const showPageNum = vorlage.show_page_num !== false;
-      const watermarkDataUrl = vorlage.watermark_data_url || null;
-      const watermarkOpacity = (vorlage.watermark_opacity || 15) / 100;
-      const watermarkSize = vorlage.watermark_size || 60;
-      const watermarkPos = vorlage.watermark_pos || "bottom";
-
-      // Logo HTML
-      const logoW = Math.round(70 * logoScale / 100);
-      const logoH = Math.round(45 * logoScale / 100);
-      const logoHtml = logoDataUrl
-        ? `<img src="${logoDataUrl}" style="max-width:${logoW}px;max-height:${logoH}px;object-fit:contain;display:block;" alt="Logo" />`
-        : `<span style="font-weight:700;color:${headerColor};font-size:13pt;">SG</span>`;
-
-      // Wasserzeichen HTML
-      let wmPositionStyle = "bottom:0;left:50%;transform:translateX(-50%)";
-      if (watermarkPos === "center") wmPositionStyle = "top:50%;left:50%;transform:translate(-50%,-50%)";
-      else if (watermarkPos === "bottom-left") wmPositionStyle = "bottom:0;left:0";
-      else if (watermarkPos === "bottom-right") wmPositionStyle = "bottom:0;right:0";
-      else if (watermarkPos === "top") wmPositionStyle = "top:0;left:50%;transform:translateX(-50%)";
-      else if (watermarkPos === "full") wmPositionStyle = "top:0;left:0;width:100%;height:100%";
-      const watermarkHtml = watermarkDataUrl ? `
-        <div style="position:absolute;${wmPositionStyle};z-index:0;pointer-events:none;${watermarkPos==="full"?"overflow:hidden":""}">
-          <img src="${watermarkDataUrl}" style="opacity:${watermarkOpacity};${watermarkPos==="full"?`width:100%;height:100%;object-fit:cover`:`max-width:${watermarkSize}vw;max-height:${watermarkSize}vh;object-fit:contain`};display:block;" alt="" />
-        </div>` : "";
-
-      // Header HTML
-      let headerHtml = "";
-      if (design === "B") {
-        headerHtml = `<div style="background:${headerColor};color:#fff;padding:22px 40px 18px;display:flex;align-items:center;gap:16px;${logoPos==="rechts"?"flex-direction:row-reverse":""}">
-          <div style="flex-shrink:0">${logoHtml}</div>
-          <div>
-            <div style="font-size:15pt;font-weight:700;">${firma}</div>
-            <div style="font-size:9pt;opacity:0.85;">${slogan}</div>
-          </div>
-        </div>`;
-      } else if (design === "C") {
-        headerHtml = `<div style="padding:16px 40px 6px;">
-          <div style="flex-shrink:0">${logoHtml}</div>
-        </div>`;
-      } else {
-        // Design A (default)
-        headerHtml = `<div style="padding:20px 40px 14px;display:flex;align-items:center;gap:16px;${logoPos==="rechts"?"flex-direction:row-reverse":""}">
-          <div style="flex-shrink:0">${logoHtml}</div>
-          <div style="flex:1;${logoPos==="rechts"?"text-align:left":"text-align:right"}">
-            <div style="font-size:13pt;font-weight:700;color:#1a3a6b;">${firma}</div>
-            <div style="font-size:9pt;color:#888;">${slogan}</div>
-          </div>
-        </div>
-        <div style="height:1px;background:${headerColor};margin:0 40px;"></div>`;
-      }
-
-      const posHtml = positionen.map((p: any, i: number) => {
-        const bet = parseFloat(p.menge || 1) * parseFloat(p.einzelpreis || 0);
-        return `<tr style="border-bottom:1px solid #f0ebde">
-          <td style="padding:7px 4px;color:#444">${i+1}</td>
-          <td style="padding:7px 4px">${p.beschreibung || ""}</td>
-          <td style="padding:7px 4px;text-align:right;color:#444">${parseFloat(p.menge||1).toFixed(2)}</td>
-          <td style="padding:7px 4px;text-align:right;color:#444">${formatCHF(parseFloat(p.einzelpreis||0))}</td>
-          <td style="padding:7px 4px;text-align:right;font-weight:600">${formatCHF(bet)}</td>
-        </tr>`;
-      }).join("");
-
-      const footerHtml = `
-        <div style="margin-top:auto;padding:12px 40px 20px;border-top:1px solid ${footerColor};font-size:8pt;color:#777;display:flex;justify-content:space-between;align-items:flex-end;">
-          ${showContact ? `<div>${firma} · ${adresse} · ${plzOrt}<br/>${tel} · ${email}</div>` : "<div></div>"}
-          ${showPageNum ? `<div>Seite 1 / 1</div>` : ""}
-        </div>`;
-
-      const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-        <style>
-          * { box-sizing: border-box; }
-          body { font-family: Arial, sans-serif; font-size: 10pt; color: #222; margin: 0; padding: 0; position: relative; }
-          table { width: 100%; border-collapse: collapse; }
-          th { background: ${headerColor}; color: #fff; padding: 8px 4px; text-align: left; font-size: 8.5pt; }
-          td { font-size: 9pt; }
-          .body-wrap { padding: 14px 40px; position: relative; z-index: 1; }
-          .empfaenger { margin-bottom: 16px; color: #333; font-size: 10pt; }
-          .doc-title { font-size: 16pt; font-weight: 700; color: ${footerColor}; margin: 14px 0 4px; }
-          .meta { font-size: 8.5pt; color: #555; margin-bottom: 10px; display: flex; gap: 20px; flex-wrap: wrap; }
-          .meta b { color: #999; font-weight: 400; }
-          .intro { font-size: 9pt; color: #444; white-space: pre-line; margin-bottom: 12px; }
-          .schluss { font-size: 9pt; color: #444; white-space: pre-line; margin-top: 14px; }
-          .total-box { margin-top: 16px; display: flex; justify-content: flex-end; }
-          .total-inner { width: 45%; font-size: 9pt; }
-          .total-row { display: flex; justify-content: space-between; padding: 3px 0; }
-          .total-final { font-weight: 700; font-size: 11pt; border-top: 1.5px solid ${footerColor}; padding-top: 5px; margin-top: 3px; color: ${footerColor}; }
-        </style></head><body style="position:relative;">
-        ${watermarkHtml}
-        <div style="position:relative;z-index:1;min-height:100vh;display:flex;flex-direction:column;">
-          ${headerHtml}
-          <div class="body-wrap">
-            <div class="empfaenger">
-              <div style="font-size:7.5pt;color:#aaa;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:2px;">Empfänger</div>
-              <div>${offerte.empfaenger_name || offerte.kunde || "—"}</div>
-              ${offerte.empfaenger_strasse ? `<div>${offerte.empfaenger_strasse}</div>` : ""}
-              ${offerte.empfaenger_plz_ort ? `<div>${offerte.empfaenger_plz_ort}</div>` : ""}
-            </div>
-            <div class="doc-title">OFFERTE Nr. ${offerte.offerten_nr || offerte.id.substring(0,8).toUpperCase()}</div>
-            <div class="meta">
-              <span><b>Datum: </b>${offerte.datum ? new Date(offerte.datum).toLocaleDateString("de-CH") : new Date().toLocaleDateString("de-CH")}</span>
-              ${offerte.gueltig_bis ? `<span><b>Gültig bis: </b>${new Date(offerte.gueltig_bis).toLocaleDateString("de-CH")}</span>` : ""}
-              ${offerte.betreff ? `<span><b>Betreff: </b>${offerte.betreff}</span>` : ""}
-            </div>
-            ${einleitung ? `<div class="intro">${einleitung}</div>` : ""}
-            <table>
-              <thead><tr>
-                <th style="width:28px;">Pos</th>
-                <th>Beschreibung</th>
-                <th style="width:65px;text-align:right">Menge</th>
-                <th style="width:85px;text-align:right">Einzelpreis</th>
-                <th style="width:85px;text-align:right">Betrag</th>
-              </tr></thead>
-              <tbody>${posHtml}</tbody>
-            </table>
-            <div class="total-box">
-              <div class="total-inner">
-                <div class="total-row"><span>Subtotal</span><span>${formatCHF(subtotal)}</span></div>
-                <div class="total-row"><span>MWST ${(mwstSatz*100).toFixed(1)}%</span><span>${formatCHF(mwstBetrag)}</span></div>
-                <div class="total-row total-final"><span>Total</span><span>${formatCHF(total)}</span></div>
-              </div>
-            </div>
-            ${schluss ? `<div class="schluss">${schluss}</div>` : ""}
-          </div>
-          ${footerHtml}
-        </div>
-      </body></html>`;
-
-      const puppeteer = await import("puppeteer");
-      const execPath = process.env.PUPPETEER_EXECUTABLE_PATH || undefined;
-    const browser = await puppeteer.default.launch({
-      executablePath: execPath,
-      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
-    });
-      const page = await browser.newPage();
-      await page.setContent(html, { waitUntil: "networkidle0" });
-      const pdfBuffer = await page.pdf({ format: "A4", margin: { top: "10mm", bottom: "10mm", left: "10mm", right: "10mm" } });
-      await browser.close();
-
+      const pdfBuf = await renderPdfFromHtml(html);
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="Offerte-${offerte.offerten_nr || offerte.id.substring(0,8)}.pdf"`);
-      res.send(pdfBuffer);
+      res.setHeader("Content-Disposition", `attachment; filename="Offerte-${offerte.offerten_nr || offerte.nr || req.params.id}.pdf"`);
+      res.send(pdfBuf);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
