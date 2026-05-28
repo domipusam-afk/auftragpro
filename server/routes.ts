@@ -1071,7 +1071,6 @@ export async function registerRoutes(
             </div>
             ${apBlock}
             ${einl ? `<div class="intro" style="margin-bottom:12px;">${einl}</div>` : ""}
-            ${data.extraHtml || ""}
             <table>
               <thead><tr>
                 <th style="width:28px">${ptPos}</th><th>${ptBeschr}</th>
@@ -1086,6 +1085,7 @@ export async function registerRoutes(
           </div>
           ${footerHtml}
         </div>
+        ${data.extraHtml || ""}
       </body></html>`;
     }
 
@@ -1136,7 +1136,6 @@ export async function registerRoutes(
           <div style="padding:0 40px;flex:1;">
             ${apBlock}
             ${einl ? `<div class="intro" style="margin-bottom:12px;">${einl}</div>` : ""}
-            ${data.extraHtml || ""}
             <table>
               <thead><tr>
                 <th style="width:28px">${ptPos}</th><th>${ptBeschr}</th>
@@ -1151,6 +1150,7 @@ export async function registerRoutes(
           </div>
           ${footerHtml}
         </div>
+        ${data.extraHtml || ""}
       </body></html>`;
     }
 
@@ -1198,7 +1198,6 @@ export async function registerRoutes(
           <div style="padding:0 40px;flex:1;">
             ${apBlock}
             ${einl ? `<div class="intro" style="margin-bottom:12px;">${einl}</div>` : ""}
-            ${data.extraHtml || ""}
             <table>
               <thead><tr>
                 <th style="width:28px">${ptPos}</th><th>${ptBeschr}</th>
@@ -1213,6 +1212,7 @@ export async function registerRoutes(
           </div>
           ${footerHtml}
         </div>
+        ${data.extraHtml || ""}
       </body></html>`;
     }
 
@@ -1260,7 +1260,6 @@ export async function registerRoutes(
           <div style="padding:0 36px;flex:1;">
             ${apBlock}
             ${einl ? `<div class="intro" style="margin-bottom:12px;">${einl}</div>` : ""}
-            ${data.extraHtml || ""}
             <table>
               <thead><tr>
                 <th style="width:28px">${ptPos}</th><th>${ptBeschr}</th>
@@ -1275,6 +1274,7 @@ export async function registerRoutes(
           </div>
           ${footerHtml}
         </div>
+        ${data.extraHtml || ""}
       </body></html>`;
     }
 
@@ -1302,7 +1302,6 @@ export async function registerRoutes(
           <div style="font-size:8.5pt;color:#555;margin-bottom:10px;display:flex;flex-wrap:wrap;gap:16px;">${metaHtml}</div>` : ""}
           ${apBlock}
           ${einl ? `<div class="intro" style="margin-bottom:12px;">${einl}</div>` : ""}
-          ${data.extraHtml || ""}
           <table>
             <thead><tr>
               <th style="width:28px">${ptPos}</th><th>${ptBeschr}</th>
@@ -1317,6 +1316,7 @@ export async function registerRoutes(
         </div>
         ${footerHtml}
       </div>
+      ${data.extraHtml || ""}
     </body></html>`;
   }
 
@@ -1437,12 +1437,13 @@ export async function registerRoutes(
         positionen,
         subtotal, mwstPct, mwstBetrag, total: totalInkl,
         showTotals: true,
-        extraHtml: qrZahlscheinHtml,
+        extraHtml: "",
         ansprechpersonIntern: (req.body as any)?.ansprechpersonIntern || rechnung.ansprechperson_intern || auftrag?.verantwortlicher || "",
         ansprechpersonExtern: (req.body as any)?.ansprechpersonExtern || rechnung.ansprechperson_extern || auftrag?.ansprechperson || "",
       });
 
-      const pdfBuf = await renderPdfFromHtml(html);
+      const finalHtml = html.replace(/<\/body>\s*<\/html>/, qrZahlscheinHtml + "</body></html>");
+      const pdfBuf = await renderPdfFromHtml(finalHtml);
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `inline; filename="Rechnung-${rechnung.nr || rid}.pdf"`);
       res.send(pdfBuf);
