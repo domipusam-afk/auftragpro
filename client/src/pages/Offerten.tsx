@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Eye, Trash, Mail, FileDown, ArrowRight, CheckCircle2 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -24,6 +26,7 @@ const STATUS_COLORS: Record<string, string> = {
 export default function Offerten() {
   const { toast } = useToast();
   const [emailModal, setEmailModal] = useState<{ open: boolean; to: string; subject: string; body: string; refId: string } | null>(null);
+  const [pdfDialog, setPdfDialog] = useState<{ open: boolean; oid: string; nr: string; intern: string; extern: string } | null>(null);
 
   const { data: offerten = [], isLoading } = useQuery<Offerte[]>({
     queryKey: ["/api/offerten"],
@@ -60,18 +63,29 @@ export default function Offerten() {
     onError: (e: any) => toast({ title: "Fehler", description: e.message, variant: "destructive" }),
   });
 
-  const handlePdf = async (oid: string, nr: string) => {
+  const handlePdf = (oid: string, nr: string, auftragVerantwortlicher?: string | null) => {
+    setPdfDialog({ open: true, oid, nr, intern: auftragVerantwortlicher || "", extern: "" });
+  };
+
+  const handlePdfDownload = async () => {
+    if (!pdfDialog) return;
+    const { oid, nr, intern, extern } = pdfDialog;
     try {
-      const r = await fetch(`${API_BASE}/api/offerten/${oid}/pdf`, { method: "POST" });
+      const r = await fetch(`${API_BASE}/api/offerten/${oid}/pdf`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ansprechpersonIntern: intern, ansprechpersonExtern: extern }),
+      });
       if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url; a.download = `Offerte-${nr}.pdf`; a.click();
       URL.revokeObjectURL(url);
+      setPdfDialog(null);
       toast({ title: "PDF erstellt", description: `Offerte ${nr}` });
     } catch (e: any) {
-      toast({ title: "PDF Fehler", description: e.message, variant: "destructive" });
+      toast({ title: "PDF Fehler", description: (e as any).message, variant: "destructive" });
     }
   };
 
@@ -171,7 +185,7 @@ export default function Offerten() {
                         </SelectContent>
                       </Select>
 
-                      <Button size="sm" variant="outline" onClick={() => handlePdf(o.id, o.nr)}>
+                      <Button size="sm" variant="outline" onClick={() => handlePdf(o.id, o.nr, aMap.get(o.auftrag_id)?.verantwortlicher)}>
                         <Eye className="w-3.5 h-3.5 mr-1" /> PDF
                       </Button>
 
@@ -224,6 +238,41 @@ Schneggenburger GmbH`,
           </div>
         )}
       </Card>
+
+      {/* PDF Ansprechperson Dialog */}
+      {pdfDialog?.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
+            <h2 className="text-base font-semibold mb-4" style={{ color: "#6b4c2a" }}>PDF erstellen – Ansprechperson</h2>
+            <div className="space-y-3 mb-5">
+              <div className="space-y-1">
+                <Label className="text-xs text-gray-600">Intern (Mitarbeiter / Verantwortlicher)</Label>
+                <Input
+                  value={pdfDialog.intern}
+                  onChange={(e) => setPdfDialog(d => d ? { ...d, intern: e.target.value } : d)}
+                  placeholder="z.B. Max Muster"
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-gray-600">Extern (Ansprechperson beim Kunden)</Label>
+                <Input
+                  value={pdfDialog.extern}
+                  onChange={(e) => setPdfDialog(d => d ? { ...d, extern: e.target.value } : d)}
+                  placeholder="z.B. Maria Muster"
+                  className="h-8 text-sm"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" size="sm" onClick={() => setPdfDialog(null)}>Abbrechen</Button>
+              <Button size="sm" style={{ background: "#6b4c2a", color: "white" }} onClick={handlePdfDownload}>
+                PDF erstellen
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {emailModal && (
         <EmailModal

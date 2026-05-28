@@ -844,6 +844,9 @@ export async function registerRoutes(
     showTotals?: boolean;
     extraHtml?: string;
     mahngebuehr?: number;
+    ansprechpersonIntern?: string;
+    ansprechpersonExtern?: string;
+    ansprechpersonManuell?: string;
   }): Promise<string> {
     // Vorlage aus DB laden
     const { data: vd } = await supabase.from("pdf_vorlagen").select("*").eq("doc_typ", docTyp).single();
@@ -985,6 +988,26 @@ export async function registerRoutes(
     // Für Design A: Titel ist bereits im Header — nicht nochmals im Body zeigen
     const titelImHeader = design === "A";
 
+    // Ansprechperson
+    const apAktiv       = v.ansprechperson_aktiv !== false;
+    const apLabel       = v.ansprechperson_label   || "Ansprechperson";
+    const apQuelle      = v.ansprechperson_quelle  || "manuell";
+    let ansprechperson  = "";
+    if (apQuelle === "intern")  ansprechperson = data.ansprechpersonIntern || "";
+    else if (apQuelle === "extern") ansprechperson = data.ansprechpersonExtern || "";
+    else ansprechperson = data.ansprechpersonManuell || "";
+    const apBlock = apAktiv && ansprechperson
+      ? `<div style="font-size:9pt;color:#444;margin-bottom:8px;"><strong>${apLabel}:</strong> ${ansprechperson}</div>`
+      : "";
+
+    // Positionstexte (Spaltenbezeichnungen)
+    const pt = (typeof v.positionstexte === "object" && v.positionstexte) ? v.positionstexte : {};
+    const ptPos   = (pt as any).pos          || "Pos.";
+    const ptBeschr= (pt as any).beschreibung || "Beschreibung";
+    const ptMenge = (pt as any).menge        || "Menge";
+    const ptPreis = (pt as any).preis        || "Preis";
+    const ptTotal = (pt as any).total        || "Total";
+
     // Design D: Zweifarbig braucht speziellen Wrapper mit linker Spalte
     if (design === "D") {
       return `<!DOCTYPE html><html><head><meta charset="utf-8">
@@ -1022,14 +1045,15 @@ export async function registerRoutes(
                 ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
               </div>
             </div>
+            ${apBlock}
             ${einl ? `<div class="intro" style="margin-bottom:12px;">${einl}</div>` : ""}
             ${data.extraHtml || ""}
             <table>
               <thead><tr>
-                <th style="width:28px">Pos</th><th>Beschreibung</th>
-                <th style="width:65px;text-align:right">Menge</th>
-                <th style="width:90px;text-align:right">Einzelpreis</th>
-                <th style="width:90px;text-align:right">Betrag</th>
+                <th style="width:28px">${ptPos}</th><th>${ptBeschr}</th>
+                <th style="width:65px;text-align:right">${ptMenge}</th>
+                <th style="width:90px;text-align:right">${ptPreis}</th>
+                <th style="width:90px;text-align:right">${ptTotal}</th>
               </tr></thead>
               <tbody>${posHtml}</tbody>
             </table>
@@ -1063,14 +1087,15 @@ export async function registerRoutes(
           </div>
           ${!titelImHeader ? `<div style="font-size:16pt;font-weight:700;color:${fc};margin:12px 0 4px;">${data.titel} Nr. ${data.nummer}</div>
           <div style="font-size:8.5pt;color:#555;margin-bottom:10px;display:flex;flex-wrap:wrap;gap:16px;">${metaHtml}</div>` : ""}
+          ${apBlock}
           ${einl ? `<div class="intro" style="margin-bottom:12px;">${einl}</div>` : ""}
           ${data.extraHtml || ""}
           <table>
             <thead><tr>
-              <th style="width:28px">Pos</th><th>Beschreibung</th>
-              <th style="width:65px;text-align:right">Menge</th>
-              <th style="width:90px;text-align:right">Einzelpreis</th>
-              <th style="width:90px;text-align:right">Betrag</th>
+              <th style="width:28px">${ptPos}</th><th>${ptBeschr}</th>
+              <th style="width:65px;text-align:right">${ptMenge}</th>
+              <th style="width:90px;text-align:right">${ptPreis}</th>
+              <th style="width:90px;text-align:right">${ptTotal}</th>
             </tr></thead>
             <tbody>${posHtml}</tbody>
           </table>
@@ -1200,6 +1225,8 @@ export async function registerRoutes(
         subtotal, mwstPct, mwstBetrag, total: totalInkl,
         showTotals: true,
         extraHtml: qrZahlscheinHtml,
+        ansprechpersonIntern: (req.body as any)?.ansprechpersonIntern || rechnung.ansprechperson_intern || auftrag?.verantwortlicher || "",
+        ansprechpersonExtern: (req.body as any)?.ansprechpersonExtern || rechnung.ansprechperson_extern || auftrag?.ansprechperson || "",
       });
 
       const pdfBuf = await renderPdfFromHtml(html);
@@ -2376,6 +2403,10 @@ export async function registerRoutes(
     try {
       const { data: offerte, error } = await supabase.from("offerten").select("*").eq("id", req.params.id).single();
       if (error || !offerte) return res.status(404).json({ message: "Offerte nicht gefunden" });
+      const { data: auftrag } = offerte.auftrag_id
+        ? await supabase.from("auftraege").select("*").eq("id", offerte.auftrag_id).single()
+        : { data: null };
+      const { ansprechpersonIntern: bodyIntern, ansprechpersonExtern: bodyExtern } = req.body || {};
 
       const { data: settingsArr } = await supabase.from("einstellungen").select("schluessel,wert");
       const sMap: Record<string, string> = {};
@@ -2412,6 +2443,8 @@ export async function registerRoutes(
         einleitung: offerte.intro_text || "",
         schluss: offerte.schluss_text || "",
         showTotals: true,
+        ansprechpersonIntern: bodyIntern || offerte.ansprechperson_intern || auftrag?.verantwortlicher || "",
+        ansprechpersonExtern: bodyExtern || offerte.ansprechperson_extern || auftrag?.ansprechperson || "",
       });
 
       const pdfBuf = await renderPdfFromHtml(html);
@@ -2426,6 +2459,9 @@ export async function registerRoutes(
     try {
       const { data: offerte, error } = await supabase.from("offerten").select("*").eq("id", req.params.id).single();
       if (error || !offerte) return res.status(404).json({ message: "Offerte nicht gefunden" });
+      const { data: auftrag } = offerte.auftrag_id
+        ? await supabase.from("auftraege").select("*").eq("id", offerte.auftrag_id).single()
+        : { data: null };
 
       const { data: settingsArr } = await supabase.from("einstellungen").select("schluessel,wert");
       const sMap: Record<string, string> = {};
@@ -2462,6 +2498,8 @@ export async function registerRoutes(
         einleitung: offerte.intro_text || "",
         schluss: offerte.schluss_text || "",
         showTotals: true,
+        ansprechpersonIntern: offerte.ansprechperson_intern || auftrag?.verantwortlicher || "",
+        ansprechpersonExtern: offerte.ansprechperson_extern || auftrag?.ansprechperson || "",
       });
 
       const pdfBuf = await renderPdfFromHtml(html);

@@ -32,6 +32,26 @@ interface PdfVorlage {
   absender_pos_h: string;   // "links" | "mitte" | "rechts"
   absender_top_mm: number;  // Abstand oben in mm (für Couvertfenster)
   absender_left_mm: number; // Abstand links in mm (horizontaler Versatz)
+  // Ansprechperson
+  ansprechperson_aktiv: boolean;
+  ansprechperson_label: string;  // z.B. "Ansprechperson" oder "Sachbearbeiter"
+  ansprechperson_quelle: string; // "manuell" | "intern" | "extern"
+  // Block-Positionen
+  block_positions: {
+    header?: { top: number; left: number; width: number };
+    empfaenger?: { top: number; left: number; width: number };
+    meta?: { top: number; left: number; width: number; align: string };
+    ansprechperson?: { top: number; left: number; width: number };
+  };
+  // Positionstexte
+  positionstexte: {
+    pos: string;
+    beschreibung: string;
+    menge: string;
+    einheit: string;
+    preis: string;
+    total: string;
+  };
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -79,6 +99,11 @@ const DEFAULT_VORLAGE = (doc_typ: string): PdfVorlage => ({
   absender_pos_h: "links",
   absender_top_mm: 55,
   absender_left_mm: 0,
+  ansprechperson_aktiv: true,
+  ansprechperson_label: "Ansprechperson",
+  ansprechperson_quelle: "manuell",
+  block_positions: {},
+  positionstexte: { pos: "Pos.", beschreibung: "Beschreibung", menge: "Menge", einheit: "Einheit", preis: "Preis", total: "Total" },
 });
 
 // ─── A4 Preview Renderer ─────────────────────────────────────────────────────
@@ -292,7 +317,12 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
             <div>8001 Zürich</div>
           </div>
           ${sampleInfo}
-          <div style="font-size:7.5px;margin-bottom:6px;color:#444;">${einleitung.replace(/\n/g, "<br/>")}</div>
+        ${vorlage.ansprechperson_aktiv 
+          ? `<div style="font-size:7.5px;color:#444;margin-bottom:4px;">
+              <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> Max Muster
+            </div>` 
+          : ""}
+        <div style="font-size:7.5px;margin-bottom:6px;color:#444;">${einleitung.replace(/\n/g, "<br/>")}</div>
           <table style="width:100%;border-collapse:collapse;font-size:7.5px;margin-bottom:4px;">
             <thead>${tableHeader}</thead>
             <tbody>${tableRows}</tbody>
@@ -335,7 +365,12 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
             ${docTyp === "offerte" || docTyp === "rechnung" ? `<div style="font-size:7.5px;color:#555;text-align:right;"><div>Zahlungsfrist: ${zahlungsfrist} Tage</div><div>Fällig: 15.05.2024</div></div>` : ""}
           </div>
           ${sampleInfo}
-          <div style="font-size:7.5px;margin-bottom:6px;color:#444;">${einleitung.replace(/\n/g, "<br/>")}</div>
+        ${vorlage.ansprechperson_aktiv 
+          ? `<div style="font-size:7.5px;color:#444;margin-bottom:4px;">
+              <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> Max Muster
+            </div>` 
+          : ""}
+        <div style="font-size:7.5px;margin-bottom:6px;color:#444;">${einleitung.replace(/\n/g, "<br/>")}</div>
           <table style="width:100%;border-collapse:collapse;font-size:7.5px;margin-bottom:4px;">
             <thead>${tableHeader}</thead>
             <tbody>${tableRows}</tbody>
@@ -376,6 +411,11 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
             <div>Musterfirma AG</div><div>Musterstrasse 42</div><div>8001 Zürich</div>
           </div>
           ${sampleInfo}
+          ${vorlage.ansprechperson_aktiv 
+            ? `<div style="font-size:7.5px;color:#444;margin-bottom:4px;">
+                <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> Max Muster
+              </div>` 
+            : ""}
           <div style="font-size:7.5px;margin-bottom:5px;color:#444;">${einleitung.replace(/\n/g, "<br/>")}</div>
           <table style="width:100%;border-collapse:collapse;font-size:7.5px;margin-bottom:4px;">
             <thead>${tableHeader}</thead>
@@ -414,6 +454,11 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
             <div>Musterfirma AG</div><div>Musterstrasse 42</div><div>8001 Zürich</div>
           </div>
           ${sampleInfo}
+          ${vorlage.ansprechperson_aktiv 
+            ? `<div style="font-size:7.5px;color:#444;margin-bottom:4px;">
+                <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> Max Muster
+              </div>` 
+            : ""}
           <div style="font-size:7.5px;margin-bottom:5px;color:#444;">${einleitung.replace(/\n/g, "<br/>")}</div>
           <table style="width:100%;border-collapse:collapse;font-size:7.5px;margin-bottom:4px;">
             <thead>${tableHeader}</thead>
@@ -460,6 +505,11 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
             <div>Musterfirma AG</div><div>Musterstrasse 42</div><div>8001 Zürich</div>
           </div>
           ${sampleInfo}
+          ${vorlage.ansprechperson_aktiv 
+            ? `<div style="font-size:7.5px;color:#444;margin-bottom:4px;">
+                <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> Max Muster
+              </div>` 
+            : ""}
           <div style="font-size:7.5px;margin-bottom:5px;color:#444;">${einleitung.replace(/\n/g, "<br/>")}</div>
           <table style="width:100%;border-collapse:collapse;font-size:7.5px;margin-bottom:4px;">
             <thead>${tableHeader}</thead>
@@ -509,7 +559,12 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
             </div>
           </div>
           ${sampleInfo}
-          <div style="font-size:7.5px;margin-bottom:6px;color:#444;">${einleitung.replace(/\n/g, "<br/>")}</div>
+        ${vorlage.ansprechperson_aktiv 
+          ? `<div style="font-size:7.5px;color:#444;margin-bottom:4px;">
+              <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> Max Muster
+            </div>` 
+          : ""}
+        <div style="font-size:7.5px;margin-bottom:6px;color:#444;">${einleitung.replace(/\n/g, "<br/>")}</div>
           <table style="width:100%;border-collapse:collapse;font-size:7.5px;margin-bottom:4px;">
             <thead>${tableHeader}</thead>
             <tbody>${tableRows}</tbody>
@@ -555,7 +610,12 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
             </div>
           </div>
           ${sampleInfo}
-          <div style="font-size:7.5px;margin-bottom:6px;color:#444;">${einleitung.replace(/\n/g, "<br/>")}</div>
+        ${vorlage.ansprechperson_aktiv 
+          ? `<div style="font-size:7.5px;color:#444;margin-bottom:4px;">
+              <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> Max Muster
+            </div>` 
+          : ""}
+        <div style="font-size:7.5px;margin-bottom:6px;color:#444;">${einleitung.replace(/\n/g, "<br/>")}</div>
           <table style="width:100%;border-collapse:collapse;font-size:7.5px;margin-bottom:4px;">
             <thead>${tableHeader}</thead>
             <tbody>${tableRows}</tbody>
@@ -608,7 +668,12 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
             </div>
           </div>
           ${sampleInfo}
-          <div style="font-size:7.5px;margin-bottom:6px;color:#444;">${einleitung.replace(/\n/g, "<br/>")}</div>
+        ${vorlage.ansprechperson_aktiv 
+          ? `<div style="font-size:7.5px;color:#444;margin-bottom:4px;">
+              <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> Max Muster
+            </div>` 
+          : ""}
+        <div style="font-size:7.5px;margin-bottom:6px;color:#444;">${einleitung.replace(/\n/g, "<br/>")}</div>
           <table style="width:100%;border-collapse:collapse;font-size:7.5px;margin-bottom:4px;">
             <thead>${tableHeader}</thead>
             <tbody>${tableRows}</tbody>
@@ -648,6 +713,11 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
           <div>8001 Zürich</div>
         </div>
         ${sampleInfo}
+        ${vorlage.ansprechperson_aktiv 
+          ? `<div style="font-size:7.5px;color:#444;margin-bottom:4px;">
+              <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> Max Muster
+            </div>` 
+          : ""}
         <div style="font-size:7.5px;margin-bottom:6px;color:#444;">${einleitung.replace(/\n/g, "<br/>")}</div>
         <table style="width:100%;border-collapse:collapse;font-size:7.5px;margin-bottom:4px;">
           <thead>${tableHeader}</thead>
@@ -1374,6 +1444,147 @@ export default function PdfVorlagenTab() {
                 </div>
               </div>
               <p className="text-xs text-gray-400">Typisches Couvert-Fenster: 45–55 mm oben, 20–30 mm links.</p>
+            </div>
+
+            {/* Ansprechperson */}
+            <SectionHeader title="Ansprechperson" />
+            <div className="space-y-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <div
+                  onClick={() => updateVorlage({ ansprechperson_aktiv: !vorlage.ansprechperson_aktiv })}
+                  className={`w-9 h-5 rounded-full transition-colors relative cursor-pointer flex-shrink-0`}
+                  style={{ background: vorlage.ansprechperson_aktiv ? "#6b4c2a" : "#e5e7eb" }}
+                >
+                  <div
+                    className="w-3.5 h-3.5 bg-white rounded-full absolute top-0.5 transition-transform shadow"
+                    style={{ transform: vorlage.ansprechperson_aktiv ? "translateX(18px)" : "translateX(2px)" }}
+                  />
+                </div>
+                <span className="text-xs text-gray-600">Ansprechperson anzeigen</span>
+              </label>
+              {vorlage.ansprechperson_aktiv && (
+                <div className="space-y-2 pl-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs text-gray-600">Bezeichnung / Label</Label>
+                    <Input
+                      value={vorlage.ansprechperson_label}
+                      onChange={(e) => updateVorlage({ ansprechperson_label: e.target.value })}
+                      placeholder="z.B. Ansprechperson, Sachbearbeiter"
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-gray-600">Quelle (beim Erstellen von Dokumenten)</Label>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {([
+                        ["intern", "Intern (Mitarbeiter)"],
+                        ["extern", "Extern (Kundenkontakt)"],
+                        ["manuell", "Manuell eingeben"],
+                      ] as const).map(([val, lbl]) => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => updateVorlage({ ansprechperson_quelle: val })}
+                          className={`py-1.5 px-2 rounded text-xs border transition-colors text-center ${
+                            vorlage.ansprechperson_quelle === val
+                              ? "text-white border-transparent"
+                              : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
+                          }`}
+                          style={vorlage.ansprechperson_quelle === val ? { background: "#6b4c2a", borderColor: "#6b4c2a" } : undefined}
+                        >
+                          {lbl}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-gray-400">
+                      {vorlage.ansprechperson_quelle === "intern" && "Übernimmt den zugewiesenen Mitarbeiter aus dem Auftrag."}
+                      {vorlage.ansprechperson_quelle === "extern" && "Übernimmt den Kundenkontakt (Ansprechperson beim Kunden)."}
+                      {vorlage.ansprechperson_quelle === "manuell" && "Manuell beim Erstellen des Dokuments eingeben."}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Block-Positionen */}
+            <SectionHeader title="Block-Positionen" />
+            <p className="text-xs text-gray-400 mb-2">Verschiebe Blöcke durch Eingabe der mm-Werte. Drag & Drop in der Vorschau folgt in der nächsten Version.</p>
+            <div className="space-y-3">
+              {([
+                ["header", "Header (Logo + Firmeninfo)"],
+                ["empfaenger", "Empfänger-Adresse"],
+                ["meta", "Datum / Nr. / Fälligkeit"],
+                ["ansprechperson", "Ansprechperson-Block"],
+              ] as const).map(([block, label]) => {
+                const pos = (vorlage.block_positions as any)?.[block] || { top: 0, left: 0 };
+                return (
+                  <div key={block} className="border border-gray-100 rounded-md p-2.5 space-y-2">
+                    <Label className="text-xs font-semibold text-gray-700">{label}</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs text-gray-500">Oben (mm)</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={250}
+                          value={pos.top || 0}
+                          onChange={(e) => updateVorlage({
+                            block_positions: {
+                              ...vorlage.block_positions,
+                              [block]: { ...pos, top: Number(e.target.value) }
+                            }
+                          })}
+                          className="h-7 text-xs"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-gray-500">Links (mm)</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={190}
+                          value={pos.left || 0}
+                          onChange={(e) => updateVorlage({
+                            block_positions: {
+                              ...vorlage.block_positions,
+                              [block]: { ...pos, left: Number(e.target.value) }
+                            }
+                          })}
+                          className="h-7 text-xs"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Positionstexte */}
+            <SectionHeader title="Positionstexte (Tabellenspalten)" />
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                ["pos", "Pos."],
+                ["beschreibung", "Beschreibung"],
+                ["menge", "Menge"],
+                ["einheit", "Einheit"],
+                ["preis", "Preis"],
+                ["total", "Total"],
+              ] as const).map(([field, placeholder]) => (
+                <div key={field} className="space-y-1">
+                  <Label className="text-xs text-gray-600 capitalize">{placeholder}</Label>
+                  <Input
+                    value={(vorlage.positionstexte as any)?.[field] ?? placeholder}
+                    onChange={(e) => updateVorlage({
+                      positionstexte: {
+                        ...(vorlage.positionstexte || {}),
+                        [field]: e.target.value
+                      }
+                    })}
+                    placeholder={placeholder}
+                    className="h-7 text-xs"
+                  />
+                </div>
+              ))}
             </div>
 
             {/* Footer */}

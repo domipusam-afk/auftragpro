@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { apiRequest } from "@/lib/queryClient";
 import type { Rechnung, Auftrag } from "@shared/schema";
 import { formatCHF, formatDate } from "@/lib/format";
@@ -55,6 +57,7 @@ export default function Rechnungen() {
   const [exportLoading, setExportLoading] = useState(false);
   const [pdfLoading, setPdfLoading] = useState<string | null>(null);
   const [emailModal, setEmailModal] = useState<{ open: boolean; to: string; subject: string; body: string; refId: string } | null>(null);
+  const [pdfDialog, setPdfDialog] = useState<{ open: boolean; rechnung: any; auftragId: string; intern: string; extern: string } | null>(null);
 
   const { data: rechnungen, isLoading } = useQuery<Rechnung[]>({
     queryKey: ["/api/rechnungen"],
@@ -90,29 +93,36 @@ export default function Rechnungen() {
   };
 
   // PDF Download — verwendet apiRequest (korrekte URL auch in deployed preview)
-  const handlePdf = async (r: Rechnung) => {
+  const handlePdf = (r: Rechnung) => {
     const auftrag = aMap.get(r.auftrag_id);
     if (!auftrag) {
       toast({ title: "Fehler", description: "Auftrag nicht gefunden.", variant: "destructive" });
       return;
     }
-    setPdfLoading(r.id);
+    setPdfDialog({ open: true, rechnung: r, auftragId: auftrag.id, intern: auftrag.verantwortlicher || "", extern: "" });
+  };
+
+  const handlePdfDownload = async () => {
+    if (!pdfDialog) return;
+    const { rechnung, auftragId, intern, extern } = pdfDialog;
+    setPdfLoading(rechnung.id);
     try {
       const res = await apiRequest(
         "POST",
-        `/api/auftraege/${auftrag.id}/rechnungen/${r.id}/pdf`,
-        {}
+        `/api/auftraege/${auftragId}/rechnungen/${rechnung.id}/pdf`,
+        { ansprechpersonIntern: intern, ansprechpersonExtern: extern }
       );
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `Rechnung-${r.nr}.pdf`;
+      a.download = `Rechnung-${rechnung.nr}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
-      toast({ title: "PDF heruntergeladen", description: `Rechnung ${r.nr}` });
+      setPdfDialog(null);
+      toast({ title: "PDF heruntergeladen", description: `Rechnung ${rechnung.nr}` });
     } catch (e: any) {
-      toast({ title: "Fehler", description: e.message || "PDF konnte nicht generiert werden.", variant: "destructive" });
+      toast({ title: "Fehler", description: (e as any).message || "PDF konnte nicht generiert werden.", variant: "destructive" });
     } finally {
       setPdfLoading(null);
     }
@@ -365,6 +375,41 @@ Schneggenburger GmbH`,
           })
         )}
       </div>
+      {/* PDF Ansprechperson Dialog */}
+      {pdfDialog?.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
+            <h2 className="text-base font-semibold mb-4" style={{ color: "#6b4c2a" }}>PDF erstellen – Ansprechperson</h2>
+            <div className="space-y-3 mb-5">
+              <div className="space-y-1">
+                <Label className="text-xs text-gray-600">Intern (Mitarbeiter / Verantwortlicher)</Label>
+                <Input
+                  value={pdfDialog.intern}
+                  onChange={(e) => setPdfDialog(d => d ? { ...d, intern: e.target.value } : d)}
+                  placeholder="z.B. Max Muster"
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-gray-600">Extern (Ansprechperson beim Kunden)</Label>
+                <Input
+                  value={pdfDialog.extern}
+                  onChange={(e) => setPdfDialog(d => d ? { ...d, extern: e.target.value } : d)}
+                  placeholder="z.B. Maria Muster"
+                  className="h-8 text-sm"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" size="sm" onClick={() => setPdfDialog(null)}>Abbrechen</Button>
+              <Button size="sm" style={{ background: "#6b4c2a", color: "white" }} onClick={handlePdfDownload}>
+                PDF erstellen
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {emailModal && (
         <EmailModal
           open={emailModal.open}
