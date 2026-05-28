@@ -319,7 +319,7 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
           ${sampleInfo}
         ${vorlage.ansprechperson_aktiv 
           ? `<div style="font-size:7.5px;color:#444;margin-bottom:4px;">
-              <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> Max Muster
+              <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> [wird beim PDF-Erstellen gesetzt]
             </div>` 
           : ""}
         <div style="font-size:7.5px;margin-bottom:6px;color:#444;">${einleitung.replace(/\n/g, "<br/>")}</div>
@@ -367,7 +367,7 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
           ${sampleInfo}
         ${vorlage.ansprechperson_aktiv 
           ? `<div style="font-size:7.5px;color:#444;margin-bottom:4px;">
-              <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> Max Muster
+              <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> [wird beim PDF-Erstellen gesetzt]
             </div>` 
           : ""}
         <div style="font-size:7.5px;margin-bottom:6px;color:#444;">${einleitung.replace(/\n/g, "<br/>")}</div>
@@ -413,7 +413,7 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
           ${sampleInfo}
           ${vorlage.ansprechperson_aktiv 
             ? `<div style="font-size:7.5px;color:#444;margin-bottom:4px;">
-                <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> Max Muster
+                <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> [wird beim PDF-Erstellen gesetzt]
               </div>` 
             : ""}
           <div style="font-size:7.5px;margin-bottom:5px;color:#444;">${einleitung.replace(/\n/g, "<br/>")}</div>
@@ -456,7 +456,7 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
           ${sampleInfo}
           ${vorlage.ansprechperson_aktiv 
             ? `<div style="font-size:7.5px;color:#444;margin-bottom:4px;">
-                <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> Max Muster
+                <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> [wird beim PDF-Erstellen gesetzt]
               </div>` 
             : ""}
           <div style="font-size:7.5px;margin-bottom:5px;color:#444;">${einleitung.replace(/\n/g, "<br/>")}</div>
@@ -507,7 +507,7 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
           ${sampleInfo}
           ${vorlage.ansprechperson_aktiv 
             ? `<div style="font-size:7.5px;color:#444;margin-bottom:4px;">
-                <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> Max Muster
+                <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> [wird beim PDF-Erstellen gesetzt]
               </div>` 
             : ""}
           <div style="font-size:7.5px;margin-bottom:5px;color:#444;">${einleitung.replace(/\n/g, "<br/>")}</div>
@@ -561,7 +561,7 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
           ${sampleInfo}
         ${vorlage.ansprechperson_aktiv 
           ? `<div style="font-size:7.5px;color:#444;margin-bottom:4px;">
-              <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> Max Muster
+              <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> [wird beim PDF-Erstellen gesetzt]
             </div>` 
           : ""}
         <div style="font-size:7.5px;margin-bottom:6px;color:#444;">${einleitung.replace(/\n/g, "<br/>")}</div>
@@ -612,7 +612,7 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
           ${sampleInfo}
         ${vorlage.ansprechperson_aktiv 
           ? `<div style="font-size:7.5px;color:#444;margin-bottom:4px;">
-              <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> Max Muster
+              <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> [wird beim PDF-Erstellen gesetzt]
             </div>` 
           : ""}
         <div style="font-size:7.5px;margin-bottom:6px;color:#444;">${einleitung.replace(/\n/g, "<br/>")}</div>
@@ -670,7 +670,7 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
           ${sampleInfo}
         ${vorlage.ansprechperson_aktiv 
           ? `<div style="font-size:7.5px;color:#444;margin-bottom:4px;">
-              <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> Max Muster
+              <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> [wird beim PDF-Erstellen gesetzt]
             </div>` 
           : ""}
         <div style="font-size:7.5px;margin-bottom:6px;color:#444;">${einleitung.replace(/\n/g, "<br/>")}</div>
@@ -715,7 +715,7 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
         ${sampleInfo}
         ${vorlage.ansprechperson_aktiv 
           ? `<div style="font-size:7.5px;color:#444;margin-bottom:4px;">
-              <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> Max Muster
+              <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> [wird beim PDF-Erstellen gesetzt]
             </div>` 
           : ""}
         <div style="font-size:7.5px;margin-bottom:6px;color:#444;">${einleitung.replace(/\n/g, "<br/>")}</div>

@@ -1304,7 +1304,7 @@ export async function registerRoutes(
       args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
     });
     const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "networkidle0" });
+    await page.setContent(html, { waitUntil: "domcontentloaded" });
     const pdfBuf = await page.pdf({ format: "A4", margin: { top: "10mm", bottom: "10mm", left: "10mm", right: "10mm" } });
     await browser.close();
     return Buffer.from(pdfBuf);
@@ -2610,8 +2610,8 @@ export async function registerRoutes(
       const datumStr = offerte.datum
         ? new Date(offerte.datum).toLocaleDateString("de-CH", { day: "2-digit", month: "long", year: "numeric" })
         : new Date().toLocaleDateString("de-CH", { day: "2-digit", month: "long", year: "numeric" });
-      const gueltigBisStr = offerte.gueltig_bis
-        ? new Date(offerte.gueltig_bis).toLocaleDateString("de-CH", { day: "2-digit", month: "long", year: "numeric" })
+      const gueltigBisStr = offerte.gueltigkeit
+        ? new Date(offerte.gueltigkeit).toLocaleDateString("de-CH", { day: "2-digit", month: "long", year: "numeric" })
         : undefined;
 
       const html = await buildPdfHtml("offerte", {
@@ -2665,8 +2665,8 @@ export async function registerRoutes(
       const datumStr = offerte.datum
         ? new Date(offerte.datum).toLocaleDateString("de-CH", { day: "2-digit", month: "long", year: "numeric" })
         : new Date().toLocaleDateString("de-CH", { day: "2-digit", month: "long", year: "numeric" });
-      const gueltigBisStr = offerte.gueltig_bis
-        ? new Date(offerte.gueltig_bis).toLocaleDateString("de-CH", { day: "2-digit", month: "long", year: "numeric" })
+      const gueltigBisStr = offerte.gueltigkeit
+        ? new Date(offerte.gueltigkeit).toLocaleDateString("de-CH", { day: "2-digit", month: "long", year: "numeric" })
         : undefined;
 
       const html = await buildPdfHtml("offerte", {
