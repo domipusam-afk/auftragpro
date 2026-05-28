@@ -194,7 +194,7 @@ export default function Offerten() {
                         <Eye className="w-3.5 h-3.5 mr-1" /> PDF
                       </Button>
 
-                      <Button size="sm" variant="outline" title="Als PDF herunterladen" className="min-h-[36px] min-w-[36px]" onClick={() => window.open(`${API_BASE}/api/offerten/${o.id}/pdf`, "_blank")}>
+                      <Button size="sm" variant="outline" title="PDF direkt herunterladen" className="min-h-[36px] min-w-[36px]" onClick={() => handlePdf(o.id, o.nr, aMap.get(o.auftrag_id)?.verantwortlicher)}>
                         <FileDown className="h-3.5 w-3.5" />
                       </Button>
 

@@ -858,8 +858,8 @@ export async function registerRoutes(
     const logoUrl    = v.logo_data_url || null;
     const slogan     = v.slogan       || "Ihr Partner für Metallbau & Schreinerei";
     const logoPos    = v.logo_pos     || "links";
-    const einl       = v.einleitung   || data.einleitung || "";
-    const schl       = v.schluss      || data.schluss     || "";
+    const einl       = (v.einleitung !== undefined && v.einleitung !== null) ? v.einleitung : (data.einleitung || "");
+    const schl       = (v.schluss !== undefined && v.schluss !== null) ? v.schluss : (data.schluss || "");
     const showContact= v.show_contact !== false;
     const showPageNum= v.show_page_num !== false;
     const wmUrl      = v.watermark_data_url || null;
@@ -2585,6 +2585,12 @@ export async function registerRoutes(
 
       res.json({ ok: true, rechnung });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+
+  // ─── Keep-Alive Ping (verhindert Render Free Tier Sleep) ────────────────────
+  app.get("/api/ping", (_req, res) => {
+    res.json({ ok: true, ts: new Date().toISOString(), service: "AuftragsPro" });
   });
 
   // ─── Offerte PDF (Vorlage aus DB) ─────────────────────────────────────────────
