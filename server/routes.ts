@@ -988,7 +988,7 @@ export async function registerRoutes(
     if (data.gueltigBis)  metaHtml += `&nbsp;&nbsp;<span><b style="color:#999;font-weight:400">Gültig bis: </b>${data.gueltigBis}</span>`;
     if (data.faelligDatum) metaHtml += `&nbsp;&nbsp;<span><b style="color:#999;font-weight:400">Zahlbar bis: </b>${data.faelligDatum}</span>`;
 
-    // Footer
+    // Footer — farbiger Balken wie in der Vorschau
     const footerHtml = design === "E"
       ? `<div style="margin-top:auto;">
           <div style="height:2px;background:linear-gradient(90deg,${fc},${hc});margin:0 40px;border-radius:2px;"></div>
@@ -997,9 +997,11 @@ export async function registerRoutes(
             ${showPageNum ? `<div>Seite 1 / 1</div>` : ""}
           </div>
         </div>`
-      : `<div style="margin-top:auto;padding:12px 40px 18px;border-top:1px solid ${fc};font-size:8pt;color:#777;display:flex;justify-content:space-between;align-items:flex-end;">
-          ${showContact ? `<div>${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt}<br/>${data.firmaTel} · ${data.firmaEmail}</div>` : "<div></div>"}
-          ${showPageNum ? `<div>Seite 1 / 1</div>` : ""}
+      : `<div style="margin-top:auto;">
+          <div style="background:${fc};color:#fff;padding:6px 40px;font-size:8pt;display:flex;justify-content:space-between;align-items:center;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+            ${showContact ? `<div>${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt} · ${data.firmaTel} · ${data.firmaEmail}</div>` : "<div></div>"}
+            ${showPageNum ? `<div>Seite 1 / 1</div>` : ""}
+          </div>
         </div>`;
 
     // Für Design A: Titel ist bereits im Header — nicht nochmals im Body zeigen
@@ -1029,7 +1031,7 @@ export async function registerRoutes(
     if (design === "D") {
       return `<!DOCTYPE html><html><head><meta charset="utf-8">
       <style>
-        * { box-sizing:border-box; }
+        * { box-sizing:border-box; -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
         body { font-family:Arial,sans-serif;font-size:10pt;color:#222;margin:0;padding:0; }
         table { width:100%;border-collapse:collapse; }
         th { background:${hc};color:#fff;padding:8px 4px;text-align:left;font-size:8.5pt; }
@@ -1086,7 +1088,7 @@ export async function registerRoutes(
     if (design === "G") {
       return `<!DOCTYPE html><html><head><meta charset="utf-8">
       <style>
-        * { box-sizing:border-box; }
+        * { box-sizing:border-box; -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
         body { font-family:Arial,Helvetica,sans-serif;font-size:10pt;color:#222;margin:0;padding:0; }
         table { width:100%;border-collapse:collapse; }
         th { background:#f5f5f5;color:#333;padding:8px 4px;text-align:left;font-size:8.5pt;border-bottom:1.5px solid #222; }
@@ -1151,7 +1153,7 @@ export async function registerRoutes(
     if (design === "H") {
       return `<!DOCTYPE html><html><head><meta charset="utf-8">
       <style>
-        * { box-sizing:border-box; }
+        * { box-sizing:border-box; -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
         body { font-family:Arial,Helvetica,sans-serif;font-size:10pt;color:#222;margin:0;padding:0; }
         table { width:100%;border-collapse:collapse; }
         th { background:white;color:#333;padding:8px 4px;text-align:left;font-size:8.5pt;border-bottom:1.5px solid #222; }
@@ -1213,7 +1215,7 @@ export async function registerRoutes(
     if (design === "I") {
       return `<!DOCTYPE html><html><head><meta charset="utf-8">
       <style>
-        * { box-sizing:border-box; }
+        * { box-sizing:border-box; -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
         body { font-family:Arial,Helvetica,sans-serif;font-size:10pt;color:#222;margin:0;padding:0; }
         table { width:100%;border-collapse:collapse; }
         th { background:${hc}20;color:#333;padding:8px 4px;text-align:left;font-size:8.5pt;border-bottom:1.5px solid ${hc}; }
@@ -1273,7 +1275,7 @@ export async function registerRoutes(
 
     return `<!DOCTYPE html><html><head><meta charset="utf-8">
     <style>
-      * { box-sizing:border-box; }
+      * { box-sizing:border-box; -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
       body { font-family:${design === "E" ? "Georgia,serif" : "Arial,sans-serif"};font-size:10pt;color:#222;margin:0;padding:0; }
       table { width:100%;border-collapse:collapse; }
       th { background:${hc};color:#fff;padding:8px 4px;text-align:left;font-size:8.5pt; }
@@ -1322,7 +1324,7 @@ export async function registerRoutes(
     });
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "domcontentloaded" });
-    const pdfBuf = await page.pdf({ format: "A4", margin: { top: "10mm", bottom: "10mm", left: "10mm", right: "10mm" } });
+    const pdfBuf = await page.pdf({ format: "A4", printBackground: true, margin: { top: "10mm", bottom: "10mm", left: "10mm", right: "10mm" } });
     await browser.close();
     return Buffer.from(pdfBuf);
   }

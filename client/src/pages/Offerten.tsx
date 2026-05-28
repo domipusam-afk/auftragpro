@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Eye, Trash, Mail, FileDown, ArrowRight, CheckCircle2 } from "lucide-react";
+import { Trash, Mail, FileDown, ArrowRight, CheckCircle2 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Offerte, OffertePosition, Auftrag } from "@shared/schema";
@@ -188,12 +188,8 @@ export default function Offerten() {
                         </SelectContent>
                       </Select>
 
-                      <Button size="sm" variant="outline" onClick={() => handlePdf(o.id, o.nr, aMap.get(o.auftrag_id)?.verantwortlicher)}>
-                        <Eye className="w-3.5 h-3.5 mr-1" /> PDF
-                      </Button>
-
-                      <Button size="sm" variant="outline" title="PDF direkt herunterladen" className="min-h-[36px] min-w-[36px]" onClick={() => handlePdf(o.id, o.nr, aMap.get(o.auftrag_id)?.verantwortlicher)}>
-                        <FileDown className="h-3.5 w-3.5" />
+                      <Button size="sm" variant="outline" title="PDF im Browser öffnen" onClick={() => handlePdf(o.id, o.nr, aMap.get(o.auftrag_id)?.verantwortlicher)}>
+                        <FileDown className="h-3.5 w-3.5 mr-1" /> PDF
                       </Button>
 
                       <Button
