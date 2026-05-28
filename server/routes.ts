@@ -960,7 +960,7 @@ export async function registerRoutes(
 
     // Positionen Tabelle
     const posHtml = data.positionen.map((p: any, i: number) => {
-      const bet = parseFloat(p.menge || p.anzahl || 1) * parseFloat(p.einzelpreis || p.preis || 0);
+      const bet = Number(p.total ?? p.betrag ?? (parseFloat(p.menge || p.anzahl || 1) * parseFloat(p.einzelpreis || p.preis || 0)));
       return `<tr style="border-bottom:1px solid #f0ebde">
         <td style="padding:7px 4px;color:#666">${i+1}</td>
         <td style="padding:7px 4px">${p.beschreibung || p.titel || ""}</td>
@@ -1350,11 +1350,11 @@ export async function registerRoutes(
       const sMap: Record<string, string> = {};
       for (const s of (settingsArr || [])) sMap[s.schluessel] = s.wert;
 
-      const empfaenger  = quelleOfferte?.empfaenger_name || auftrag?.kunde_name || rechnung.kunde_name || "";
+      const empfaenger  = quelleOfferte?.empfaenger_name || auftrag?.kunde || rechnung.kunde_name || "";
       const empStrasse  = quelleOfferte?.empfaenger_strasse || auftrag?.kunde_adresse || "";
       const empPlzOrt   = quelleOfferte?.empfaenger_plz_ort || "";
       const positionen: any[] = Array.isArray(rechnung.positionen) ? rechnung.positionen : [];
-      const subtotal    = positionen.reduce((s: number, p: any) => s + Number(p.total ?? (Number(p.menge||0)*Number(p.einzelpreis||0))), 0);
+      const subtotal    = positionen.reduce((s: number, p: any) => s + Number(p.total ?? p.betrag ?? (Number(p.menge||p.anzahl||1)*Number(p.einzelpreis||p.preis||0))), 0);
       const mwstPct     = 8.1;
       const mwstBetrag  = subtotal * (mwstPct / 100);
       const totalInkl   = subtotal + mwstBetrag;
