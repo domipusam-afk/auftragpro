@@ -310,7 +310,7 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
             </div>
           </div>
           <div style="border-bottom:2px solid ${header_color};margin:8px 0 6px 0;"></div>
-          <div style="margin-top:${Math.max(0,(absender_top_mm||55)-25)}px;margin-left:${(absender_left_mm||0)*1.7}px;font-size:7.5px;color:#555;margin-bottom:6px;${absender_pos_h==='rechts'?'text-align:right;':''}${absender_pos_h==='mitte'?'text-align:center;':''}">
+          <div style="margin-top:${(absender_top_mm||55)*0.45}px;margin-left:${(absender_left_mm||0)*2.8}px;font-size:7.5px;color:#555;margin-bottom:6px;${absender_pos_h==='rechts'?'text-align:right;':''}${absender_pos_h==='mitte'?'text-align:center;':''}">
             <div style="font-weight:600;color:#222;">Empfänger</div>
             <div>Musterfirma AG</div>
             <div>Musterstrasse 42</div>
@@ -542,7 +542,7 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
             </div>
           </div>
           <div style="border-bottom:0.5px solid #ccc;margin:8px 0;"></div>
-          <div style="margin-top:${Math.max(0,(absender_top_mm||55)-30)}px;margin-left:${(absender_left_mm||0)*1.7}px;font-size:7px;color:#888;margin-bottom:8px;">
+          <div style="margin-top:${(absender_top_mm||55)*0.45}px;margin-left:${(absender_left_mm||0)*2.8}px;font-size:7px;color:#888;margin-bottom:8px;">
             <div>Schneggenburger GmbH &middot; Hefenhoferstrasse 7 &middot; 8580 Sommeri</div>
           </div>
           <div style="font-size:7.5px;color:#444;margin-bottom:10px;line-height:1.6;margin-left:${(absender_left_mm||0)*1.7}px;${absender_pos_h==='rechts'?'text-align:right;':''}${absender_pos_h==='mitte'?'text-align:center;':''}">

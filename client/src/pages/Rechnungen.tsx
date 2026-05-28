@@ -390,18 +390,17 @@ Schneggenburger GmbH`,
                 <Label className="text-xs text-gray-600">Intern (Mitarbeiter / Verantwortlicher)</Label>
                 <Select
                   value={pdfDialog.intern}
-                  onValueChange={(v) => setPdfDialog(d => d ? { ...d, intern: v } : d)}
+                  onValueChange={(v) => setPdfDialog(d => d ? { ...d, intern: v === "__keiner__" ? "" : v } : d)}
                 >
                   <SelectTrigger className="h-8 text-sm">
                     <SelectValue placeholder="Mitarbeiter wählen..." />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">– Keiner –</SelectItem>
-                    {mitarbeiterListe.map((m: any) => (
-                      <SelectItem key={m.id} value={m.name || m.vorname + " " + m.nachname}>
-                        {m.name || (m.vorname + " " + m.nachname)}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="__keiner__">– Keiner –</SelectItem>
+                    {mitarbeiterListe.map((m: any) => {
+                      const name = [m.vorname, m.nachname].filter(Boolean).join(" ") || m.name || String(m.id);
+                      return <SelectItem key={m.id} value={name}>{name}</SelectItem>;
+                    })}
                   </SelectContent>
                 </Select>
                 <Input
@@ -415,18 +414,17 @@ Schneggenburger GmbH`,
                 <Label className="text-xs text-gray-600">Extern (Ansprechperson beim Kunden)</Label>
                 <Select
                   value={pdfDialog.extern}
-                  onValueChange={(v) => setPdfDialog(d => d ? { ...d, extern: v } : d)}
+                  onValueChange={(v) => setPdfDialog(d => d ? { ...d, extern: v === "__keiner__" ? "" : v } : d)}
                 >
                   <SelectTrigger className="h-8 text-sm">
                     <SelectValue placeholder="Kontakt wählen..." />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">– Keiner –</SelectItem>
-                    {mitarbeiterListe.map((m: any) => (
-                      <SelectItem key={m.id} value={m.name || m.vorname + " " + m.nachname}>
-                        {m.name || (m.vorname + " " + m.nachname)}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="__keiner__">– Keiner –</SelectItem>
+                    {mitarbeiterListe.map((m: any) => {
+                      const name = [m.vorname, m.nachname].filter(Boolean).join(" ") || m.name || String(m.id);
+                      return <SelectItem key={m.id} value={name}>{name}</SelectItem>;
+                    })}
                   </SelectContent>
                 </Select>
                 <Input
