@@ -960,13 +960,18 @@ export async function registerRoutes(
 
     // Positionen Tabelle
     const posHtml = data.positionen.map((p: any, i: number) => {
-      const bet = Number(p.total ?? p.betrag ?? (parseFloat(p.menge || p.anzahl || 1) * parseFloat(p.einzelpreis || p.preis || 0)));
+      const menge   = parseFloat(p.menge || p.anzahl || 1);
+      const ep      = parseFloat(p.einzelpreis || p.preis || 0);
+      const bet     = Number(p.total ?? p.betrag ?? (menge * ep));
+      // Bezeichnung: titel bevorzugt, dann beschreibung
+      const bezeichnung = [p.titel || p.beschreibung || "", p.titel ? (p.beschreibung || "") : ""].filter(Boolean).join(" — ");
+      const einheit = p.einheit || "Stk.";
       return `<tr style="border-bottom:1px solid #f0ebde">
-        <td style="padding:7px 4px;color:#666">${i+1}</td>
-        <td style="padding:7px 4px">${p.beschreibung || p.titel || ""}</td>
-        <td style="padding:7px 4px;text-align:right;color:#555">${parseFloat(p.menge||p.anzahl||1).toFixed(2)}</td>
-        <td style="padding:7px 4px;text-align:right;color:#555">${fmtCHF(parseFloat(p.einzelpreis||p.preis||0))}</td>
-        <td style="padding:7px 4px;text-align:right;font-weight:600">${fmtCHF(bet)}</td>
+        <td style="padding:7px 4px;color:#999;width:28px">${(p.nr ?? i+1)}</td>
+        <td style="padding:7px 4px;font-weight:500">${bezeichnung}</td>
+        <td style="padding:7px 4px;text-align:right;color:#555;width:55px">${menge % 1 === 0 ? menge.toFixed(0) : menge.toFixed(2)} ${einheit}</td>
+        <td style="padding:7px 4px;text-align:right;color:#555;width:90px">${fmtCHF(ep)}</td>
+        <td style="padding:7px 4px;text-align:right;font-weight:600;width:90px">${fmtCHF(bet)}</td>
       </tr>`;
     }).join("");
 
