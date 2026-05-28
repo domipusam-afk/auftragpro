@@ -1124,7 +1124,9 @@ export async function registerRoutes(
         : undefined;
 
       // QR-Zahlschein (Schweizer Standard)
-      const iban = sMap.bank_iban || "CH00 0000 0000 0000 0000 0";
+      const ibanRaw = sMap.bank_iban || "";
+      const ibanMissing = !ibanRaw || ibanRaw.trim() === "";
+      const iban = ibanRaw || "CH00 0000 0000 0000 0000 0";
       const ibanClean = iban.replace(/\s/g, "");
       const betragFormatted = totalInkl.toFixed(2);
       // QR-Code Daten (Swiss QR Bill Referenz-Format)
@@ -1152,6 +1154,7 @@ export async function registerRoutes(
       const qrZahlscheinHtml = `
         <div style="page-break-before:always;padding:20px 0 0 0;">
           <div style="border-top:2px solid #000;padding-top:16px;">
+            ${ibanMissing ? `<div style="background:#fff3cd;border:1px solid #ffc107;padding:8px 12px;border-radius:4px;margin-bottom:12px;font-size:8.5pt;color:#856404;">⚠️ Bitte IBAN in Einstellungen hinterlegen damit der QR-Zahlschein korrekt generiert wird.</div>` : ""}
             <div style="font-size:9pt;font-weight:700;margin-bottom:10px;letter-spacing:1px;">ZAHLTEIL / SECTION DE PAIEMENT</div>
             <div style="display:flex;gap:20px;align-items:flex-start;">
               ${qrCodeDataUrl ? `<div style="flex-shrink:0;border:1px solid #ccc;padding:4px;"><img src="${qrCodeDataUrl}" style="width:100px;height:100px;display:block;" /></div>` : '<div style="width:100px;height:100px;border:2px solid #ccc;display:flex;align-items:center;justify-content:center;font-size:8pt;color:#666;">QR-Code</div>'}
@@ -4382,29 +4385,43 @@ export async function registerRoutes(
   app.post("/api/email/send", async (req, res) => {
     try {
       const { to, subject, body, type, refId } = req.body;
-      // Try to load SMTP config from einstellungen
-      const { data: einst } = await supabase.from("einstellungen").select("smtp_host,smtp_port,smtp_user,smtp_pass,smtp_from").limit(1).single();
-      if (!einst || !einst.smtp_host || !einst.smtp_user) {
-        return res.json({ ok: false, message: "SMTP in Einstellungen konfigurieren" });
+      // SMTP-Config aus Key-Value-Tabelle laden (schluessel/wert)
+      const { data: einstellungenArr } = await supabase.from("einstellungen").select("schluessel,wert");
+      const sm: Record<string, string> = {};
+      for (const e of (einstellungenArr || [])) sm[e.schluessel] = e.wert;
+
+      const smtpHost = sm.smtp_host || "";
+      const smtpPort = Number(sm.smtp_port) || 587;
+      const smtpUser = sm.smtp_user || "";
+      const smtpPass = sm.smtp_passwort || sm.smtp_pass || "";
+      const smtpFrom = sm.smtp_von || sm.smtp_from || smtpUser || sm.email || "info@schneggenburger.ch";
+      const smtpSsl  = sm.smtp_ssl || "starttls";
+
+      if (!smtpHost || !smtpUser || !smtpPass) {
+        return res.json({ ok: false, message: "SMTP nicht konfiguriert. Bitte in Einstellungen > E-Mail ausfüllen (Host, Benutzer, Passwort)." });
       }
-      // Try to use nodemailer if available
+
       try {
         const nodemailer = await import("nodemailer");
+        const secure = smtpSsl === "ssl" || smtpPort === 465;
         const transporter = nodemailer.default.createTransport({
-          host: einst.smtp_host,
-          port: Number(einst.smtp_port) || 587,
-          secure: Number(einst.smtp_port) === 465,
-          auth: { user: einst.smtp_user, pass: einst.smtp_pass },
+          host: smtpHost,
+          port: smtpPort,
+          secure,
+          auth: { user: smtpUser, pass: smtpPass },
+          tls: secure ? undefined : { ciphers: "SSLv3" },
         });
         await transporter.sendMail({
-          from: einst.smtp_from || einst.smtp_user,
+          from: `"${sm.firmenname || "AuftragsPro"}" <${smtpFrom}>`,
           to,
           subject,
           text: body,
+          html: body ? `<div style="font-family:Arial,sans-serif;font-size:11pt;line-height:1.6;">${body.replace(/\n/g,"<br/>")}</div>` : undefined,
         });
-        res.json({ ok: true, message: "E-Mail gesendet" });
-      } catch (nmErr) {
-        res.json({ ok: false, message: "SMTP in Einstellungen konfigurieren" });
+        res.json({ ok: true, message: "E-Mail gesendet an " + to });
+      } catch (nmErr: any) {
+        console.error("SMTP Fehler:", nmErr.message);
+        res.json({ ok: false, message: "SMTP-Fehler: " + (nmErr.message || "Verbindung fehlgeschlagen") });
       }
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
