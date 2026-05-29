@@ -1409,7 +1409,7 @@ export async function registerRoutes(
       </div>
       <!-- MAIN CONTENT -->
       <div class="pdf-content" style="padding:4px 40px 10px;">
-        <div style="margin-top:${Math.max(2, absenderTopMm - headerHeightMm - 8)}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:6mm;font-size:10pt;color:#333;${absenderPosH==="rechts"?"text-align:right;":absenderPosH==="mitte"?"text-align:center;":"text-align:left;"}line-height:1.55;">
+        <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:6mm;font-size:10pt;color:#333;${absenderPosH==="rechts"?"text-align:right;":absenderPosH==="mitte"?"text-align:center;":"text-align:left;"}line-height:1.55;">
           <div style="font-weight:600;">${data.empfaenger}</div>
           ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
           ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
@@ -1492,7 +1492,7 @@ html: string): Promise<Buffer> {
     });
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "domcontentloaded" });
-    const pdfBuf = await page.pdf({ format: "A4", printBackground: true, margin: { top: "0", bottom: "0", left: "0", right: "0" } });
+    const pdfBuf = await page.pdf({ format: "A4", printBackground: true, margin: { top: "10mm", bottom: "10mm", left: "10mm", right: "10mm" } });
     await browser.close();
     return Buffer.from(pdfBuf);
   }
@@ -1626,7 +1626,7 @@ html: string): Promise<Buffer> {
       // Swiss QR Bill — offizielles 3-Spalten Layout (SIX Standard)
       // Spalte 1: Empfangsschein (62mm), Spalte 2: Zahlteil+QR (105mm), Spalte 3: Infos (Rest)
       const qrZahlscheinHtml = `
-        <div style="page-break-before:always;font-family:Arial,Helvetica,sans-serif;font-size:10pt;color:#000;width:100%;margin-left:-40px;margin-right:-40px;padding:0 40px;box-sizing:border-box;">
+        <div style="page-break-before:always;font-family:Arial,Helvetica,sans-serif;font-size:10pt;color:#000;width:190mm;box-sizing:border-box;">
           ${(ibanMissing || qrIbanError) ? `<div style="background:#fff3cd;border:1px solid #ffc107;padding:6px 10px;margin-bottom:4mm;font-size:8pt;color:#856404;">&#9888; ${qrIbanError || "Bitte IBAN in Einstellungen hinterlegen."}</div>` : ""}
 
           <!-- Trennlinie oben mit Schere -->
