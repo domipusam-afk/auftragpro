@@ -3477,22 +3477,30 @@ html: string): Promise<Buffer> {
         const rect = (x: number, y: number, w: number, h: number, col: any) =>
           pg.drawRectangle({ x, y, width: w, height: h, color: col });
 
-        // Logo
+        // Farbiger Header-Balken
+        rect(0, H - 42, W, 42, brown);
+
+        // Logo oben links im Header
         if (logoImg) {
-          const ld = logoImg.scaleToFit(50, 50);
-          pg.drawImage(logoImg, { x: W - mR - ld.width, y: H - ld.height - mT, width: ld.width, height: ld.height });
+          const ld = logoImg.scaleToFit(32, 32);
+          pg.drawImage(logoImg, { x: mL, y: H - 38, width: ld.width, height: ld.height });
         }
 
-        // Title
-        let curY = H - mT - 5;
-        d(isVK ? "Vorkalkulation" : "Nachkalkulation / Soll-Ist-Vergleich", mL, curY, 14, true, brown);
-        curY -= 16;
-        d(`Auftrag: ${auftrag.nr} – ${auftrag.titel}`, mL, curY, 9.5, false, grey);
+        // Titel + Datum im Header (weiss)
+        const white = rgb(1, 1, 1);
+        d(isVK ? "VORKALKULATION" : "NACHKALKULATION / SOLL-IST-VERGLEICH", logoImg ? mL + 40 : mL, H - 20, 12, true, white);
+        const datumNow = new Date().toLocaleDateString("de-CH", { day: "2-digit", month: "long", year: "numeric" });
+        const datumStr = `Datum: ${datumNow}`;
+        const datumW = font.widthOfTextAtSize(datumStr, 8);
+        d(datumStr, W - mR - datumW, H - 20, 8, false, white);
+        d(`Nr. ${auftrag.nr || ""}  ·  ${auftrag.titel || ""}`, logoImg ? mL + 40 : mL, H - 32, 8.5, false, rgb(0.95, 0.87, 0.75));
+
+        // Auftragsdaten unterhalb Header
+        let curY = H - 52;
+        d(`Kunde: ${auftrag.kunde || "-"}`, mL, curY, 8.5, false, grey);
         curY -= 10;
-        d(`Kunde: ${auftrag.kunde || "-"}`, mL, curY, 9.5, false, grey);
-        curY -= 8;
-        d((offSMap.firmenname||"Schneggenburger GmbH")+"  |  "+(offSMap.adresse||"Hefenhoferstrasse 7")+"  |  "+(offSMap.plz_ort||"8580 Sommeri"), mL, curY, 7.5, false, grey);
-        curY -= 6;
+        d((offSMap.firmenname||"Schneggenburger GmbH")+"  |  "+(offSMap.adresse||"Hefenhoferstrasse 7")+"  |  "+(offSMap.plz_ort||"8580 Sommeri"), mL, curY, 7.5, false, rgb(0.6, 0.6, 0.6));
+        curY -= 4;
         ln(mL, curY, W - mR, curY, 0.5, grey);
         curY -= 10;
 
@@ -3503,6 +3511,7 @@ html: string): Promise<Buffer> {
         // ─── VORKALKULATION PDF ────────────────────────────────────────────────
         const { data: stunden = [] } = await supabase.from("vorkalkulation_stunden").select("*").eq("auftrag_id", id);
         const { data: material = [] } = await supabase.from("vorkalkulation_material").select("*").eq("auftrag_id", id).order("pos");
+        const { data: hilfsmaterial = [] } = await supabase.from("vorkalkulation_hilfsmaterial").select("*").eq("auftrag_id", id).order("pos");
         const { data: fremd = [] } = await supabase.from("vorkalkulation_fremdleistungen").select("*").eq("auftrag_id", id);
         const { data: soek = [] } = await supabase.from("vorkalkulation_soek").select("*").eq("auftrag_id", id);
         const { data: cfgRaw } = await supabase.from("vorkalkulation_config").select("*").eq("auftrag_id", id).maybeSingle();
@@ -3511,9 +3520,10 @@ html: string): Promise<Buffer> {
         // Totals
         const totalStunden = (stunden as any[]).reduce((s, r) => s + Number(r.soll_stunden) * Number(r.stundensatz), 0);
         const totalMaterial = (material as any[]).reduce((s, r) => s + Number(r.total_chf), 0);
+        const totalHilfsmat = (hilfsmaterial as any[]).reduce((s, r) => s + Number(r.total_chf), 0);
         const totalFremd = (fremd as any[]).reduce((s, r) => s + Number(r.total_chf), 0);
         const totalSoek = (soek as any[]).reduce((s, r) => s + Number(r.total_chf), 0);
-        const subtotal = totalStunden + totalMaterial + totalFremd + totalSoek;
+        const subtotal = totalStunden + totalMaterial + totalHilfsmat + totalFremd + totalSoek;
         const risikoAmt = subtotal * (Number(cfg.risiko_gewinn_prozent) / 100);
         const nettoVorRabatt = subtotal + risikoAmt;
         const rabattAmt = nettoVorRabatt * (Number(cfg.rabatt_prozent) / 100);
@@ -3590,6 +3600,39 @@ html: string): Promise<Buffer> {
         p1.d(matStr, cMtotal - matSW, y, 9, true);
         y -= 20;
 
+        // Section: Hilfsmaterial (Sheet 2)
+        if ((hilfsmaterial as any[]).length > 0) {
+          p1.rect(mL, y - 2, pageW, 14, lgrey);
+          p1.d("B2 – Hilfsmaterial (Sheet 2)", mL + 4, y, 9, true, brown);
+          y -= 14;
+          const cHKat = mL + 4; const cHBez = mL + 100; const cHLief = mL + 250; const cHMng = mL + 360; const cHPre = mL + 400; const cHTot = W - mR;
+          p1.rect(mL, y - 2, pageW, 12, rgb(0.97, 0.97, 0.97));
+          p1.d("Kategorie", cHKat, y, 7.5, true, grey);
+          p1.d("Bezeichnung", cHBez, y, 7.5, true, grey);
+          p1.d("Lieferant", cHLief, y, 7.5, true, grey);
+          p1.d("Menge", cHMng, y, 7.5, true, grey);
+          p1.d("Fr./Einh.", cHPre, y, 7.5, true, grey);
+          p1.d("Total CHF", cHTot - font.widthOfTextAtSize("Total CHF", 7.5), y, 7.5, true, grey);
+          y -= 4; p1.ln(mL, y, W - mR, y, 0.4, grey); y -= 6;
+          for (const r of (hilfsmaterial as any[])) {
+            const tStr = fmt(Number(r.total_chf));
+            const tsw = font.widthOfTextAtSize(tStr, 8.5);
+            p1.d((r.kategorie || "").slice(0, 15), cHKat, y, 8.5, false);
+            p1.d((r.bezeichnung || "").slice(0, 22), cHBez, y, 8.5, false);
+            p1.d((r.lieferant || "").slice(0, 18), cHLief, y, 8.5, false);
+            p1.d(`${r.stueck || 1} ${r.einheit || "Stk"}`, cHMng, y, 8.5, false);
+            p1.d(fmt(Number(r.preis_pro_einheit)), cHPre, y, 8.5, false);
+            p1.d(tStr, cHTot - tsw, y, 8.5, false);
+            y -= 13;
+          }
+          const hilfsStr = fmt(totalHilfsmat);
+          const hilfsSW = fontB.widthOfTextAtSize(hilfsStr, 9);
+          p1.ln(W - mR - 120, y + 8, W - mR, y + 8, 0.5, grey);
+          p1.d("Total Hilfsmaterial:", W - mR - 130, y, 8.5, false, grey);
+          p1.d(hilfsStr, cHTot - hilfsSW, y, 9, true);
+          y -= 20;
+        }
+
         // Section: Fremdleistungen
         p1.rect(mL, y - 2, pageW, 14, lgrey);
         p1.d("C – Fremdleistungen", mL + 4, y, 9, true, brown);
@@ -3663,6 +3706,7 @@ html: string): Promise<Buffer> {
 
         summaryRow("Stunden:", fmt(totalStunden), false);
         summaryRow("Material:", fmt(totalMaterial), false);
+        if (totalHilfsmat > 0) summaryRow("Hilfsmaterial:", fmt(totalHilfsmat), false);
         summaryRow("Fremdleistungen:", fmt(totalFremd), false);
         summaryRow("SOEK:", fmt(totalSoek), false);
         p1.ln(W - mR - 230, y + 8, W - mR, y + 8, 0.5, grey); y -= 5;
@@ -3689,12 +3733,16 @@ html: string): Promise<Buffer> {
           p1.d(cfg.notiz.slice(0, 120), mL, y, 8.5, false, grey);
         }
 
-        // Footer
-        const pg1 = pdfDoc.getPages()[0];
-        const ftxt = `Vorkalkulation ${auftrag.nr} – Schneggenburger GmbH`;
-        pg1.drawText(ftxt, { x: mL, y: 25, size: 7.5, font, color: grey });
-        pg1.drawLine({ start: { x: mL, y: 38 }, end: { x: W - mR, y: 38 }, thickness: 0.3, color: grey });
-        pg1.drawText(`Erstellt: ${new Date().toLocaleDateString("de-CH")}`, { x: W - mR - 80, y: 25, size: 7.5, font, color: grey });
+        // Footer — farbiger Balken auf allen Seiten
+        const white2 = rgb(1, 1, 1);
+        for (const pg2 of pdfDoc.getPages()) {
+          pg2.drawRectangle({ x: 0, y: 0, width: W, height: 22, color: brown });
+          const firmaFull = (offSMap.firmenname||"Schneggenburger GmbH")+" · "+(offSMap.adresse||"Hefenhoferstrasse 7")+" · "+(offSMap.plz_ort||"8580 Sommeri")+" · "+(offSMap.telefon||"071 411 16 87");
+          pg2.drawText(firmaFull, { x: mL, y: 7, size: 6.5, font, color: white2 });
+          const erstelltStr = `Erstellt: ${new Date().toLocaleDateString("de-CH")}`;
+          const erstelltW = font.widthOfTextAtSize(erstelltStr, 6.5);
+          pg2.drawText(erstelltStr, { x: W - mR - erstelltW, y: 7, size: 6.5, font, color: white2 });
+        }
 
       } else {
         // ─── NACHKALKULATION PDF (Soll-Ist-Vergleich) ─────────────────────────
