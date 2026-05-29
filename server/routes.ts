@@ -884,9 +884,11 @@ export async function registerRoutes(
     const wmSize     = v.watermark_size || 60;
     const wmPos      = v.watermark_pos || "bottom";
     const showTotals = data.showTotals !== false;
-    const absenderPosH  = v.absender_pos_h  || "links";
-    const absenderTopMm  = Number(v.absender_top_mm) || 55;
-    const absenderLeftMm = Number(v.absender_left_mm) || 0;
+    // Couvert-Fenster-Einstellungen nur für Offerte/Rechnung relevant
+    const _useCovert = ["offerte", "rechnung", "mahnung"].includes(docTyp);
+    const absenderPosH  = _useCovert ? (v.absender_pos_h  || "links") : "links";
+    const absenderTopMm  = _useCovert ? (Number(v.absender_top_mm) || 55) : 20;
+    const absenderLeftMm = _useCovert ? (Number(v.absender_left_mm) || 0) : 0;
     const fmtCHF = (n: number) => `CHF ${n.toFixed(2)}`;
 
     // Logo
@@ -1109,8 +1111,8 @@ export async function registerRoutes(
             ${schl ? `<div class="schluss" style="margin-top:14px;">${schl}</div>` : ""}
           </div>
           ${footerHtml}
+          ${data.extraHtml || ""}
         </div>
-        ${data.extraHtml || ""}
       </body></html>`;
     }
 
@@ -1174,8 +1176,8 @@ export async function registerRoutes(
             ${schl ? `<div class="schluss" style="margin-top:14px;">${schl}</div>` : ""}
           </div>
           ${footerHtml}
+          ${data.extraHtml || ""}
         </div>
-        ${data.extraHtml || ""}
       </body></html>`;
     }
 
@@ -1236,8 +1238,8 @@ export async function registerRoutes(
             ${schl ? `<div class="schluss" style="margin-top:14px;">${schl}</div>` : ""}
           </div>
           ${footerHtml}
+          ${data.extraHtml || ""}
         </div>
-        ${data.extraHtml || ""}
       </body></html>`;
     }
 
@@ -1298,8 +1300,8 @@ export async function registerRoutes(
             ${schl ? `<div class="schluss" style="margin-top:14px;">${schl}</div>` : ""}
           </div>
           ${footerHtml}
+          ${data.extraHtml || ""}
         </div>
-        ${data.extraHtml || ""}
       </body></html>`;
     }
 
@@ -4353,23 +4355,26 @@ html: string): Promise<Buffer> {
       const sMap: Record<string, string> = {};
       for (const s of (settingsArr || [])) sMap[s.schluessel] = s.wert;
 
-      // Positionen laden — zuerst Rechnung, dann Offerte als Fallback
+      // Positionen laden — zuerst Offerte, dann Rechnung als Fallback (JSONB-Spalten)
       let positionen: any[] = [];
-      const { data: rechnungen } = await supabase.from("rechnungen").select("*, positionen:rechnung_positionen(*)").eq("auftrag_id", id).limit(1);
-      if (rechnungen && rechnungen.length > 0 && rechnungen[0].positionen?.length > 0) {
-        positionen = rechnungen[0].positionen.map((p: any) => ({
-          beschreibung: p.bezeichnung || p.beschreibung || "",
+      // Zuerst Offerte des Auftrags laden (hat vollständige Positionen mit Titel)
+      const { data: offerten } = await supabase.from("offerten").select("positionen").eq("auftrag_id", id).order("erstellt", { ascending: false }).limit(1);
+      if (offerten && offerten.length > 0 && Array.isArray(offerten[0].positionen) && offerten[0].positionen.length > 0) {
+        positionen = offerten[0].positionen.map((p: any) => ({
+          titel: p.titel || p.beschreibung || "",
+          beschreibung: p.beschreibung || "",
           menge: p.menge || 1,
           einheit: p.einheit || "Stk.",
           einzelpreis: 0,
           total: 0,
         }));
       } else {
-        // Fallback: Offerten-Positionen
-        const { data: offerten } = await supabase.from("offerten").select("*, positionen:offert_positionen(*)").eq("auftrag_id", id).limit(1);
-        if (offerten && offerten.length > 0 && offerten[0].positionen?.length > 0) {
-          positionen = offerten[0].positionen.map((p: any) => ({
-            beschreibung: p.titel || p.beschreibung || "",
+        // Fallback: Rechnungs-Positionen (JSONB)
+        const { data: rechnungen } = await supabase.from("rechnungen").select("positionen").eq("auftrag_id", id).order("erstellt", { ascending: false }).limit(1);
+        if (rechnungen && rechnungen.length > 0 && Array.isArray(rechnungen[0].positionen) && rechnungen[0].positionen.length > 0) {
+          positionen = rechnungen[0].positionen.map((p: any) => ({
+            titel: p.beschreibung || "",
+            beschreibung: "",
             menge: p.menge || 1,
             einheit: p.einheit || "Stk.",
             einzelpreis: 0,
@@ -4400,8 +4405,7 @@ html: string): Promise<Buffer> {
         nummer: auftrag.nr || id.substring(0, 8).toUpperCase(),
         datum: datumStr,
         empfaenger: auftrag.kunde_name || auftrag.kunde || "",
-        empfaengerStrasse: auftrag.kunde_adresse || "",
-        empfaengerPlzOrt: auftrag.kunde_plz_ort || "",
+        ...(() => { const s = splitAdresse(auftrag.kunde_adresse || ""); return { empfaengerStrasse: s.strasse, empfaengerPlzOrt: s.plzOrt }; })(),
         firma:        sMap.firmenname || "Schneggenburger GmbH",
         firmaAdresse: sMap.adresse    || "Hefenhoferstrasse 7",
         firmaPlzOrt:  sMap.plz_ort   || "8580 Sommeri",
@@ -4460,8 +4464,7 @@ html: string): Promise<Buffer> {
         datum: datumStr,
         faelligDatum: lieferDatum,
         empfaenger: auftrag.kunde_name || auftrag.kunde || "",
-        empfaengerStrasse: auftrag.kunde_adresse || "",
-        empfaengerPlzOrt: auftrag.kunde_plz_ort || "",
+        ...(() => { const s = splitAdresse(auftrag.kunde_adresse || ""); return { empfaengerStrasse: s.strasse, empfaengerPlzOrt: s.plzOrt }; })(),
         firma:        sMap.firmenname || "Schneggenburger GmbH",
         firmaAdresse: sMap.adresse    || "Hefenhoferstrasse 7",
         firmaPlzOrt:  sMap.plz_ort   || "8580 Sommeri",
