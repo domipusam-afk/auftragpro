@@ -1308,7 +1308,7 @@ export async function registerRoutes(
     return `<!DOCTYPE html><html><head><meta charset="utf-8">
     <style>
       * { box-sizing:border-box; -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
-      body { font-family:${design === "E" ? "Georgia,serif" : "Arial,sans-serif"};font-size:10pt;color:#222;margin:0;padding:0; }
+      body { font-family:Arial,sans-serif;font-size:10pt;color:#222;margin:0;padding:0; }
       table { width:100%;border-collapse:collapse; }
       th { background:${hc};color:#fff;padding:8px 4px;text-align:left;font-size:8.5pt; }
       td { font-size:9pt; }
