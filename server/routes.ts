@@ -1510,11 +1510,31 @@ html: string): Promise<Buffer> {
       const sMap: Record<string, string> = {};
       for (const s of (settingsArr || [])) sMap[s.schluessel] = s.wert;
 
-      const empfaenger  = quelleOfferte?.empfaenger_name || auftrag?.kunde || rechnung.kunde_name || "";
-      const _rawAdr     = auftrag?.kunde_adresse || "";
-      const _splitAdr   = splitAdresse(_rawAdr);
-      const empStrasse  = quelleOfferte?.empfaenger_strasse || _splitAdr.strasse || "";
-      const empPlzOrt   = quelleOfferte?.empfaenger_plz_ort || _splitAdr.plzOrt || "";
+      // Kundenadresse Priorität: 1) Offerte 2) Kundendatenbank 3) Auftrag
+      const kundeName = quelleOfferte?.empfaenger_name || auftrag?.kunde || rechnung.kunde_name || "";
+      let kundeStrasse = quelleOfferte?.empfaenger_strasse || "";
+      let kundePlzOrt  = quelleOfferte?.empfaenger_plz_ort  || "";
+      // Falls Offerte keine Adresse hat: Kundendatenbank abfragen
+      if ((!kundeStrasse || !kundePlzOrt) && kundeName) {
+        const { data: kunden } = await supabase.from("kunden")
+          .select("adresse,plz,ort,vorname,nachname,firma")
+          .or(`firma.ilike.%${kundeName}%,nachname.ilike.%${kundeName}%`)
+          .limit(1);
+        const k = kunden?.[0];
+        if (k) {
+          if (!kundeStrasse && k.adresse) kundeStrasse = k.adresse;
+          if (!kundePlzOrt  && k.plz && k.ort) kundePlzOrt = `${k.plz} ${k.ort}`;
+        }
+      }
+      // Fallback: Auftrag Adresse
+      if (!kundeStrasse || !kundePlzOrt) {
+        const _splitAdr = splitAdresse(auftrag?.kunde_adresse || "");
+        if (!kundeStrasse) kundeStrasse = _splitAdr.strasse;
+        if (!kundePlzOrt)  kundePlzOrt  = _splitAdr.plzOrt;
+      }
+      const empfaenger = kundeName;
+      const empStrasse = kundeStrasse;
+      const empPlzOrt  = kundePlzOrt;
       const positionen: any[] = Array.isArray(rechnung.positionen) ? rechnung.positionen : [];
       const subtotal    = positionen.reduce((s: number, p: any) => s + Number(p.total ?? p.betrag ?? (Number(p.menge||p.anzahl||1)*Number(p.einzelpreis||p.preis||0))), 0);
       const mwstPct     = 8.1;
