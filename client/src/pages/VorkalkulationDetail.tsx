@@ -451,13 +451,16 @@ function HilfsmaterialBlock({ auftragId }: { auftragId: string }) {
   const addMutation = useMutation({
     mutationFn: async () => {
       const stueck = num(newRow.stueck), preis = num(newRow.preis_pro_einheit);
+      // Bezeichnung: Fallback auf Kategorie wenn leer
+      const bezeichnung = newRow.bezeichnung.trim() || newRow.kategorie;
       return apiRequest("POST", `/api/kalkulation/${auftragId}/hilfsmaterial`, {
-        pos: rows.length + 1, kategorie: newRow.kategorie, bezeichnung: newRow.bezeichnung,
+        pos: rows.length + 1, kategorie: newRow.kategorie, bezeichnung,
         stueck, einheit: newRow.einheit, preis_pro_einheit: preis, total_chf: stueck * preis,
         lieferant: newRow.lieferant,
       });
     },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/vk-hilfsmaterial", auftragId] }); setNewRow(emptyRow); toast({ title: "Hilfsmaterial hinzugefügt" }); },
+    onError: (e: any) => toast({ title: "Fehler beim Speichern", description: e.message, variant: "destructive" }),
   });
 
   const deleteMutation = useMutation({
@@ -515,7 +518,7 @@ function HilfsmaterialBlock({ auftragId }: { auftragId: string }) {
               </td>
               <td className="px-1 py-1"><Input type="number" className="h-7 text-xs text-right" placeholder="Fr." value={newRow.preis_pro_einheit} onChange={e => setNewRow(p => ({ ...p, preis_pro_einheit: e.target.value }))} /></td>
               <td className="px-2 py-1 text-xs text-right font-mono">{chf(num(newRow.stueck) * num(newRow.preis_pro_einheit))}</td>
-              <td className="px-1 py-1"><Button size="icon" variant="outline" className="h-7 w-7" onClick={() => addMutation.mutate()} disabled={!newRow.bezeichnung}><Plus className="h-3 w-3" /></Button></td>
+              <td className="px-1 py-1"><Button size="icon" variant="outline" className="h-7 w-7" onClick={() => addMutation.mutate()} disabled={addMutation.isPending}><Plus className="h-3 w-3" /></Button></td>
             </tr>
           </tbody>
           <tfoot>
