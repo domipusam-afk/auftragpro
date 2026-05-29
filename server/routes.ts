@@ -3497,9 +3497,9 @@ html: string): Promise<Buffer> {
 
         // Auftragsdaten unterhalb Header
         let curY = H - 52;
-        d(`Kunde: ${auftrag.kunde || "-"}`, mL, curY, 8.5, false, grey);
+        d(`${auftrag.kunde || "-"}`.trim().replace(/  +/g, " "), mL, curY, 8.5, true, grey);
         curY -= 10;
-        d((offSMap.firmenname||"Schneggenburger GmbH")+"  |  "+(offSMap.adresse||"Hefenhoferstrasse 7")+"  |  "+(offSMap.plz_ort||"8580 Sommeri"), mL, curY, 7.5, false, rgb(0.6, 0.6, 0.6));
+        d((offSMap.firmenname||"Schneggenburger GmbH")+" | "+(offSMap.adresse||"Hefenhoferstrasse 7")+" | "+(offSMap.plz_ort||"8580 Sommeri"), mL, curY, 7.5, false, rgb(0.6, 0.6, 0.6));
         curY -= 4;
         ln(mL, curY, W - mR, curY, 0.5, grey);
         curY -= 10;
@@ -3759,6 +3759,7 @@ html: string): Promise<Buffer> {
         const { data: zeiteintraege = [] } = await supabase.from("zeiteintraege").select("*").eq("auftrag_id", id);
         const { data: nakaMaterial = [] } = await supabase.from("nachkalkulation_material").select("*").eq("auftrag_id", id);
         const { data: nakaFremd = [] } = await supabase.from("nachkalkulation_fremdleistungen").select("*").eq("auftrag_id", id);
+        const { data: nakaSoek = [] } = await supabase.from("nachkalkulation_soek").select("*").eq("auftrag_id", id);
 
         const fmt = (n: number) => `CHF ${n.toFixed(2)}`;
         const fmtH = (min: number) => `${(min / 60).toFixed(2)} h`;
@@ -3791,13 +3792,14 @@ html: string): Promise<Buffer> {
         const istTotalMinuten = (zeiteintraege as any[]).reduce((s, z) => s + (Number(z.dauer_minuten) || 0), 0);
         const istMaterialCHF = (nakaMaterial as any[]).reduce((s, r) => s + Number(r.betrag_chf), 0);
         const istFremdCHF = (nakaFremd as any[]).reduce((s, r) => s + Number(r.betrag_chf), 0);
-        const istSubtotal = istStundenCHF + istMaterialCHF + istFremdCHF;
+        const istSoekCHF = (nakaSoek as any[]).reduce((s, r) => s + Number(r.total_chf), 0);
+        const istSubtotal = istStundenCHF + istMaterialCHF + istFremdCHF + istSoekCHF;
 
         const p1 = addPage();
         let y = p1.curY();
 
         // Soll-Ist Vergleich header row
-        const cLbl = mL + 4; const cSoll = mL + 270; const cIst = mL + 380; const cAbw = W - mR;
+        const cLbl = mL + 4; const cSoll = mL + 230; const cIst = mL + 360; const cAbw = W - mR - 5;
 
         p1.rect(mL, y - 2, pageW, 14, lgrey);
         p1.d("Position", cLbl, y, 8, true, grey);
@@ -3818,8 +3820,8 @@ html: string): Promise<Buffer> {
           const sw1 = f.widthOfTextAtSize(sollStr, 9);
           const sw2 = f.widthOfTextAtSize(istStr, 9);
           const sw3 = font.widthOfTextAtSize(abwStr, 9);
-          p1.d(sollStr, cSoll + 80 - sw1, y, 9, bold);
-          p1.d(istStr, cIst + 80 - sw2, y, 9, bold);
+          p1.d(sollStr, cSoll + 95 - sw1, y, 9, bold);
+          p1.d(istStr, cIst + 95 - sw2, y, 9, bold);
           p1.d(abwStr, cAbw - sw3, y, 9, false, col);
           y -= 14;
         }
@@ -3832,7 +3834,7 @@ html: string): Promise<Buffer> {
         y -= 4; p1.ln(mL, y + 8, W - mR, y + 8, 0.3, lgrey); y -= 4;
         siRow("Material (CHF)", vkMaterialCHF, istMaterialCHF, true, false);
         siRow("Fremdleistungen (CHF)", vkFremdCHF, istFremdCHF, true, false);
-        siRow("SOEK (CHF)", vkSoekCHF, 0, true, false);
+        siRow("SOEK (CHF)", vkSoekCHF, istSoekCHF, true, false);
         y -= 4; p1.ln(mL, y + 8, W - mR, y + 8, 0.6, grey); y -= 4;
         siRow("Subtotal", vkSubtotal, istSubtotal, true, true);
         y -= 6;
@@ -3886,12 +3888,14 @@ html: string): Promise<Buffer> {
           }
         }
 
-        // Footer
+        // Footer — farbiger Balken wie Offerte
         const pg1 = pdfDoc.getPages()[0];
-        const ftxt = `Nachkalkulation / Soll-Ist-Vergleich ${auftrag.nr} – Schneggenburger GmbH`;
-        pg1.drawText(ftxt, { x: mL, y: 25, size: 7.5, font, color: grey });
-        pg1.drawLine({ start: { x: mL, y: 38 }, end: { x: W - mR, y: 38 }, thickness: 0.3, color: grey });
-        pg1.drawText(`Erstellt: ${new Date().toLocaleDateString("de-CH")}`, { x: W - mR - 80, y: 25, size: 7.5, font, color: grey });
+        pg1.drawRectangle({ x: 0, y: 0, width: W, height: 28, color: brown });
+        const ftxt = `Nachkalkulation / Soll-Ist-Vergleich  ${auftrag.nr} – Schneggenburger GmbH`;
+        pg1.drawText(ftxt, { x: mL, y: 10, size: 7.5, font, color: rgb(1,1,1) });
+        const erstelltStr = `Erstellt: ${new Date().toLocaleDateString("de-CH")}`;
+        const esw = font.widthOfTextAtSize(erstelltStr, 7.5);
+        pg1.drawText(erstelltStr, { x: W - mR - esw, y: 10, size: 7.5, font, color: rgb(1,1,1) });
       }
 
       const bytes = await pdfDoc.save();
