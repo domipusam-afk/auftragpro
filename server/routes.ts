@@ -4064,13 +4064,13 @@ html: string): Promise<Buffer> {
         const cIstR = mL + 410; // 460 — Ist rechtsbundig-Anker
         const cAbwR = W - mR;   // 545 — Abweichung rechtsbundig-Anker
 
-        currentPageCtx!.rect(mL, y - 2, pageW, 14, lgrey);
+        currentPageCtx!.rect(mL, y - 2, pageW, 16, lgrey);
         currentPageCtx!.d("Position", cLbl, y, 8, true, grey);
         currentPageCtx!.d("Soll (VK)", cSoll, y, 8, true, grey);
         currentPageCtx!.d("Ist (NAKA)", cIst, y, 8, true, grey);
         const abwHdrW = fontB.widthOfTextAtSize("Abweichung", 8);
         currentPageCtx!.d("Abweichung", cAbwR - abwHdrW, y, 8, true, grey);
-        y -= 4; currentPageCtx!.ln(mL, y, W - mR, y, 0.4, grey); y -= 3;
+        y -= 18; currentPageCtx!.ln(mL, y, W - mR, y, 0.4, grey); y -= 4;
 
         function siRow(lbl: string, soll: number, ist: number, isCHF: boolean, bold: boolean) {
           y = checkPageBreak(y);
