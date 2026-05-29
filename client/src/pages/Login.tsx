@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/auth";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -11,14 +11,24 @@ type Step = "credentials" | "totp";
 export default function Login() {
   const { login, verify2fa } = useAuth();
 
-  // Load background image from settings — always fresh, no caching
+  // Load background image — instantly from localStorage, then update from server
+  const [loginBg, setLoginBg] = useState<string>(
+    () => localStorage.getItem("ap_login_bg") || ""
+  );
   const { data: einstellungenList = [] } = useQuery<{ schluessel: string; wert: string }[]>({
     queryKey: ["/api/einstellungen"],
     queryFn: () => apiRequest("GET", "/api/einstellungen").then((r) => r.json()),
     staleTime: 0,
     gcTime: 0,
   });
-  const loginBg = einstellungenList.find((e) => e.schluessel === "login_hintergrund")?.wert || "";
+  useEffect(() => {
+    const fresh = einstellungenList.find((e) => e.schluessel === "login_hintergrund")?.wert || "";
+    if (fresh !== loginBg) {
+      setLoginBg(fresh);
+      if (fresh) localStorage.setItem("ap_login_bg", fresh);
+      else localStorage.removeItem("ap_login_bg");
+    }
+  }, [einstellungenList]);
   const [step, setStep] = useState<Step>("credentials");
   const [benutzername, setBenutzername] = useState("");
   const [passwort, setPasswort] = useState("");

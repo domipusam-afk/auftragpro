@@ -420,14 +420,24 @@ export default function Layout({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // App-Hintergrundbild aus Einstellungen
+  // App-Hintergrundbild — sofort aus localStorage, dann fresh vom Server
+  const [appBg, setAppBg] = useState<string>(
+    () => localStorage.getItem("ap_app_bg") || ""
+  );
   const { data: einstellungenList = [] } = useQuery<{ schluessel: string; wert: string }[]>({
     queryKey: ["/api/einstellungen"],
     queryFn: () => apiRequest("GET", "/api/einstellungen").then((r) => r.json()),
     staleTime: 0,
     gcTime: 0,
   });
-  const appBg = einstellungenList.find((e) => e.schluessel === "app_hintergrund")?.wert || "";
+  useEffect(() => {
+    const fresh = einstellungenList.find((e) => e.schluessel === "app_hintergrund")?.wert || "";
+    if (fresh !== appBg) {
+      setAppBg(fresh);
+      if (fresh) localStorage.setItem("ap_app_bg", fresh);
+      else localStorage.removeItem("ap_app_bg");
+    }
+  }, [einstellungenList]);
 
   // Ungelesene Chat-Nachrichten (Polling alle 30 Sek.)
   const { data: ungelesenData } = useQuery<{ count: number }>({

@@ -44,7 +44,16 @@ function useSaveEinstellung() {
   return useMutation({
     mutationFn: ({ key, wert }: { key: string; wert: string }) =>
       apiRequest("PUT", `/api/einstellungen/${key}`, { wert }),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
+      // Sync localStorage so background shows instantly on next page load
+      if (variables.key === "login_hintergrund") {
+        if (variables.wert) localStorage.setItem("ap_login_bg", variables.wert);
+        else localStorage.removeItem("ap_login_bg");
+      }
+      if (variables.key === "app_hintergrund") {
+        if (variables.wert) localStorage.setItem("ap_app_bg", variables.wert);
+        else localStorage.removeItem("ap_app_bg");
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/einstellungen"] });
       toast({ title: "Einstellung gespeichert ✓" });
     },
