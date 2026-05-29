@@ -1090,7 +1090,7 @@ export async function registerRoutes(
             </div>
             <div style="height:2px;background:${hc};margin-bottom:12px;border-radius:1px;"></div>
             <div style="margin-bottom:12px;font-size:10pt;color:#333;">
-              <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}text-align:left;line-height:1.55;">
+              <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}${absenderPosH==="rechts"?"text-align:right;":absenderPosH==="mitte"?"text-align:center;":"text-align:left;"}line-height:1.55;">
                 <div style="font-weight:600;">${data.empfaenger}</div>
                 ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
                 ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
@@ -1146,7 +1146,7 @@ export async function registerRoutes(
             </div>
             <div style="height:0.5px;background:#ccc;margin:16px 0 12px;"></div>
             <div style="font-size:8pt;color:#aaa;margin-bottom:3px;">${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
-            <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:10mm;font-size:10pt;color:#333;text-align:left;line-height:1.55;">
+            <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:10mm;font-size:10pt;color:#333;${absenderPosH==="rechts"?"text-align:right;":absenderPosH==="mitte"?"text-align:center;":"text-align:left;"}line-height:1.55;">
               <div style="font-weight:600;">${data.empfaenger}</div>
               ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
               ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
@@ -1208,7 +1208,7 @@ export async function registerRoutes(
             </div>
             <div style="height:1.5px;background:#222;margin:10px 0 1px;"></div>
             <div style="height:0.5px;background:#bbb;margin-bottom:14px;"></div>
-            <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:10mm;font-size:10pt;color:#333;text-align:left;line-height:1.55;">
+            <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:10mm;font-size:10pt;color:#333;${absenderPosH==="rechts"?"text-align:right;":absenderPosH==="mitte"?"text-align:center;":"text-align:left;"}line-height:1.55;">
               <div style="font-weight:600;">${data.empfaenger}</div>
               ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
               ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
@@ -1270,7 +1270,7 @@ export async function registerRoutes(
               </div>
             </div>
             <div style="height:0.5px;background:#ccc;margin:14px 0;"></div>
-            <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:10mm;font-size:10pt;color:#333;text-align:left;line-height:1.55;">
+            <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:10mm;font-size:10pt;color:#333;${absenderPosH==="rechts"?"text-align:right;":absenderPosH==="mitte"?"text-align:center;":"text-align:left;"}line-height:1.55;">
               <div style="font-weight:600;">${data.empfaenger}</div>
               ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
               ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
@@ -1319,7 +1319,7 @@ export async function registerRoutes(
       <div style="position:relative;z-index:1;min-height:100vh;display:flex;flex-direction:column;">
         ${headerHtml}
         <div style="padding:14px 40px;flex:1;">
-          <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:6mm;font-size:10pt;color:#333;text-align:left;line-height:1.55;">
+          <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:6mm;font-size:10pt;color:#333;${absenderPosH==="rechts"?"text-align:right;":absenderPosH==="mitte"?"text-align:center;":"text-align:left;"}line-height:1.55;">
             <div style="font-weight:600;">${data.empfaenger}</div>
             ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
             ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
