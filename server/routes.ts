@@ -1070,19 +1070,49 @@ export async function registerRoutes(
 
     // Footer — farbiger Balken wie in der Vorschau
     const footerHtml = design === "E"
-      ? `<div style="margin-top:auto;">
+      ? `<div>
           <div style="height:2px;background:linear-gradient(90deg,${fc},${hc});margin:0 40px;border-radius:2px;"></div>
           <div style="padding:8px 40px 14px;font-size:8pt;color:#999;font-style:italic;display:flex;justify-content:space-between;">
             ${showContact ? `<div>${data.firma} · ${data.firmaTel} · ${data.firmaEmail}</div>` : "<div></div>"}
-            ${showPageNum ? `<div>Seite 1 / 1</div>` : ""}
+            ${showPageNum ? `<div></div>` : ""}
           </div>
         </div>`
-      : `<div style="margin-top:auto;">
+      : `<div>
           <div style="background:${fc};color:${fcText};padding:6px 40px;font-size:8pt;display:flex;justify-content:space-between;align-items:center;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
             ${showContact ? `<div>${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt} · ${data.firmaTel} · ${data.firmaEmail}</div>` : "<div></div>"}
-            ${showPageNum ? `<div>Seite 1 / 1</div>` : ""}
+            ${showPageNum ? `<div></div>` : ""}
           </div>
         </div>`;
+
+    // Gemeinsame Höhen für @page-Margins (Header/Footer nicht überlappen)
+    const hdrH = (design === "B" || design === "F") ? (logoUrl ? 26 : 20)
+               : (design === "C") ? (logoUrl ? 18 : 10)
+               : (design === "D") ? 12
+               : (design === "E") ? (logoUrl ? 22 : 14)
+               : (design === "G" || design === "H" || design === "I") ? (logoUrl ? 26 : 18)
+               : (logoUrl ? 28 : 20); // Design A
+    const ftrH = (design === "E") ? 16 : 12;
+    const padMm = 10; // Seitenrand in mm
+
+    // Gemeinsames CSS für alle Designs: fixed header/footer wiederholt sich auf jeder Seite
+    const sharedFixedCss = `
+      @page { margin: ${hdrH + 4}mm ${padMm}mm ${ftrH + 4}mm ${padMm}mm; }
+      body { font-family:Arial,sans-serif;font-size:10pt;color:#222;margin:0;padding:0; }
+      table { width:100%;border-collapse:collapse; }
+      .pdf-header {
+        position: fixed; top: 0; left: 0; right: 0;
+        background: white; z-index: 100;
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+      }
+      .pdf-footer {
+        position: fixed; bottom: 0; left: 0; right: 0;
+        background: white; z-index: 100;
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+      }
+      .pdf-content { position: relative; z-index: 1; }
+      * { box-sizing:border-box; -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
+    `;
+    const pad = 40; // Seitenrand in px für Inline-Styles
 
     // Für Design A: Titel ist bereits im Header — nicht nochmals im Body zeigen
     const titelImHeader = design === "A";
@@ -1138,21 +1168,30 @@ export async function registerRoutes(
     if (design === "D") {
       return `<!DOCTYPE html><html><head><meta charset="utf-8">
       <style>
-        * { box-sizing:border-box; -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
-        body { font-family:Arial,sans-serif;font-size:10pt;color:#222;margin:0;padding:0; }
-        table { width:100%;border-collapse:collapse; }
+        ${sharedFixedCss}
         th { background:${hc};color:${hcText};padding:8px 4px;text-align:left;font-size:8.5pt; }
         td { font-size:9pt; }
         .intro,.schluss { font-size:9pt;color:#444;white-space:pre-line; }
+        /* Design D: breiter farbiger Linksbalken — fixed über alle Seiten */
+        .design-d-bar {
+          position: fixed; top: 0; left: 0; bottom: 0;
+          width: 22px; background: ${hc};
+          z-index: 200;
+          display: flex; flex-direction: column; align-items: center; padding-top: 20px;
+          -webkit-print-color-adjust: exact; print-color-adjust: exact;
+        }
+        .pdf-header { left: 22px !important; }
+        .pdf-footer { left: 22px !important; }
+        .pdf-content { margin-left: 22px; }
       </style></head>
-      <body style="position:relative;display:flex;min-height:100vh;">
+      <body style="position:relative;">
         ${wmHtml}
-        <div style="width:22px;background:${hc};flex-shrink:0;display:flex;flex-direction:column;align-items:center;padding-top:20px;">
+        <div class="design-d-bar">
           ${logoUrl ? `<img src="${logoUrl}" style="width:16px;object-fit:contain;filter:brightness(0) invert(1);opacity:0.9;" />` : `<span style="color:${hcText};font-weight:700;font-size:8pt;writing-mode:vertical-rl;transform:rotate(180deg);">${data.firma.substring(0,2).toUpperCase()}</span>`}
         </div>
-        <div style="flex:1;display:flex;flex-direction:column;position:relative;z-index:1;">
-          <div style="padding:18px 36px 10px;">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
+        <div class="pdf-header">
+          <div style="padding:14px 36px 8px;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;">
               <div>
                 <div style="font-size:14pt;font-weight:700;color:${hc};">${data.titel} Nr. ${data.nummer}</div>
                 <div style="font-size:8.5pt;color:#555;margin-top:2px;">${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
@@ -1162,29 +1201,29 @@ export async function registerRoutes(
                 ${data.faelligDatum ? `<div><b style="color:#999;font-weight:400">Zahlbar bis: </b>${data.faelligDatum}</div>` : ""}
               </div>
             </div>
-            <div style="height:2px;background:${hc};margin-bottom:12px;border-radius:1px;"></div>
-            <div style="margin-bottom:12px;font-size:10pt;color:#333;">
-              <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}${absenderPosH==="rechts"?"text-align:right;":absenderPosH==="mitte"?"text-align:center;":"text-align:left;"}line-height:1.55;">
-                <div style="font-weight:600;">${data.empfaenger}</div>
-                ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
-                ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
-              </div>
-            </div>
-            ${apBlock}
-            ${einl ? `<div class="intro" style="margin-bottom:12px;">${einl}</div>` : ""}
-            <table>
-              <thead><tr>
-                <th style="width:28px">${ptPos}</th><th>${ptBeschr}</th>
-                <th style="width:65px;text-align:right">${ptMenge}</th>
-                <th style="width:90px;text-align:right">${ptPreis}</th>
-                <th style="width:90px;text-align:right">${ptTotal}</th>
-              </tr></thead>
-              <tbody>${posHtml}</tbody>
-            </table>
-            ${totalsHtml}
-            ${schl ? `<div class="schluss" style="margin-top:14px;">${schl}</div>` : ""}
+            <div style="height:2px;background:${hc};border-radius:1px;"></div>
           </div>
-          ${footerHtml}
+        </div>
+        <div class="pdf-footer">${footerHtml}</div>
+        <div class="pdf-content" style="padding:4px 36px 10px;">
+          <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}${absenderPosH==="rechts"?"text-align:right;":absenderPosH==="mitte"?"text-align:center;":"text-align:left;"}margin-bottom:8mm;font-size:10pt;color:#333;line-height:1.55;">
+            <div style="font-weight:600;">${data.empfaenger}</div>
+            ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
+            ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
+          </div>
+          ${apBlock}
+          ${einl ? `<div class="intro" style="margin-bottom:12px;">${einl}</div>` : ""}
+          <table>
+            <thead><tr>
+              <th style="width:28px">${ptPos}</th><th>${ptBeschr}</th>
+              <th style="width:65px;text-align:right">${ptMenge}</th>
+              <th style="width:90px;text-align:right">${ptPreis}</th>
+              <th style="width:90px;text-align:right">${ptTotal}</th>
+            </tr></thead>
+            <tbody>${posHtml}</tbody>
+          </table>
+          ${totalsHtml}
+          ${schl ? `<div class="schluss" style="margin-top:14px;">${schl}</div>` : ""}
           ${data.extraHtml || ""}
         </div>
       </body></html>`;
@@ -1192,19 +1231,18 @@ export async function registerRoutes(
 
     // ─── Design G: Swiss Classic ─────────────────────────────────────────────
     if (design === "G") {
+      // Design G: Swiss Classic
+      const headerG = `<div style="padding:20px 40px 10px;border-top:2px solid ${hc};">`;
       return `<!DOCTYPE html><html><head><meta charset="utf-8">
       <style>
-        * { box-sizing:border-box; -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
-        body { font-family:Arial,Helvetica,sans-serif;font-size:10pt;color:#222;margin:0;padding:0; }
-        table { width:100%;border-collapse:collapse; }
+        ${sharedFixedCss}
         th { background:#f5f5f5;color:#333;padding:8px 4px;text-align:left;font-size:8.5pt;border-bottom:1.5px solid #222; }
         td { font-size:9pt; }
         .intro,.schluss { font-size:9pt;color:#444;white-space:pre-line; }
       </style></head>
       <body style="position:relative;">
         ${wmHtml}
-        <div style="position:relative;z-index:1;min-height:100vh;display:flex;flex-direction:column;">
-          <div style="padding:28px 40px 0;border-top:2px solid ${hc};">
+        <div class="pdf-header"><div style="padding:20px 40px 10px;border-top:2px solid ${hc};">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;${logoPos==="rechts"?"flex-direction:row-reverse;":""}">
               <div style="flex-shrink:0">
                 ${logoHtml}
@@ -1212,15 +1250,15 @@ export async function registerRoutes(
               </div>
               <div style="text-align:right;font-size:8.5pt;color:#555;line-height:1.6;">
                 <div style="font-weight:700;color:#222;">${data.firma}</div>
-                <div>${data.firmaAdresse}</div>
-                <div>${data.firmaPlzOrt}</div>
-                <div>${data.firmaTel}</div>
-                <div>${data.firmaEmail}</div>
+                <div>${data.firmaAdresse} · ${data.firmaPlzOrt} · ${data.firmaTel}</div>
               </div>
             </div>
-            <div style="height:0.5px;background:#ccc;margin:16px 0 12px;"></div>
+            <div style="height:0.5px;background:#ccc;margin:10px 0 0;"></div>
+          </div></div>
+          <div class="pdf-footer">${footerHtml}</div>
+          <div class="pdf-content" style="padding:4px ${pad}px 10px;">
             <div style="font-size:8pt;color:#aaa;margin-bottom:3px;">${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
-            <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:10mm;font-size:10pt;color:#333;${absenderPosH==="rechts"?"text-align:right;":absenderPosH==="mitte"?"text-align:center;":"text-align:left;"}line-height:1.55;">
+            <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:8mm;font-size:10pt;color:#333;${absenderPosH==="rechts"?"text-align:right;":absenderPosH==="mitte"?"text-align:center;":"text-align:left;"}line-height:1.55;">
               <div style="font-weight:600;">${data.empfaenger}</div>
               ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
               ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
@@ -1233,8 +1271,6 @@ export async function registerRoutes(
                 ${data.faelligDatum ? `<div><b style="color:#999;font-weight:400">Zahlbar bis: </b>${data.faelligDatum}</div>` : ""}
               </div>
             </div>
-          </div>
-          <div style="padding:0 40px;flex:1;">
             ${apBlock}
             ${einl ? `<div class="intro" style="margin-bottom:12px;">${einl}</div>` : ""}
             <table>
@@ -1248,10 +1284,8 @@ export async function registerRoutes(
             </table>
             ${totalsHtml}
             ${schl ? `<div class="schluss" style="margin-top:14px;">${schl}</div>` : ""}
+            ${data.extraHtml || ""}
           </div>
-          ${footerHtml}
-          ${data.extraHtml || ""}
-        </div>
       </body></html>`;
     }
 
@@ -1259,17 +1293,15 @@ export async function registerRoutes(
     if (design === "H") {
       return `<!DOCTYPE html><html><head><meta charset="utf-8">
       <style>
-        * { box-sizing:border-box; -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
-        body { font-family:Arial,Helvetica,sans-serif;font-size:10pt;color:#222;margin:0;padding:0; }
-        table { width:100%;border-collapse:collapse; }
+        ${sharedFixedCss}
         th { background:white;color:#333;padding:8px 4px;text-align:left;font-size:8.5pt;border-bottom:1.5px solid #222; }
         td { font-size:9pt; }
         .intro,.schluss { font-size:9pt;color:#444;white-space:pre-line; }
       </style></head>
       <body style="position:relative;">
         ${wmHtml}
-        <div style="position:relative;z-index:1;min-height:100vh;display:flex;flex-direction:column;">
-          <div style="padding:22px 40px 0;${logoPos==="rechts"?"flex-direction:row-reverse;":""}">
+        <div class="pdf-header">
+          <div style="padding:18px ${pad}px 0;${logoPos==="rechts"?"flex-direction:row-reverse;":""}">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;">
               <div style="flex-shrink:0">
                 ${logoHtml}
@@ -1280,38 +1312,38 @@ export async function registerRoutes(
                 <div>${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
               </div>
             </div>
-            <div style="height:1.5px;background:#222;margin:10px 0 1px;"></div>
-            <div style="height:0.5px;background:#bbb;margin-bottom:14px;"></div>
-            <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:10mm;font-size:10pt;color:#333;${absenderPosH==="rechts"?"text-align:right;":absenderPosH==="mitte"?"text-align:center;":"text-align:left;"}line-height:1.55;">
-              <div style="font-weight:600;">${data.empfaenger}</div>
-              ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
-              ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
-            </div>
-            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;">
-              <div style="font-size:14pt;font-weight:700;color:#111;text-transform:uppercase;letter-spacing:1px;">${data.titel} Nr. ${data.nummer}</div>
-              <div style="font-size:8pt;color:#777;text-align:right;line-height:1.6;">
-                <div>${data.datum}</div>
-                ${data.gueltigBis ? `<div>Gültig bis: ${data.gueltigBis}</div>` : ""}
-                ${data.faelligDatum ? `<div>Zahlbar bis: ${data.faelligDatum}</div>` : ""}
-              </div>
+            <div style="height:1.5px;background:#222;margin:8px 0 1px;"></div>
+            <div style="height:0.5px;background:#bbb;margin-bottom:4px;"></div>
+          </div>
+        </div>
+        <div class="pdf-footer">${footerHtml}</div>
+        <div class="pdf-content" style="padding:4px ${pad}px 10px;">
+          <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:8mm;font-size:10pt;color:#333;${absenderPosH==="rechts"?"text-align:right;":absenderPosH==="mitte"?"text-align:center;":"text-align:left;"}line-height:1.55;">
+            <div style="font-weight:600;">${data.empfaenger}</div>
+            ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
+            ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;">
+            <div style="font-size:14pt;font-weight:700;color:#111;text-transform:uppercase;letter-spacing:1px;">${data.titel} Nr. ${data.nummer}</div>
+            <div style="font-size:8pt;color:#777;text-align:right;line-height:1.6;">
+              <div>${data.datum}</div>
+              ${data.gueltigBis ? `<div>Gültig bis: ${data.gueltigBis}</div>` : ""}
+              ${data.faelligDatum ? `<div>Zahlbar bis: ${data.faelligDatum}</div>` : ""}
             </div>
           </div>
-          <div style="padding:0 40px;flex:1;">
-            ${apBlock}
-            ${einl ? `<div class="intro" style="margin-bottom:12px;">${einl}</div>` : ""}
-            <table>
-              <thead><tr>
-                <th style="width:28px">${ptPos}</th><th>${ptBeschr}</th>
-                <th style="width:65px;text-align:right">${ptMenge}</th>
-                <th style="width:90px;text-align:right">${ptPreis}</th>
-                <th style="width:90px;text-align:right">${ptTotal}</th>
-              </tr></thead>
-              <tbody>${posHtml}</tbody>
-            </table>
-            ${totalsHtml}
-            ${schl ? `<div class="schluss" style="margin-top:14px;">${schl}</div>` : ""}
-          </div>
-          ${footerHtml}
+          ${apBlock}
+          ${einl ? `<div class="intro" style="margin-bottom:12px;">${einl}</div>` : ""}
+          <table>
+            <thead><tr>
+              <th style="width:28px">${ptPos}</th><th>${ptBeschr}</th>
+              <th style="width:65px;text-align:right">${ptMenge}</th>
+              <th style="width:90px;text-align:right">${ptPreis}</th>
+              <th style="width:90px;text-align:right">${ptTotal}</th>
+            </tr></thead>
+            <tbody>${posHtml}</tbody>
+          </table>
+          ${totalsHtml}
+          ${schl ? `<div class="schluss" style="margin-top:14px;">${schl}</div>` : ""}
           ${data.extraHtml || ""}
         </div>
       </body></html>`;
@@ -1321,19 +1353,27 @@ export async function registerRoutes(
     if (design === "I") {
       return `<!DOCTYPE html><html><head><meta charset="utf-8">
       <style>
-        * { box-sizing:border-box; -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
-        body { font-family:Arial,Helvetica,sans-serif;font-size:10pt;color:#222;margin:0;padding:0; }
-        table { width:100%;border-collapse:collapse; }
+        ${sharedFixedCss}
         th { background:${hc}20;color:#333;padding:8px 4px;text-align:left;font-size:8.5pt;border-bottom:1.5px solid ${hc}; }
         td { font-size:9pt; }
         .intro,.schluss { font-size:9pt;color:#444;white-space:pre-line; }
+        /* Design I: farbiger Linksstreifen — fixed über alle Seiten */
+        .design-i-stripe {
+          position: fixed; top: 0; left: 0; bottom: 0;
+          width: 5px; background: ${hc};
+          z-index: 200;
+          -webkit-print-color-adjust: exact; print-color-adjust: exact;
+        }
+        .pdf-header { left: 5px !important; }
+        .pdf-footer { left: 5px !important; }
+        .pdf-content { margin-left: 5px; }
       </style></head>
-      <body style="position:relative;display:flex;min-height:100vh;">
+      <body style="position:relative;">
         ${wmHtml}
-        <div style="width:5px;background:${hc};flex-shrink:0;z-index:2;"></div>
-        <div style="flex:1;display:flex;flex-direction:column;position:relative;z-index:1;">
-          <div style="padding:22px 36px 0;">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;${logoPos==="rechts"?"flex-direction:row-reverse;":""}">
+        <div class="design-i-stripe"></div>
+        <div class="pdf-header">
+          <div style="padding:18px 36px 0;${logoPos==="rechts"?"flex-direction:row-reverse;":""}">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;">
               <div style="flex-shrink:0">
                 ${logoHtml}
                 ${slogan ? `<div style="font-size:8pt;color:#999;margin-top:3px;">${slogan}</div>` : ""}
@@ -1343,37 +1383,37 @@ export async function registerRoutes(
                 <div>${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
               </div>
             </div>
-            <div style="height:0.5px;background:#ccc;margin:14px 0;"></div>
-            <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:10mm;font-size:10pt;color:#333;${absenderPosH==="rechts"?"text-align:right;":absenderPosH==="mitte"?"text-align:center;":"text-align:left;"}line-height:1.55;">
-              <div style="font-weight:600;">${data.empfaenger}</div>
-              ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
-              ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
-            </div>
-            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;">
-              <div style="font-size:14pt;font-weight:700;color:${hc};">${data.titel} Nr. ${data.nummer}</div>
-              <div style="font-size:8.5pt;color:#555;text-align:right;line-height:1.6;">
-                <div><b style="color:#999;font-weight:400">Datum: </b>${data.datum}</div>
-                ${data.gueltigBis ? `<div><b style="color:#999;font-weight:400">Gültig bis: </b>${data.gueltigBis}</div>` : ""}
-                ${data.faelligDatum ? `<div><b style="color:#999;font-weight:400">Zahlbar bis: </b>${data.faelligDatum}</div>` : ""}
-              </div>
+            <div style="height:0.5px;background:#ccc;margin:10px 0 4px;"></div>
+          </div>
+        </div>
+        <div class="pdf-footer">${footerHtml}</div>
+        <div class="pdf-content" style="padding:4px 36px 10px;">
+          <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:8mm;font-size:10pt;color:#333;${absenderPosH==="rechts"?"text-align:right;":absenderPosH==="mitte"?"text-align:center;":"text-align:left;"}line-height:1.55;">
+            <div style="font-weight:600;">${data.empfaenger}</div>
+            ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
+            ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;">
+            <div style="font-size:14pt;font-weight:700;color:${hc};">${data.titel} Nr. ${data.nummer}</div>
+            <div style="font-size:8.5pt;color:#555;text-align:right;line-height:1.6;">
+              <div><b style="color:#999;font-weight:400">Datum: </b>${data.datum}</div>
+              ${data.gueltigBis ? `<div><b style="color:#999;font-weight:400">Gültig bis: </b>${data.gueltigBis}</div>` : ""}
+              ${data.faelligDatum ? `<div><b style="color:#999;font-weight:400">Zahlbar bis: </b>${data.faelligDatum}</div>` : ""}
             </div>
           </div>
-          <div style="padding:0 36px;flex:1;">
-            ${apBlock}
-            ${einl ? `<div class="intro" style="margin-bottom:12px;">${einl}</div>` : ""}
-            <table>
-              <thead><tr>
-                <th style="width:28px">${ptPos}</th><th>${ptBeschr}</th>
-                <th style="width:65px;text-align:right">${ptMenge}</th>
-                <th style="width:90px;text-align:right">${ptPreis}</th>
-                <th style="width:90px;text-align:right">${ptTotal}</th>
-              </tr></thead>
-              <tbody>${posHtml}</tbody>
-            </table>
-            ${totalsHtml}
-            ${schl ? `<div class="schluss" style="margin-top:14px;">${schl}</div>` : ""}
-          </div>
-          ${footerHtml}
+          ${apBlock}
+          ${einl ? `<div class="intro" style="margin-bottom:12px;">${einl}</div>` : ""}
+          <table>
+            <thead><tr>
+              <th style="width:28px">${ptPos}</th><th>${ptBeschr}</th>
+              <th style="width:65px;text-align:right">${ptMenge}</th>
+              <th style="width:90px;text-align:right">${ptPreis}</th>
+              <th style="width:90px;text-align:right">${ptTotal}</th>
+            </tr></thead>
+            <tbody>${posHtml}</tbody>
+          </table>
+          ${totalsHtml}
+          ${schl ? `<div class="schluss" style="margin-top:14px;">${schl}</div>` : ""}
           ${data.extraHtml || ""}
         </div>
       </body></html>`;
@@ -1386,45 +1426,23 @@ export async function registerRoutes(
 
     return `<!DOCTYPE html><html><head><meta charset="utf-8">
     <style>
-      * { box-sizing:border-box; -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
-      @page { margin: ${headerHeightMm + 4}mm 10mm ${footerHeightMm + 4}mm 10mm; }
-      body { font-family:Arial,sans-serif;font-size:10pt;color:#222;margin:0;padding:0; }
-      table { width:100%;border-collapse:collapse; }
+      ${sharedFixedCss}
       th { background:${hc};color:${hcText};padding:8px 4px;text-align:left;font-size:8.5pt; }
       td { font-size:9pt; }
       .intro,.schluss { font-size:9pt;color:#444;white-space:pre-line; }
-      /* Fixed header — repeats on every page */
-      .pdf-header {
-        position: fixed;
-        top: 0; left: 0; right: 0;
-        background: white;
-        z-index: 100;
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
-      }
-      /* Fixed footer — repeats on every page */
-      .pdf-footer {
-        position: fixed;
-        bottom: 0; left: 0; right: 0;
-        background: white;
-        z-index: 100;
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
-      }
-      .pdf-content { position: relative; z-index: 1; }
     </style></head>
     <body style="position:relative;">
       ${wmHtml}
-      <!-- FIXED HEADER: appears on every page -->
+      <!-- FIXED HEADER: erscheint auf jeder Seite -->
       <div class="pdf-header">
         ${headerHtml}
       </div>
-      <!-- FIXED FOOTER: appears on every page -->
+      <!-- FIXED FOOTER: erscheint auf jeder Seite -->
       <div class="pdf-footer">
         ${footerHtml}
       </div>
-      <!-- MAIN CONTENT -->
-      <div class="pdf-content" style="padding:4px 40px 10px;">
+      <!-- HAUPTINHALT -->
+      <div class="pdf-content" style="padding:4px ${pad}px 10px;">
         <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:6mm;font-size:10pt;color:#333;${absenderPosH==="rechts"?"text-align:right;":absenderPosH==="mitte"?"text-align:center;":"text-align:left;"}line-height:1.55;">
           <div style="font-weight:600;">${data.empfaenger}</div>
           ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
@@ -1509,7 +1527,7 @@ html: string): Promise<Buffer> {
     });
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "domcontentloaded" });
-    const pdfBuf = await page.pdf({ format: "A4", printBackground: true, margin: { top: "10mm", bottom: "10mm", left: "10mm", right: "10mm" } });
+    const pdfBuf = await page.pdf({ format: "A4", printBackground: true, margin: { top: "0", bottom: "0", left: "0", right: "0" } }); // @page im HTML steuert Margins
     await browser.close();
     return Buffer.from(pdfBuf);
   }
@@ -1527,7 +1545,7 @@ html: string): Promise<Buffer> {
       const page = await browser.newPage();
       // PDF A: Rechnung-Seiten mit Header/Footer
       await page.setContent(htmlSeiten, { waitUntil: "domcontentloaded" });
-      const pdfA = await page.pdf({ format: "A4", printBackground: true, margin: { top: "10mm", bottom: "10mm", left: "10mm", right: "10mm" } });
+      const pdfA = await page.pdf({ format: "A4", printBackground: true, margin: { top: "0", bottom: "0", left: "0", right: "0" } }); // @page im HTML steuert Margins
       // PDF B: QR-Bill volle Seite, margin:0
       await page.setContent(htmlQR, { waitUntil: "domcontentloaded" });
       const pdfB = await page.pdf({ format: "A4", printBackground: true, margin: { top: "0", bottom: "0", left: "0", right: "0" } });
