@@ -1205,7 +1205,7 @@ export async function registerRoutes(
           </div>
         </div>
         <div class="pdf-footer">${footerHtml}</div>
-        <div class="pdf-content" style="padding:4px 36px 10px;">
+        <div class="pdf-content" style="padding:${hdrH+4}mm 36px ${ftrH+4}mm;">
           <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}${absenderPosH==="rechts"?"text-align:right;":absenderPosH==="mitte"?"text-align:center;":"text-align:left;"}margin-bottom:8mm;font-size:10pt;color:#333;line-height:1.55;">
             <div style="font-weight:600;">${data.empfaenger}</div>
             ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
@@ -1256,7 +1256,7 @@ export async function registerRoutes(
             <div style="height:0.5px;background:#ccc;margin:10px 0 0;"></div>
           </div></div>
           <div class="pdf-footer">${footerHtml}</div>
-          <div class="pdf-content" style="padding:4px ${pad}px 10px;">
+          <div class="pdf-content" style="padding:${hdrH+4}mm ${pad}px ${ftrH+4}mm;">
             <div style="font-size:8pt;color:#aaa;margin-bottom:3px;">${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
             <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:8mm;font-size:10pt;color:#333;${absenderPosH==="rechts"?"text-align:right;":absenderPosH==="mitte"?"text-align:center;":"text-align:left;"}line-height:1.55;">
               <div style="font-weight:600;">${data.empfaenger}</div>
@@ -1317,7 +1317,7 @@ export async function registerRoutes(
           </div>
         </div>
         <div class="pdf-footer">${footerHtml}</div>
-        <div class="pdf-content" style="padding:4px ${pad}px 10px;">
+        <div class="pdf-content" style="padding:${hdrH+4}mm ${pad}px ${ftrH+4}mm;">
           <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:8mm;font-size:10pt;color:#333;${absenderPosH==="rechts"?"text-align:right;":absenderPosH==="mitte"?"text-align:center;":"text-align:left;"}line-height:1.55;">
             <div style="font-weight:600;">${data.empfaenger}</div>
             ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
@@ -1387,7 +1387,7 @@ export async function registerRoutes(
           </div>
         </div>
         <div class="pdf-footer">${footerHtml}</div>
-        <div class="pdf-content" style="padding:4px 36px 10px;">
+        <div class="pdf-content" style="padding:${hdrH+4}mm 36px ${ftrH+4}mm;">
           <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:8mm;font-size:10pt;color:#333;${absenderPosH==="rechts"?"text-align:right;":absenderPosH==="mitte"?"text-align:center;":"text-align:left;"}line-height:1.55;">
             <div style="font-weight:600;">${data.empfaenger}</div>
             ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
@@ -1442,7 +1442,7 @@ export async function registerRoutes(
         ${footerHtml}
       </div>
       <!-- HAUPTINHALT -->
-      <div class="pdf-content" style="padding:4px ${pad}px 10px;">
+      <div class="pdf-content" style="padding:${hdrH+4}mm ${pad}px ${ftrH+4}mm;">
         <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:6mm;font-size:10pt;color:#333;${absenderPosH==="rechts"?"text-align:right;":absenderPosH==="mitte"?"text-align:center;":"text-align:left;"}line-height:1.55;">
           <div style="font-weight:600;">${data.empfaenger}</div>
           ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}

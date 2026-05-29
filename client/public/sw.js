@@ -1,66 +1,54 @@
-// AuftragsPro Service Worker v1
-const CACHE_NAME = 'auftragspro-v2';
-const STATIC_ASSETS = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  '/icon-192.png',
-  '/icon-512.png',
-  '/apple-touch-icon.png',
-];
+// AuftragsPro Service Worker v4 — network-first für alles
+const CACHE_NAME = 'auftragspro-v4';
 
-// Install: Cache static assets
+// Install: sofort aktivieren
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS);
-    })
-  );
   self.skipWaiting();
 });
 
-// Activate: Clean old caches
+// Activate: alle alten Caches löschen
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(
-        keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))
-      )
-    )
+      Promise.all(keys.map((k) => caches.delete(k)))
+    ).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
-// Fetch: Network first, fallback to cache
+// Fetch: ALLES network-first — kein aggressives Caching
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // API-Requests: immer live (kein Cache)
+  // Nur GET-Requests behandeln
+  if (event.request.method !== 'GET') return;
+
+  // API + Einstellungen: immer live
   if (url.pathname.startsWith('/api/')) {
     event.respondWith(fetch(event.request));
     return;
   }
 
-  // Statische Assets: Cache first, dann Network
+  // Alles andere: Network first, Cache als Fallback (Offline)
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request).then((response) => {
-        // Nur erfolgreiche Responses cachen
-        if (!response || response.status !== 200 || response.type !== 'basic') {
-          return response;
+    fetch(event.request, { cache: 'no-cache' })
+      .then((response) => {
+        // Nur 200 OK cachen, und nur same-origin
+        if (response.ok && response.type === 'basic') {
+          const toCache = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, toCache);
+          });
         }
-        const toCache = response.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(event.request, toCache);
-        });
         return response;
-      }).catch(() => {
-        // Offline-Fallback: index.html zurückgeben
-        if (event.request.mode === 'navigate') {
-          return caches.match('/index.html');
-        }
-      });
-    })
+      })
+      .catch(() => {
+        // Offline-Fallback
+        return caches.match(event.request).then((cached) => {
+          if (cached) return cached;
+          if (event.request.mode === 'navigate') {
+            return caches.match('/index.html');
+          }
+        });
+      })
   );
 });

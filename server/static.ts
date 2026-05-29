@@ -11,6 +11,14 @@ export function serveStatic(app: Express) {
     );
   }
 
+  // sw.js + manifest.json: NIEMALS cachen, damit neue Versionen sofort wirken
+  app.use(['/sw.js', '/manifest.json'], (_req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    next();
+  });
+
   // Static assets (JS/CSS have content-hash in filename → long cache ok)
   app.use(express.static(distPath, { etag: false, lastModified: false }));
 
