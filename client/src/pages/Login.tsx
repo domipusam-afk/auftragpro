@@ -1,34 +1,25 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/auth";
-import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Lock, User, ShieldCheck, Eye, EyeOff } from "lucide-react";
-import { apiRequest } from "@/lib/queryClient";
 
 type Step = "credentials" | "totp";
 
 export default function Login() {
   const { login, verify2fa } = useAuth();
 
-  // Load background image — instantly from localStorage, then update from server
-  const [loginBg, setLoginBg] = useState<string>(
-    () => localStorage.getItem("ap_login_bg") || ""
-  );
-  const { data: einstellungenList = [] } = useQuery<{ schluessel: string; wert: string }[]>({
-    queryKey: ["/api/einstellungen"],
-    queryFn: () => apiRequest("GET", "/api/einstellungen").then((r) => r.json()),
-    staleTime: 0,
-    gcTime: 0,
-  });
+  // Load background image — always fresh from server, no caching/localStorage
+  const [loginBg, setLoginBg] = useState<string>("");
   useEffect(() => {
-    const fresh = einstellungenList.find((e) => e.schluessel === "login_hintergrund")?.wert || "";
-    if (fresh !== loginBg) {
-      setLoginBg(fresh);
-      if (fresh) localStorage.setItem("ap_login_bg", fresh);
-      else localStorage.removeItem("ap_login_bg");
-    }
-  }, [einstellungenList]);
+    fetch("/api/einstellungen", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((list: { schluessel: string; wert: string }[]) => {
+        const bg = list.find((e) => e.schluessel === "login_hintergrund")?.wert || "";
+        setLoginBg(bg);
+      })
+      .catch(() => { /* kein Hintergrund bei Fehler */ });
+  }, []);
   const [step, setStep] = useState<Step>("credentials");
   const [benutzername, setBenutzername] = useState("");
   const [passwort, setPasswort] = useState("");
