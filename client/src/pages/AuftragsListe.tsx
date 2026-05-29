@@ -1,6 +1,6 @@
-import { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -35,7 +35,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Plus, Search, Eye, Pencil, Trash2, ChevronDown, ChevronRight, ArchiveRestore, CheckCircle2 } from "lucide-react";
+import { Plus, Search, Eye, Pencil, Trash2, ChevronDown, ChevronRight, ArchiveRestore, CheckCircle2, RefreshCw } from "lucide-react";
 import type { Auftrag, Status, Prioritaet } from "@shared/schema";
 import { STATUS_LABEL, STATUS_ORDER, PRIORITAETEN } from "@shared/schema";
 import { STATUS_BADGE, PRIO_BADGE, formatCHF, formatDate } from "@/lib/format";
@@ -46,12 +46,25 @@ import { useToast } from "@/hooks/use-toast";
 const DONE_STATUSES: Status[] = ["abgeschlossen", "storniert"];
 
 export default function AuftragsListe() {
+  const search = useSearch(); // z.B. "?status=offen"
+  const params = new URLSearchParams(search);
+  const initialStatus = params.get("status") || "all";
+
   const [q, setQ] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>(initialStatus);
   const [prioFilter, setPrioFilter] = useState<string>("all");
   const [toDelete, setToDelete] = useState<Auftrag | null>(null);
-  const [archivOpen, setArchivOpen] = useState(false);
+  const [archivOpen, setArchivOpen] = useState(initialStatus === "abgeschlossen" || initialStatus === "storniert");
+  const [wiederkehrendOpen, setWiederkehrendOpen] = useState(false);
   const { toast } = useToast();
+
+  // Wenn sich die URL ändert (z.B. Navigation via Dashboard), Filter aktualisieren
+  useEffect(() => {
+    const p = new URLSearchParams(search);
+    const s = p.get("status") || "all";
+    setStatusFilter(s);
+    if (s === "abgeschlossen" || s === "storniert") setArchivOpen(true);
+  }, [search]);
 
   const { data, isLoading } = useQuery<Auftrag[]>({
     queryKey: ["/api/auftraege"],
@@ -107,6 +120,24 @@ export default function AuftragsListe() {
       return true;
     });
 
+  // Wiederkehrende Aufträge (alle mit gesetztem Interval, unabhängig von Status)
+  const wiederkehrendAuftraege = allAuftraege
+    .filter((a) => !!(a as any).wiederkehrend_interval)
+    .filter((a) => {
+      if (q) {
+        const s = q.toLowerCase();
+        if (!a.titel?.toLowerCase().includes(s) && !a.kunde?.toLowerCase().includes(s) && !a.nr?.toLowerCase().includes(s)) return false;
+      }
+      return true;
+    });
+
+  const INTERVAL_LABEL: Record<string, string> = {
+    monatlich: 'Monatlich',
+    quartalsweise: 'Quartalsweise',
+    halbjaehrlich: 'Halbjährlich',
+    jaehrlich: 'Jährlich',
+  };
+
   // Abgeschlossene / stornierte Aufträge
   const archivFiltered = allAuftraege
     .filter((a) => DONE_STATUSES.includes(a.status as Status))
@@ -128,7 +159,7 @@ export default function AuftragsListe() {
   // Status-Filter-Optionen: nur aktive Status anzeigen (abgeschlossen im Archiv)
   const activeStatusOptions = STATUS_ORDER.filter((s) => !DONE_STATUSES.includes(s));
 
-  function AuftragRow({ a, showReactivate = false }: { a: Auftrag; showReactivate?: boolean }) {
+  function AuftragRow({ a, showReactivate = false, extraBadge }: { a: Auftrag; showReactivate?: boolean; extraBadge?: React.ReactNode }) {
     return (
       <tr
         key={a.id}
@@ -137,9 +168,12 @@ export default function AuftragsListe() {
       >
         <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{a.nr}</td>
         <td className="px-4 py-3">
-          <Link href={`/auftraege/${a.id}`}>
-            <a className="font-medium hover:text-primary">{a.titel}</a>
-          </Link>
+          <div className="flex items-center flex-wrap gap-1">
+            <Link href={`/auftraege/${a.id}`}>
+              <a className="font-medium hover:text-primary">{a.titel}</a>
+            </Link>
+            {extraBadge}
+          </div>
         </td>
         <td className="px-4 py-3 text-muted-foreground">{a.kunde}</td>
         <td className="px-4 py-3">
@@ -369,6 +403,66 @@ export default function AuftragsListe() {
                       <tbody className="divide-y">
                         {archivFiltered.map((a) => (
                           <AuftragRow key={a.id} a={a} showReactivate={true} />
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </Card>
+          </CollapsibleContent>
+        </Collapsible>
+      )}
+
+      {/* ── Wiederkehrende Aufträge (gleicher Stil wie Archiv) ── */}
+      {(wiederkehrendAuftraege.length > 0 || !isLoading) && (
+        <Collapsible open={wiederkehrendOpen} onOpenChange={setWiederkehrendOpen}>
+          <CollapsibleTrigger asChild>
+            <button
+              className="w-full flex items-center justify-between px-4 py-3 rounded-lg border bg-card hover:bg-muted/30 transition-colors text-left"
+              data-testid="toggle-wiederkehrend"
+            >
+              <div className="flex items-center gap-2">
+                <RefreshCw className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-semibold text-muted-foreground">
+                  Wiederkehrende Aufträge
+                </span>
+                {wiederkehrendAuftraege.length > 0 && (
+                  <Badge variant="secondary" className="text-xs px-1.5 py-0 h-5">
+                    {wiederkehrendAuftraege.length}
+                  </Badge>
+                )}
+              </div>
+              {wiederkehrendOpen
+                ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                : <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              }
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <Card className="mt-2 bg-card overflow-hidden border-dashed">
+              {wiederkehrendAuftraege.length === 0 ? (
+                <div className="p-8 text-center text-muted-foreground text-sm">
+                  Noch keine wiederkehrenden Aufträge. Intervall in einem Auftrag setzen.
+                </div>
+              ) : (
+                <>
+                  <div className="px-4 py-2.5 bg-muted/30 border-b flex items-center justify-between">
+                    <p className="text-xs text-muted-foreground">
+                      Aufträge mit automatischem Intervall — Wartungsverträge, Jahresservice etc.
+                    </p>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm opacity-90">
+                      {tableHead}
+                      <tbody className="divide-y">
+                        {wiederkehrendAuftraege.map((a) => (
+                          <AuftragRow key={a.id} a={a} showReactivate={false} extraBadge={
+                            <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200 ml-1">
+                              <RefreshCw className="h-3 w-3 mr-1" />
+                              {INTERVAL_LABEL[(a as any).wiederkehrend_interval] || (a as any).wiederkehrend_interval}
+                            </Badge>
+                          } />
                         ))}
                       </tbody>
                     </table>

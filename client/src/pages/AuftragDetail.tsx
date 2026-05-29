@@ -62,6 +62,7 @@ import {
   CheckCircle2,
   ArrowDown,
   ArrowUp,
+  RefreshCw,
 } from "lucide-react";
 import type {
   Auftrag,
@@ -484,6 +485,8 @@ function RechnungenTab({
     try {
       const r = await fetch(`${API_BASE}/api/auftraege/${id}/rechnungen/${rid}/pdf`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ansprechpersonIntern: auftrag.verantwortlicher || "" }),
       });
       if (r.status === 400) {
         // Keine PDF-Vorlage hinterlegt
@@ -799,7 +802,11 @@ function OffertenTab({ id, auftrag }: { id: string; auftrag: Auftrag }) {
   const handlePdf = async (oid: string, nr: string) => {
     setPdfLoading(oid);
     try {
-      const r = await fetch(`${API_BASE}/api/offerten/${oid}/pdf`, { method: "POST" });
+      const r = await fetch(`${API_BASE}/api/offerten/${oid}/pdf`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ansprechpersonIntern: auftrag.verantwortlicher || "" }),
+      });
       if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
@@ -1877,12 +1884,104 @@ function LiefertermineTab({ id }: { id: string }) {
   );
 }
 
+
+// ─── Wiederkehrend-Block ─────────────────────────────────────────────────────
+function WiederkehrendBlock({ auftragId, interval, naechste, refetch }: {
+  auftragId: string;
+  interval: string;
+  naechste?: string;
+  refetch: () => void;
+}) {
+  const { toast } = useToast();
+  const [saving, setSaving] = useState(false);
+  const [localInterval, setLocalInterval] = useState(interval);
+
+  const INTERVAL_LABEL: Record<string, string> = {
+    monatlich: 'Monatlich',
+    quartalsweise: 'Quartalsweise',
+    halbjaehrlich: 'Halbjährlich',
+    jaehrlich: 'Jährlich',
+  };
+
+  const saveInterval = async (val: string) => {
+    setSaving(true);
+    try {
+      await apiRequest('PATCH', `/api/auftraege/${auftragId}`, { wiederkehrend_interval: val || null });
+      refetch();
+      toast({ title: val ? `Interval gesetzt: ${INTERVAL_LABEL[val] || val}` : 'Interval entfernt' });
+    } catch (e) {
+      toast({ title: 'Fehler', description: String(e), variant: 'destructive' });
+    } finally { setSaving(false); }
+  };
+
+  const erstelleFolgeauftrag = async () => {
+    if (!localInterval) {
+      toast({ title: 'Kein Interval', description: 'Bitte zuerst ein Intervall wählen.', variant: 'destructive' });
+      return;
+    }
+    if (!confirm('Neuen Folge-Auftrag erstellen?')) return;
+    try {
+      const r = await apiRequest('POST', `/api/auftraege/${auftragId}/wiederholen`);
+      const newAuftrag = await r.json();
+      if (newAuftrag.message) throw new Error(newAuftrag.message);
+      toast({ title: 'Folge-Auftrag erstellt', description: `${newAuftrag.nr} wurde erstellt.` });
+      setTimeout(() => { window.location.hash = `/auftraege/${newAuftrag.id}`; window.location.reload(); }, 500);
+    } catch (e) {
+      toast({ title: 'Fehler', description: String(e), variant: 'destructive' });
+    }
+  };
+
+  return (
+    <div className="mt-4 p-4 rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-800">
+      <div className="flex items-center gap-2 mb-3">
+        <RefreshCw className="h-4 w-4 text-blue-700 dark:text-blue-300" />
+        <span className="text-sm font-semibold text-blue-800 dark:text-blue-300">Wiederkehrender Auftrag</span>
+      </div>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+        <div className="flex-1">
+          <select
+            className="w-full border border-blue-200 rounded-md px-3 py-1.5 text-sm bg-white dark:bg-blue-950/30 dark:text-blue-200 dark:border-blue-700"
+            value={localInterval}
+            disabled={saving}
+            onChange={async (e) => {
+              setLocalInterval(e.target.value);
+              await saveInterval(e.target.value);
+            }}
+          >
+            <option value="">Einmalig (kein Intervall)</option>
+            <option value="monatlich">Monatlich</option>
+            <option value="quartalsweise">Quartalsweise</option>
+            <option value="halbjaehrlich">Halbjährlich</option>
+            <option value="jaehrlich">Jährlich</option>
+          </select>
+          {naechste && (
+            <div className="text-xs text-blue-500 mt-1">
+              Nächste Fälligkeit: {new Date(naechste).toLocaleDateString('de-CH')}
+            </div>
+          )}
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          className="border-blue-300 text-blue-700 hover:bg-blue-100 dark:border-blue-600 dark:text-blue-300 whitespace-nowrap"
+          onClick={erstelleFolgeauftrag}
+          disabled={!localInterval}
+          title={!localInterval ? 'Zuerst Intervall wählen' : 'Neuen Folge-Auftrag erstellen'}
+        >
+          <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+          Folge-Auftrag erstellen
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export default function AuftragDetail({ id }: Props) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [delOpen, setDelOpen] = useState(false);
 
-  const { data, isLoading } = useQuery<DetailData>({
+  const { data, isLoading, refetch } = useQuery<DetailData>({
     queryKey: ["/api/auftraege", id],
   });
 
@@ -1980,7 +2079,7 @@ export default function AuftragDetail({ id }: Props) {
               variant="outline"
               onClick={async () => {
                 try {
-                  const r = await apiRequest("POST", `/api/auftraege/${id}/lieferschein-pdf`);
+                  const r = await apiRequest("POST", `/api/auftraege/${id}/lieferschein-pdf`, { ansprechpersonIntern: auftrag.verantwortlicher || "" });
                   const blob = await r.blob();
                   const url = URL.createObjectURL(blob);
                   window.open(url, "_blank");
@@ -1996,7 +2095,7 @@ export default function AuftragDetail({ id }: Props) {
               variant="outline"
               onClick={async () => {
                 try {
-                  const r = await apiRequest("POST", `/api/auftraege/${id}/auftragsbestaetigung-pdf`);
+                  const r = await apiRequest("POST", `/api/auftraege/${id}/auftragsbestaetigung-pdf`, { ansprechpersonIntern: auftrag.verantwortlicher || "" });
                   const blob = await r.blob();
                   const url = URL.createObjectURL(blob);
                   window.open(url, "_blank");
@@ -2041,6 +2140,8 @@ export default function AuftragDetail({ id }: Props) {
               <Trash2 className="h-4 w-4 mr-1" />
               Löschen
             </Button>
+            {/* Wiederkehrender Auftrag — immer sichtbar */}
+            <WiederkehrendBlock auftragId={id} interval={(data as any).wiederkehrend_interval || ''} naechste={(data as any).naechste_faelligkeit} refetch={refetch} />
             {/* Projektstatus-Link */}
             {data.public_token ? (
               <div className="flex gap-1">

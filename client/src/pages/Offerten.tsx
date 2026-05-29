@@ -26,7 +26,7 @@ const STATUS_COLORS: Record<string, string> = {
 export default function Offerten() {
   const { toast } = useToast();
   const [emailModal, setEmailModal] = useState<{ open: boolean; to: string; subject: string; body: string; refId: string } | null>(null);
-  const [pdfDialog, setPdfDialog] = useState<{ open: boolean; oid: string; nr: string; intern: string; extern: string } | null>(null);
+  const [pdfDialog, setPdfDialog] = useState<{ open: boolean; oid: string; nr: string; intern: string; internEmail: string; internTelefon: string; extern: string } | null>(null);
 
   const { data: offerten = [], isLoading } = useQuery<Offerte[]>({
     queryKey: ["/api/offerten"],
@@ -69,17 +69,28 @@ export default function Offerten() {
   });
 
   const handlePdf = (oid: string, nr: string, auftragVerantwortlicher?: string | null) => {
-    setPdfDialog({ open: true, oid, nr, intern: auftragVerantwortlicher || "", extern: "" });
+    // Mitarbeiter-Daten für Auto-Befüllung suchen
+    const ma = mitarbeiterListe.find((m: any) => {
+      const full = `${m.vorname || ""} ${m.nachname || ""}`.trim();
+      return full === (auftragVerantwortlicher || "").trim();
+    });
+    setPdfDialog({
+      open: true, oid, nr,
+      intern: auftragVerantwortlicher || "",
+      internEmail: ma?.email_geschaeftlich || ma?.email || "",
+      internTelefon: ma?.telefon_direkt || ma?.telefon || "",
+      extern: ""
+    });
   };
 
   const handlePdfDownload = async () => {
     if (!pdfDialog) return;
-    const { oid, nr, intern, extern } = pdfDialog;
+    const { oid, nr, intern, internEmail, internTelefon, extern } = pdfDialog;
     try {
       const r = await fetch(`${API_BASE}/api/offerten/${oid}/pdf`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ansprechpersonIntern: intern, ansprechpersonExtern: extern }),
+        body: JSON.stringify({ ansprechpersonIntern: intern, ansprechpersonInternEmail: internEmail, ansprechpersonInternTelefon: internTelefon, ansprechpersonExtern: extern }),
       });
       if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
       const blob = await r.blob();
@@ -248,7 +259,18 @@ Schneggenburger GmbH`,
                 <Label className="text-xs text-gray-600">Intern (Mitarbeiter / Verantwortlicher)</Label>
                 <Select
                   value={pdfDialog.intern}
-                  onValueChange={(v) => setPdfDialog(d => d ? { ...d, intern: v === "__keiner__" ? "" : v } : d)}
+                  onValueChange={(v) => {
+                    if (v === "__keiner__") {
+                      setPdfDialog(d => d ? { ...d, intern: "", internEmail: "", internTelefon: "" } : d);
+                    } else {
+                      const ma = mitarbeiterListe.find((m: any) => [m.vorname, m.nachname].filter(Boolean).join(" ") === v);
+                      setPdfDialog(d => d ? {
+                        ...d, intern: v,
+                        internEmail: ma?.email_geschaeftlich || ma?.email || "",
+                        internTelefon: ma?.telefon_direkt || ma?.telefon || "",
+                      } : d);
+                    }
+                  }}
                 >
                   <SelectTrigger className="h-8 text-sm">
                     <SelectValue placeholder="Mitarbeiter wählen..." />
@@ -267,6 +289,21 @@ Schneggenburger GmbH`,
                   placeholder="oder manuell eingeben..."
                   className="h-7 text-xs mt-1"
                 />
+                {/* Kontaktdaten-Vorschau + manuelle Überschreibung */}
+                <div className="grid grid-cols-2 gap-1 mt-1">
+                  <Input
+                    value={pdfDialog.internEmail}
+                    onChange={(e) => setPdfDialog(d => d ? { ...d, internEmail: e.target.value } : d)}
+                    placeholder="E-Mail Direkt"
+                    className="h-7 text-xs"
+                  />
+                  <Input
+                    value={pdfDialog.internTelefon}
+                    onChange={(e) => setPdfDialog(d => d ? { ...d, internTelefon: e.target.value } : d)}
+                    placeholder="Telefon Direkt"
+                    className="h-7 text-xs"
+                  />
+                </div>
               </div>
               <div className="space-y-1">
                 <Label className="text-xs text-gray-600">Extern (Ansprechperson beim Kunden)</Label>

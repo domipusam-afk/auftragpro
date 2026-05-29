@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { EmailModal } from "@/components/EmailModal";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,15 +9,24 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Rechnung, Auftrag } from "@shared/schema";
 import { formatCHF, formatDate } from "@/lib/format";
-import { Download, FileSpreadsheet, FileText, AlertCircle, CheckCircle2, Clock, Mail } from "lucide-react";
+import { Download, FileSpreadsheet, FileText, AlertCircle, CheckCircle2, Clock, Mail, Banknote, RotateCcw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
 
 function statusBadge(r: Rechnung) {
+  // Wenn bezahlt_am gesetzt → immer grünes "Bezahlt" Badge
+  if ((r as any).bezahlt_am) {
+    return (
+      <Badge className="text-xs gap-1 bg-green-100 text-green-800 border-green-300 hover:bg-green-100">
+        <CheckCircle2 className="w-3 h-3" />
+        Bezahlt
+      </Badge>
+    );
+  }
   if (!r.faellig_datum) {
     return (
       <Badge variant="outline" className="text-xs">Offen</Badge>
@@ -44,8 +53,8 @@ function statusBadge(r: Rechnung) {
     );
   }
   return (
-    <Badge className="text-xs gap-1 bg-green-100 text-green-700 border-green-200 hover:bg-green-100">
-      <CheckCircle2 className="w-3 h-3" />
+    <Badge className="text-xs gap-1 bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-100">
+      <Clock className="w-3 h-3" />
       Offen
     </Badge>
   );
@@ -57,7 +66,28 @@ export default function Rechnungen() {
   const [exportLoading, setExportLoading] = useState(false);
   const [pdfLoading, setPdfLoading] = useState<string | null>(null);
   const [emailModal, setEmailModal] = useState<{ open: boolean; to: string; subject: string; body: string; refId: string } | null>(null);
-  const [pdfDialog, setPdfDialog] = useState<{ open: boolean; rechnung: any; auftragId: string; intern: string; extern: string } | null>(null);
+  const [pdfDialog, setPdfDialog] = useState<{ open: boolean; rechnung: any; auftragId: string; intern: string; internEmail: string; internTelefon: string; extern: string } | null>(null);
+
+  // Bezahlt / Offen markieren
+  const bezahltMutation = useMutation({
+    mutationFn: async ({ id, bezahlt }: { id: string; bezahlt: boolean }) => {
+      const body = bezahlt
+        ? { bezahlt_am: new Date().toISOString().slice(0, 10) }
+        : { bezahlt_am: null };
+      const res = await apiRequest("PATCH", `/api/rechnungen/${id}`, body);
+      return res.json();
+    },
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/rechnungen"] });
+      toast({
+        title: vars.bezahlt ? "Als bezahlt markiert" : "Als offen markiert",
+        description: vars.bezahlt ? "Rechnung wurde als bezahlt gespeichert." : "Rechnung wurde wieder auf offen gesetzt.",
+      });
+    },
+    onError: () => {
+      toast({ title: "Fehler", description: "Status konnte nicht gespeichert werden.", variant: "destructive" });
+    },
+  });
 
   const { data: rechnungen, isLoading } = useQuery<Rechnung[]>({
     queryKey: ["/api/rechnungen"],
@@ -104,18 +134,30 @@ export default function Rechnungen() {
       toast({ title: "Fehler", description: "Auftrag nicht gefunden.", variant: "destructive" });
       return;
     }
-    setPdfDialog({ open: true, rechnung: r, auftragId: auftrag.id, intern: auftrag.verantwortlicher || "", extern: "" });
+    // Mitarbeiter-Daten für Auto-Befüllung suchen
+    const verantwortlicher = auftrag.verantwortlicher || "";
+    const ma = mitarbeiterListe.find((m: any) => {
+      const full = `${m.vorname || ""} ${m.nachname || ""}`.trim();
+      return full === verantwortlicher.trim();
+    });
+    setPdfDialog({
+      open: true, rechnung: r, auftragId: auftrag.id,
+      intern: verantwortlicher,
+      internEmail: ma?.email_geschaeftlich || ma?.email || "",
+      internTelefon: ma?.telefon_direkt || ma?.telefon || "",
+      extern: ""
+    });
   };
 
   const handlePdfDownload = async () => {
     if (!pdfDialog) return;
-    const { rechnung, auftragId, intern, extern } = pdfDialog;
+    const { rechnung, auftragId, intern, internEmail, internTelefon, extern } = pdfDialog;
     setPdfLoading(rechnung.id);
     try {
       const res = await apiRequest(
         "POST",
         `/api/auftraege/${auftragId}/rechnungen/${rechnung.id}/pdf`,
-        { ansprechpersonIntern: intern, ansprechpersonExtern: extern }
+        { ansprechpersonIntern: intern, ansprechpersonInternEmail: internEmail, ansprechpersonInternTelefon: internTelefon, ansprechpersonExtern: extern }
       );
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -137,27 +179,28 @@ export default function Rechnungen() {
 
   return (
     <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold" style={{ fontFamily: "var(--font-display)" }}>
-            Rechnungen
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {rechnungen?.length ?? 0} Rechnungen · Gesamt {formatCHF(total, "CHF")}
-            {ueberfaellig.length > 0 && (
-              <span className="ml-2 text-red-600 font-medium">
-                · {ueberfaellig.length} überfällig
-              </span>
-            )}
-          </p>
-        </div>
+      {/* Header: Titel */}
+      <div>
+        <h1 className="text-xl font-bold" style={{ fontFamily: "var(--font-display)" }}>
+          Rechnungen
+        </h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          {rechnungen?.length ?? 0} Rechnungen · Gesamt {formatCHF(total, "CHF")}
+          {ueberfaellig.length > 0 && (
+            <span className="ml-2 text-red-600 font-medium">
+              · {ueberfaellig.length} überfällig
+            </span>
+          )}
+        </p>
+      </div>
 
+      {/* Export-Bereich: beide Cards nebeneinander, auf Mobile untereinander */}
+      <div className="flex flex-col lg:flex-row gap-3">
         {/* FIBU-Export (Abacus/Banana/Bexio) */}
-        <Card className="p-3 flex flex-col gap-2 border-dashed border-2 bg-muted/20 shrink-0">
+        <Card className="p-3 flex flex-col gap-2 border-dashed border-2 bg-muted/20 flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <FileSpreadsheet className="w-4 h-4 text-muted-foreground shrink-0" />
-            <p className="text-sm font-medium">FIBU-Export (Abacus/Banana/Bexio)</p>
+            <p className="text-sm font-medium">FIBU-Export (Abacus / Banana / Bexio)</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" style={{ borderColor: "#1a3a6b", color: "#1a3a6b" }}
@@ -176,7 +219,7 @@ export default function Rechnungen() {
         </Card>
 
         {/* Banana / Q3 Export */}
-        <Card className="p-3 flex flex-col sm:flex-row items-stretch sm:items-center gap-2 border-dashed border-2 bg-muted/20 shrink-0">
+        <Card className="p-3 flex flex-col sm:flex-row items-stretch sm:items-center gap-2 border-dashed border-2 bg-muted/20 flex-shrink-0">
           <div className="flex items-center gap-2">
             <FileSpreadsheet className="w-4 h-4 text-muted-foreground shrink-0" />
             <div>
@@ -235,7 +278,7 @@ export default function Rechnungen() {
                   <th className="text-center px-4 py-3 font-medium">Status</th>
                   <th className="text-right px-4 py-3 font-medium">Fällig</th>
                   <th className="text-right px-4 py-3 font-medium">Erstellt</th>
-                  <th className="text-right px-4 py-3 font-medium">PDF</th>
+                  <th className="text-right px-4 py-3 font-medium">Aktionen</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -269,39 +312,67 @@ export default function Rechnungen() {
                         {formatDate(r.erstellt)}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 w-7 p-0"
-                          disabled={pdfLoading === r.id}
-                          onClick={() => handlePdf(r)}
-                          title="PDF herunterladen"
-                          data-testid={`button-pdf-${r.id}`}
-                        >
-                          {pdfLoading === r.id
-                            ? <span className="text-xs animate-pulse">…</span>
-                            : <Download className="w-3.5 h-3.5" />}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 w-7 p-0 text-muted-foreground hover:text-blue-600"
-                          title="E-Mail senden"
-                          onClick={() => setEmailModal({
-                            open: true,
-                            to: (a as any)?.email || "",
-                            subject: `Rechnung ${r.nr}`,
-                            body: `Guten Tag,
+                        <div className="flex items-center justify-end gap-1">
+                          {/* Bezahlt / Offen Button */}
+                          {(r as any).bezahlt_am ? (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 text-xs text-green-700 hover:text-red-600 hover:bg-red-50"
+                              title="Als offen markieren"
+                              disabled={bezahltMutation.isPending}
+                              onClick={() => bezahltMutation.mutate({ id: r.id, bezahlt: false })}
+                            >
+                              <RotateCcw className="w-3 h-3 mr-1" />
+                              Offen
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 text-xs text-muted-foreground hover:text-green-700 hover:bg-green-50"
+                              title="Als bezahlt markieren"
+                              disabled={bezahltMutation.isPending}
+                              onClick={() => bezahltMutation.mutate({ id: r.id, bezahlt: true })}
+                            >
+                              <Banknote className="w-3 h-3 mr-1" />
+                              Bezahlt
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0"
+                            disabled={pdfLoading === r.id}
+                            onClick={() => handlePdf(r)}
+                            title="PDF herunterladen"
+                            data-testid={`button-pdf-${r.id}`}
+                          >
+                            {pdfLoading === r.id
+                              ? <span className="text-xs animate-pulse">…</span>
+                              : <Download className="w-3.5 h-3.5" />}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0 text-muted-foreground hover:text-blue-600"
+                            title="E-Mail senden"
+                            onClick={() => setEmailModal({
+                              open: true,
+                              to: (a as any)?.email || "",
+                              subject: `Rechnung ${r.nr}`,
+                              body: `Guten Tag,
 
 erbeiliegend senden wir Ihnen Ihre Rechnung ${r.nr} über CHF ${r.betrag?.toFixed(2) || "—"}.
 
 Freundliche Grüsse
 Schneggenburger GmbH`,
-                            refId: r.id,
-                          })}
-                        >
-                          <Mail className="w-3.5 h-3.5" />
-                        </Button>
+                              refId: r.id,
+                            })}
+                          >
+                            <Mail className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -359,17 +430,43 @@ Schneggenburger GmbH`,
                     {formatDate(r.erstellt)}
                     {r.faellig_datum && <span className="ml-2">· Fällig {formatDate(r.faellig_datum)}</span>}
                   </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 text-xs gap-1"
-                    disabled={pdfLoading === r.id}
-                    onClick={() => handlePdf(r)}
-                    data-testid={`button-mobile-pdf-${r.id}`}
-                  >
-                    <Download className="w-3 h-3" />
-                    {pdfLoading === r.id ? "…" : "PDF"}
-                  </Button>
+                  <div className="flex gap-1">
+                    {/* Bezahlt Button Mobile */}
+                    {(r as any).bezahlt_am ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs gap-1 border-green-300 text-green-700"
+                        disabled={bezahltMutation.isPending}
+                        onClick={() => bezahltMutation.mutate({ id: r.id, bezahlt: false })}
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        Offen
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs gap-1"
+                        disabled={bezahltMutation.isPending}
+                        onClick={() => bezahltMutation.mutate({ id: r.id, bezahlt: true })}
+                      >
+                        <Banknote className="w-3 h-3" />
+                        Bezahlt
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs gap-1"
+                      disabled={pdfLoading === r.id}
+                      onClick={() => handlePdf(r)}
+                      data-testid={`button-mobile-pdf-${r.id}`}
+                    >
+                      <Download className="w-3 h-3" />
+                      {pdfLoading === r.id ? "…" : "PDF"}
+                    </Button>
+                  </div>
                 </div>
               </Card>
             );
@@ -386,7 +483,20 @@ Schneggenburger GmbH`,
                 <Label className="text-xs text-gray-600">Intern (Mitarbeiter / Verantwortlicher)</Label>
                 <Select
                   value={pdfDialog.intern}
-                  onValueChange={(v) => setPdfDialog(d => d ? { ...d, intern: v === "__keiner__" ? "" : v } : d)}
+                  onValueChange={(v) => {
+                    if (v === "__keiner__") {
+                      setPdfDialog(d => d ? { ...d, intern: "", internEmail: "", internTelefon: "" } : d);
+                    } else {
+                      // Mitarbeiter aus Liste heraussuchen und Email/Telefon auto-befüllen
+                      const ma = mitarbeiterListe.find((m: any) => [m.vorname, m.nachname].filter(Boolean).join(" ") === v);
+                      setPdfDialog(d => d ? {
+                        ...d,
+                        intern: v,
+                        internEmail: ma?.email_geschaeftlich || ma?.email || "",
+                        internTelefon: ma?.telefon_direkt || ma?.telefon || "",
+                      } : d);
+                    }
+                  }}
                 >
                   <SelectTrigger className="h-8 text-sm">
                     <SelectValue placeholder="Mitarbeiter wählen..." />
@@ -405,6 +515,27 @@ Schneggenburger GmbH`,
                   placeholder="oder manuell eingeben..."
                   className="h-7 text-xs mt-1"
                 />
+                {/* Auto-befüllte Kontaktdaten */}
+                {pdfDialog.internEmail && (
+                  <p className="text-[11px] text-muted-foreground mt-0.5">📧 {pdfDialog.internEmail}</p>
+                )}
+                {pdfDialog.internTelefon && (
+                  <p className="text-[11px] text-muted-foreground">📞 {pdfDialog.internTelefon}</p>
+                )}
+                <div className="grid grid-cols-2 gap-1 mt-1">
+                  <Input
+                    value={pdfDialog.internEmail}
+                    onChange={(e) => setPdfDialog(d => d ? { ...d, internEmail: e.target.value } : d)}
+                    placeholder="E-Mail (optional)"
+                    className="h-7 text-xs"
+                  />
+                  <Input
+                    value={pdfDialog.internTelefon}
+                    onChange={(e) => setPdfDialog(d => d ? { ...d, internTelefon: e.target.value } : d)}
+                    placeholder="Tel. Direkt (optional)"
+                    className="h-7 text-xs"
+                  />
+                </div>
               </div>
               <div className="space-y-1">
                 <Label className="text-xs text-gray-600">Extern (Ansprechperson beim Kunden)</Label>

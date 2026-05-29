@@ -70,13 +70,22 @@ function uid() {
 }
 
 function nextNr(prefix: string, list: { nr?: string }[]): string {
-  const year = new Date().getFullYear();
-  const yearPrefix = `${prefix}-${year}-`;
+  const yy = String(new Date().getFullYear()).slice(-2); // "26"
+  const yearPrefix = `${prefix}${yy}`;                  // z.B. "A26"
   let max = 0;
   for (const item of list) {
     const nr = (item.nr || "").toString();
     if (nr.startsWith(yearPrefix)) {
       const num = parseInt(nr.slice(yearPrefix.length), 10);
+      if (!isNaN(num) && num > max) max = num;
+    }
+  }
+  // Fallback: altes Format "A-YYYY-NNNN" ebenfalls einlesen
+  const oldPrefix = `${prefix}-${new Date().getFullYear()}-`;
+  for (const item of list) {
+    const nr = (item.nr || "").toString();
+    if (nr.startsWith(oldPrefix)) {
+      const num = parseInt(nr.slice(oldPrefix.length), 10);
       if (!isNaN(num) && num > max) max = num;
     }
   }
@@ -543,6 +552,9 @@ export async function registerRoutes(
         "rechnungs_betrag",
         "waehrung",
         "verantwortlicher",
+        "wiederkehrend_interval",
+        "naechste_faelligkeit",
+        "public_token",
       ];
       for (const f of fields) {
         if (f in body) {
@@ -845,8 +857,11 @@ export async function registerRoutes(
     extraHtml?: string;
     mahngebuehr?: number;
     ansprechpersonIntern?: string;
+    ansprechpersonInternEmail?: string;
+    ansprechpersonInternTelefon?: string;
     ansprechpersonExtern?: string;
     ansprechpersonManuell?: string;
+    kundenNr?: string;
   }): Promise<string> {
     // Vorlage aus DB laden (mit Retry + Logo-Fallback aus Offerte-Vorlage)
     let vd: any = null;
@@ -944,17 +959,25 @@ export async function registerRoutes(
       </div>`;
     } else {
       // Design A: Klassisch — Logo links, Dokument-Titel/Nr/Datum rechts (wie Frontend-Vorschau)
+      // Info-Block rechts: Kundennummer / Datum / Referenz — sauber untereinander
+      const infoRows: string[] = [];
+      if (data.kundenNr) infoRows.push(`<tr><td style="color:#777;font-size:8.5pt;padding:1px 12px 1px 0;white-space:nowrap;">Ihre Kundennummer:</td><td style="font-size:8.5pt;color:#222;">${data.kundenNr}</td></tr>`);
+      infoRows.push(`<tr><td style="color:#777;font-size:8.5pt;padding:1px 12px 1px 0;white-space:nowrap;">${data.titel === "RECHNUNG" ? "Rechnungsdatum:" : data.titel === "OFFERTE" ? "Offertendatum:" : data.titel === "MAHNUNG" ? "Mahndatum:" : "Datum:"}</td><td style="font-size:8.5pt;color:#222;">${data.datum}</td></tr>`);
+      if (data.faelligDatum) infoRows.push(`<tr><td style="color:#777;font-size:8.5pt;padding:1px 12px 1px 0;white-space:nowrap;">Zahlbar bis:</td><td style="font-size:8.5pt;color:#222;">${data.faelligDatum}</td></tr>`);
+      if (data.gueltigBis) infoRows.push(`<tr><td style="color:#777;font-size:8.5pt;padding:1px 12px 1px 0;white-space:nowrap;">Gültig bis:</td><td style="font-size:8.5pt;color:#222;">${data.gueltigBis}</td></tr>`);
+      const refName = data.ansprechpersonIntern || data.ansprechpersonManuell || "";
+      if (refName) infoRows.push(`<tr><td style="color:#777;font-size:8.5pt;padding:1px 12px 1px 0;white-space:nowrap;">Unsere Referenz:</td><td style="font-size:8.5pt;color:#222;">${refName}</td></tr>`);
+      const infoTableHtml = `<table style="border-collapse:collapse;margin-top:4px;">${infoRows.join("")}</table>`;
+
       headerHtml = `<div style="padding:20px 40px 14px;display:flex;align-items:flex-start;justify-content:space-between;gap:16px;${logoPos==="rechts"?"flex-direction:row-reverse":""}">
         <div style="flex-shrink:0">
           ${logoHtml}
           ${slogan ? `<div style="font-size:8pt;color:#888;margin-top:3px;">${slogan}</div>` : ""}
         </div>
         <div style="text-align:right">
-          <div style="font-size:14pt;font-weight:700;color:#222;">${data.titel}</div>
-          <div style="font-size:8.5pt;color:#555;margin-top:3px;">Nr: ${data.nummer}</div>
-          <div style="font-size:8.5pt;color:#555;">Datum: ${data.datum}</div>
-          ${data.faelligDatum ? `<div style="font-size:8.5pt;color:#555;">Fällig: ${data.faelligDatum}</div>` : ""}
-          ${data.gueltigBis ? `<div style="font-size:8.5pt;color:#555;">Gültig bis: ${data.gueltigBis}</div>` : ""}
+          <div style="font-size:15pt;font-weight:700;color:${hc};letter-spacing:0.5px;">${data.titel}</div>
+          <div style="font-size:8.5pt;color:#888;margin-top:1px;margin-bottom:4px;">Nr. ${data.nummer}</div>
+          ${infoTableHtml}
         </div>
       </div>
       <div style="height:2px;background:${hc};margin:0 40px 0;"></div>`;
@@ -1040,16 +1063,43 @@ export async function registerRoutes(
     // Für Design A: Titel ist bereits im Header — nicht nochmals im Body zeigen
     const titelImHeader = design === "A";
 
-    // Ansprechperson
-    const apAktiv       = v.ansprechperson_aktiv !== false;
-    const apLabel       = v.ansprechperson_label   || "Ansprechperson";
-    const apQuelle      = v.ansprechperson_quelle  || "manuell";
-    let ansprechperson  = "";
-    if (apQuelle === "intern")  ansprechperson = data.ansprechpersonIntern || "";
-    else if (apQuelle === "extern") ansprechperson = data.ansprechpersonExtern || "";
-    else ansprechperson = data.ansprechpersonManuell || "";
+    // Ansprechperson — immer aus ansprechpersonIntern lesen (Name aus Dialog/Auftrag)
+    const apAktiv = v.ansprechperson_aktiv !== false;
+    const apLabel = v.ansprechperson_label || "Ansprechpartner";
+    // Name: bevorzuge intern, dann extern, dann manuell
+    const ansprechperson = data.ansprechpersonIntern || data.ansprechpersonManuell || data.ansprechpersonExtern || "";
+
+    // E-Mail + Telefon: IMMER aus Mitarbeiter-DB laden (Name als Schlüssel)
+    // Achtung: Variable heisst maResult (nicht data) um Konflikt mit dem Parameter data zu vermeiden
+    let apEmail = data.ansprechpersonInternEmail || "";
+    let apTelefon = data.ansprechpersonInternTelefon || "";
+
+    // Immer DB-Lookup wenn Name vorhanden — so funktioniert es ohne Dialog-Input
+    if (ansprechperson) {
+      const maResult = await supabase.from("mitarbeiter").select("vorname,nachname,email_geschaeftlich,telefon_direkt,email,telefon");
+      const maRows = maResult.data;
+      if (maRows && maRows.length > 0) {
+        const nameLower = ansprechperson.trim().toLowerCase();
+        const ma = maRows.find((m: any) => {
+          const full = `${m.vorname || ""} ${m.nachname || ""}`.trim().toLowerCase();
+          return full === nameLower || full.includes(nameLower) || nameLower.includes(full);
+        });
+        if (ma) {
+          // DB hat immer Vorrang — aktuellste Daten aus Mitarbeiterakte
+          apEmail = ma.email_geschaeftlich || ma.email || apEmail;
+          apTelefon = ma.telefon_direkt || ma.telefon || apTelefon;
+        }
+      }
+    }
+
     const apBlock = apAktiv && ansprechperson
-      ? `<div style="font-size:9pt;color:#444;margin-bottom:8px;"><strong>${apLabel}:</strong> ${ansprechperson}</div>`
+      ? `<div style="font-size:9pt;color:#444;margin-bottom:8px;">
+          <strong>${apLabel}:</strong> ${ansprechperson}${
+            apEmail ? `<br><span style="font-weight:normal;">E-Mail: ${apEmail}</span>` : ""
+          }${
+            apTelefon ? `<br><span style="font-weight:normal;">Telefon Direkt: ${apTelefon}</span>` : ""
+          }
+        </div>`
       : "";
 
     // Positionstexte (Spaltenbezeichnungen)
@@ -1348,6 +1398,21 @@ export async function registerRoutes(
 
 
   // Helper: Adresse-String in Strasse + PLZ/Ort aufteilen
+  // Kundennummer aus der kunden-Tabelle anhand des Namens suchen
+  async function getKundenNr(name: string): Promise<string> {
+    if (!name) return "";
+    const nameLower = name.trim().toLowerCase().replace(/\s+/g, " ");
+    const knResult = await supabase.from("kunden").select("nr,vorname,nachname,firma");
+    const knRows = knResult.data || [];
+    const found = knRows.find((k: any) => {
+      const fullName = [k.vorname, k.nachname].filter(Boolean).join(" ").trim().toLowerCase().replace(/\s+/g, " ");
+      const firma = (k.firma || "").trim().toLowerCase();
+      return fullName === nameLower || firma === nameLower ||
+             nameLower.includes(fullName) || fullName.includes(nameLower);
+    });
+    return found?.nr || "";
+  }
+
   function splitAdresse(adresse: string): { strasse: string; plzOrt: string } {
     if (!adresse) return { strasse: "", plzOrt: "" };
     const lines = adresse.split(/\n|\r/).map(l => l.trim()).filter(Boolean);
@@ -1497,7 +1562,10 @@ html: string): Promise<Buffer> {
         showTotals: true,
         extraHtml: rechnung.notiz ? `<div style="margin-top:12px;padding:8px 12px;background:#f9f6f0;border-left:3px solid #6b4c2a;font-size:8.5pt;color:#444;white-space:pre-line;">${rechnung.notiz}</div>` : "",
         ansprechpersonIntern: (req.body as any)?.ansprechpersonIntern || rechnung.ansprechperson_intern || auftrag?.verantwortlicher || "",
+        ansprechpersonInternEmail: (req.body as any)?.ansprechpersonInternEmail || "",
+        ansprechpersonInternTelefon: (req.body as any)?.ansprechpersonInternTelefon || "",
         ansprechpersonExtern: (req.body as any)?.ansprechpersonExtern || rechnung.ansprechperson_extern || auftrag?.ansprechperson || "",
+        kundenNr: await getKundenNr(auftrag?.kunde || ""),
       });
 
       const finalHtml = html.replace(/<\/body>\s*<\/html>/, qrZahlscheinHtml + "</body></html>");
@@ -1985,13 +2053,19 @@ html: string): Promise<Buffer> {
   // ─── Kunden ───────────────────────────────────────────────────────────────────
   app.get("/api/kunden/next-nr", async (_req, res) => {
     try {
-      const year = new Date().getFullYear();
+      const yy = String(new Date().getFullYear()).slice(-2);
       const { data: allNr } = await supabase.from("kunden").select("nr");
       const maxNr = (allNr || []).reduce((mx: number, k: any) => {
-        const m = String(k.nr || "").match(/K-\d{4}-(\d+)/);
-        return m ? Math.max(mx, parseInt(m[1], 10)) : mx;
+        const nr = String(k.nr || "");
+        // Neues Format K260001
+        const m1 = nr.match(/^K(\d{2})(\d{4})$/);
+        if (m1) return Math.max(mx, parseInt(m1[2], 10));
+        // Altes Format K-2026-0001
+        const m2 = nr.match(/K-\d{4}-(\d+)/);
+        if (m2) return Math.max(mx, parseInt(m2[1], 10));
+        return mx;
       }, 0);
-      const nr = `K-${year}-${String(maxNr + 1).padStart(4, "0")}`;
+      const nr = `K${yy}${String(maxNr + 1).padStart(4, "0")}`;
       res.json({ nr });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
@@ -2006,14 +2080,18 @@ html: string): Promise<Buffer> {
 
   app.post("/api/kunden", async (req, res) => {
     try {
-      // Nächste Kundennummer generieren: K-YYYY-NNNN
-      const year = new Date().getFullYear();
+      // Nächste Kundennummer generieren: KYYNNN (z.B. K260001)
+      const yy = String(new Date().getFullYear()).slice(-2);
       const { data: allNr } = await supabase.from("kunden").select("nr");
       const maxNr = (allNr || []).reduce((mx: number, k: any) => {
-        const m = String(k.nr || "").match(/K-\d{4}-(\d+)/);
-        return m ? Math.max(mx, parseInt(m[1], 10)) : mx;
+        const nr = String(k.nr || "");
+        const m1 = nr.match(/^K(\d{2})(\d{4})$/);
+        if (m1) return Math.max(mx, parseInt(m1[2], 10));
+        const m2 = nr.match(/K-\d{4}-(\d+)/);
+        if (m2) return Math.max(mx, parseInt(m2[1], 10));
+        return mx;
       }, 0);
-      const nr = `K-${year}-${String(maxNr + 1).padStart(4, "0")}`;
+      const nr = `K${yy}${String(maxNr + 1).padStart(4, "0")}`;
       const k = { id: uid(), nr, ...req.body };
       const { data, error } = await supabase.from("kunden").insert(k).select().single();
       if (error) throw error;
@@ -2287,12 +2365,37 @@ html: string): Promise<Buffer> {
     try {
       const { kunde, kunde_adresse, kunde_email, kunde_telefon } = req.body;
       if (!kunde?.trim()) return res.json({ synced: false });
-      const { data: existing } = await supabase
-        .from("kunden")
-        .select("id")
-        .ilike("nachname", `%${kunde.trim()}%`)
-        .limit(1)
-        .maybeSingle();
+
+      // Vollständigen Namen aufteilen für die Suche
+      const nameParts = kunde.trim().split(" ");
+      const searchNachname = nameParts[nameParts.length - 1] || "";
+      const searchVorname = nameParts.slice(0, -1).join(" ");
+
+      // 1. Suche nach E-Mail (eindeutigster Match)
+      let existing: any = null;
+      if (kunde_email?.trim()) {
+        const { data: byEmail } = await supabase
+          .from("kunden")
+          .select("id")
+          .ilike("email", kunde_email.trim())
+          .limit(1)
+          .maybeSingle();
+        if (byEmail) existing = byEmail;
+      }
+
+      // 2. Suche nach Vor- + Nachname kombiniert
+      if (!existing && searchNachname) {
+        const { data: allK } = await supabase.from("kunden").select("id,vorname,nachname,firma");
+        const normalizedSearch = kunde.trim().toLowerCase();
+        const found = (allK || []).find((k: any) => {
+          const fullName = `${k.vorname || ""} ${k.nachname || ""}`.trim().toLowerCase();
+          const firmaName = (k.firma || "").trim().toLowerCase();
+          return fullName === normalizedSearch || firmaName === normalizedSearch ||
+            fullName.includes(normalizedSearch) || normalizedSearch.includes(fullName);
+        });
+        if (found) existing = found;
+      }
+
       if (existing) {
         const updates: any = {};
         if (kunde_adresse) updates.adresse = kunde_adresse.split("\n")[0];
@@ -2302,16 +2405,20 @@ html: string): Promise<Buffer> {
           await supabase.from("kunden").update(updates).eq("id", existing.id);
         return res.json({ synced: true, action: "updated", id: existing.id });
       }
-      const nameParts = kunde.trim().split(" ");
-      const nachname = nameParts.pop() || kunde.trim();
-      const vorname = nameParts.join(" ");
-      const year2 = new Date().getFullYear();
+      const newNameParts = kunde.trim().split(" ");
+      const nachname = newNameParts.pop() || kunde.trim();
+      const vorname = newNameParts.join(" ");
+      const yy2 = String(new Date().getFullYear()).slice(-2);
       const { data: allNr2 } = await supabase.from("kunden").select("nr");
       const maxNr2 = (allNr2 || []).reduce((mx: number, k: any) => {
-        const m = String(k.nr || "").match(/K-\d{4}-(\d+)/);
-        return m ? Math.max(mx, parseInt(m[1], 10)) : mx;
+        const nr2 = String(k.nr || "");
+        const m1 = nr2.match(/^K(\d{2})(\d{4})$/);
+        if (m1) return Math.max(mx, parseInt(m1[2], 10));
+        const m2 = nr2.match(/K-\d{4}-(\d+)/);
+        if (m2) return Math.max(mx, parseInt(m2[1], 10));
+        return mx;
       }, 0);
-      const autoNr = `K-${year2}-${String(maxNr2 + 1).padStart(4, "0")}`;
+      const autoNr = `K${yy2}${String(maxNr2 + 1).padStart(4, "0")}`;
       const newKunde = {
         id: uid(),
         nr: autoNr,
@@ -2511,6 +2618,8 @@ html: string): Promise<Buffer> {
         total: totalInkl,
         showTotals: true,
         extraHtml: mahnung.notiz ? `<div style="margin-top:12px;padding:8px 12px;background:#fff3cd;border-left:3px solid #f0ad4e;font-size:8.5pt;color:#444;white-space:pre-line;">${mahnung.notiz}</div>` : "",
+        ansprechpersonIntern: (req.body as any)?.ansprechpersonIntern || rechnung?.ansprechperson_intern || auftrag?.verantwortlicher || "",
+        kundenNr: await getKundenNr(empfaenger),
       });
 
       const pdfBuf = await renderPdfFromHtml(html);
@@ -2811,7 +2920,10 @@ html: string): Promise<Buffer> {
         schluss: offerte.schluss_text || "",
         showTotals: true,
         ansprechpersonIntern: bodyIntern || offerte.ansprechperson_intern || auftrag?.verantwortlicher || "",
+        ansprechpersonInternEmail: (req.body as any)?.ansprechpersonInternEmail || "",
+        ansprechpersonInternTelefon: (req.body as any)?.ansprechpersonInternTelefon || "",
         ansprechpersonExtern: bodyExtern || offerte.ansprechperson_extern || auftrag?.ansprechperson || "",
+        kundenNr: await getKundenNr(offerte.empfaenger_name || offerte.anrede || auftrag?.kunde || ""),
       });
 
       const pdfBuf = await renderPdfFromHtml(html);
@@ -2875,6 +2987,7 @@ html: string): Promise<Buffer> {
         showTotals: true,
         ansprechpersonIntern: offerte.ansprechperson_intern || auftrag?.verantwortlicher || "",
         ansprechpersonExtern: offerte.ansprechperson_extern || auftrag?.ansprechperson || "",
+        kundenNr: await getKundenNr(offerte.empfaenger_name || offerte.anrede || auftrag?.kunde || ""),
       });
 
       const pdfBuf = await renderPdfFromHtml(html);
@@ -4549,6 +4662,7 @@ html: string): Promise<Buffer> {
           </div>
         </div>`;
 
+      const ansprechpersonInternLS: string = req.body?.ansprechpersonIntern || auftrag.verantwortlicher || "";
       const html = await buildPdfHtml("lieferschein", {
         titel: "LIEFERSCHEIN",
         nummer: auftrag.nr || id.substring(0, 8).toUpperCase(),
@@ -4564,6 +4678,8 @@ html: string): Promise<Buffer> {
         subtotal: 0, mwstPct: 0, mwstBetrag: 0, total: 0,
         showTotals: false,
         extraHtml,
+        ansprechpersonIntern: ansprechpersonInternLS,
+        kundenNr: await getKundenNr(auftrag.kunde_name || auftrag.kunde || ""),
       });
 
       const pdfBuf = await renderPdfFromHtml(html);
@@ -4607,6 +4723,7 @@ html: string): Promise<Buffer> {
         ? new Date(auftrag.geplant_ende).toLocaleDateString("de-CH", { day: "2-digit", month: "long", year: "numeric" })
         : undefined;
 
+      const ansprechpersonInternAB: string = req.body?.ansprechpersonIntern || auftrag.verantwortlicher || "";
       const html = await buildPdfHtml("auftragsbestaetigung", {
         titel: "AUFTRAGSBESTÄTIGUNG",
         nummer: auftrag.nr || id.substring(0, 8).toUpperCase(),
@@ -4622,8 +4739,10 @@ html: string): Promise<Buffer> {
         positionen,
         subtotal, mwstPct, mwstBetrag, total: totalInkl,
         showTotals: positionen.length > 0,
-        einleitung: `Wir bestätigen Ihnen hiermit den Auftrag ${auftrag.nr || ""} mit folgendem Inhalt:`,
+        einleitung: `Wir best\u00e4tigen Ihnen hiermit den Auftrag ${auftrag.nr || ""} mit folgendem Inhalt:`,
         schluss: "Wir danken Ihnen fuer Ihren Auftrag und stehen fuer Rueckfragen gerne zur Verfuegung.\n\nFreundliche Gruesse\nSchneggenburger GmbH",
+        ansprechpersonIntern: ansprechpersonInternAB,
+        kundenNr: await getKundenNr(auftrag.kunde_name || auftrag.kunde || ""),
       });
 
       const pdfBuf = await renderPdfFromHtml(html);
@@ -5128,34 +5247,109 @@ html: string): Promise<Buffer> {
     try {
       const { von, bis, typ } = req.query as any;
       let lines: string[] = [];
+
       if (!typ || typ === "ausgangsrechnungen") {
-        let q = supabase.from("rechnungen").select("*").order("datum");
-        if (von) q = q.gte("datum", von);
-        if (bis) q = q.lte("datum", bis);
-        const { data: rechnungen } = await q;
+        // Rechnungen mit Auftrag JOIN um Kundenname zu holen
+        // Spalte heisst "erstellt" (nicht "datum")
+        let q = supabase
+          .from("rechnungen")
+          .select("*, auftraege(kunde, kunde_name)")
+          .order("erstellt");
+        if (von) q = q.gte("erstellt", von);
+        if (bis) q = q.lte("erstellt", bis);
+        const { data: rechnungen, error: rErr } = await q;
+        if (rErr) console.error("[FIBU] Ausgangsrechnungen Fehler:", rErr.message);
         lines.push("Typ;Nummer;Datum;Faellig;Empfaenger;Betrag_exkl;MWST_Betrag;Betrag_inkl;Bezahlt_am;Status");
         for (const r of (rechnungen || [])) {
           const exkl = (Number(r.betrag) / 1.081).toFixed(2);
           const mwst = (Number(r.betrag) - Number(exkl)).toFixed(2);
-          lines.push(`Ausgangsrechnung;${r.nr || ""};${r.datum || ""};${r.faellig_datum || ""};${(r.empfaenger_name || "").replace(/;/g, " ")};${exkl};${mwst};${Number(r.betrag).toFixed(2)};${r.bezahlt_am || ""};${r.bezahlt_am ? "Bezahlt" : "Offen"}`);
+          // Datum: erstellt als ISO-Datum (nur Datumsteil)
+          const datumStr = r.erstellt ? String(r.erstellt).slice(0, 10) : "";
+          // Empfaenger: aus Auftrag.kunde (JOIN)
+          const empfaenger = ((r as any).auftraege?.kunde || (r as any).auftraege?.kunde_name || "").replace(/;/g, " ");
+          lines.push(`Ausgangsrechnung;${r.nr || ""};${datumStr};${r.faellig_datum || ""};${empfaenger};${exkl};${mwst};${Number(r.betrag).toFixed(2)};${r.bezahlt_am || ""};${r.bezahlt_am ? "Bezahlt" : "Offen"}`);
         }
       }
+
       if (!typ || typ === "eingangsrechnungen") {
-        let q2 = supabase.from("eingangsrechnungen").select("*").order("datum");
-        if (von) q2 = q2.gte("datum", von);
-        if (bis) q2 = q2.lte("datum", bis);
-        const { data: eingang } = await q2;
+        // Eingangsrechnungen — Spalte ebenfalls "erstellt" pruefen
+        const eirResult = await supabase.from("eingangsrechnungen").select("*").order("erstellt");
+        const { data: eingang, error: eErr } = eirResult;
+        if (eErr) console.error("[FIBU] Eingangsrechnungen Fehler:", eErr.message);
         if (!typ) lines.push(""); // Leerzeile Trennung
         lines.push("Typ;Nummer;Datum;Faellig;Lieferant;Betrag_exkl;MWST_Betrag;Betrag_inkl;Status");
         for (const e of (eingang || [])) {
           const exkl = (Number(e.betrag) / 1.081).toFixed(2);
           const mwst = (Number(e.betrag) - Number(exkl)).toFixed(2);
-          lines.push(`Eingangsrechnung;${e.nr || ""};${e.datum || ""};${e.faellig_datum || ""};${(e.lieferant || "").replace(/;/g, " ")};${exkl};${mwst};${Number(e.betrag).toFixed(2)};${e.status || "offen"}`);
+          const datumStr = (e.datum || e.erstellt || "");
+          const datumFmt = datumStr ? String(datumStr).slice(0, 10) : "";
+          lines.push(`Eingangsrechnung;${e.nr || ""};${datumFmt};${e.faellig_datum || ""};${(e.lieferant || "").replace(/;/g, " ")};${exkl};${mwst};${Number(e.betrag).toFixed(2)};${e.status || "offen"}`);
         }
       }
+
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
-      res.setHeader("Content-Disposition", `inline; filename="FIBU-Export-${new Date().toISOString().slice(0,10)}.csv"`);
+      res.setHeader("Content-Disposition", `attachment; filename="FIBU-Export-${new Date().toISOString().slice(0,10)}.csv"`);
       res.send("\uFEFF" + lines.join("\r\n")); // BOM for Excel
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+
+  // ─── WIEDERKEHRENDE AUFTRÄGE ─────────────────────────────────────────────────
+  app.post("/api/auftraege/:id/wiederholen", async (req, res) => {
+    try {
+      const { data: orig, error } = await supabase.from("auftraege").select("*").eq("id", req.params.id).single();
+      if (error || !orig) return res.status(404).json({ message: "Nicht gefunden" });
+      
+      // Interval → nächstes Datum berechnen
+      const interval = orig.wiederkehrend_interval;
+      if (!interval) return res.status(400).json({ message: "Kein Interval definiert" });
+      
+      const now = new Date();
+      let nextDate = new Date(now);
+      if (interval === "monatlich") nextDate.setMonth(now.getMonth() + 1);
+      else if (interval === "quartalsweise") nextDate.setMonth(now.getMonth() + 3);
+      else if (interval === "halbjaehrlich") nextDate.setMonth(now.getMonth() + 6);
+      else if (interval === "jaehrlich") nextDate.setFullYear(now.getFullYear() + 1);
+      
+      // Neue Auftragsnummer generieren
+      const { data: allNrW } = await supabase.from("auftraege").select("nr");
+      const yyW = String(new Date().getFullYear()).slice(-2);
+      const maxW = (allNrW || []).reduce((mx: number, a: any) => {
+        const nr = String(a.nr || "");
+        const m1 = nr.match(/^A(\d{2})(\d{4})$/);
+        if (m1) return Math.max(mx, parseInt(m1[2], 10));
+        const m2 = nr.match(/A-\d{4}-(\d+)/);
+        if (m2) return Math.max(mx, parseInt(m2[1], 10));
+        return mx;
+      }, 0);
+      const newNr = `A${yyW}${String(maxW + 1).padStart(4, "0")}`;
+      
+      // Neuen Auftrag erstellen (gleiche Daten, neue Nr + aktuelles Datum)
+      const { data: newAuftrag, error: err2 } = await supabase.from("auftraege").insert({
+        nr: newNr,
+        titel: orig.titel,
+        kunde: orig.kunde,
+        kunde_adresse: orig.kunde_adresse,
+        kunde_email: orig.kunde_email,
+        kunde_telefon: orig.kunde_telefon,
+        beschreibung: orig.beschreibung,
+        status: "bestaetigt",
+        prioritaet: orig.prioritaet,
+        kategorie: orig.kategorie,
+        start_datum: new Date().toISOString().slice(0, 10),
+        angebots_betrag: orig.angebots_betrag,
+        waehrung: orig.waehrung || "CHF",
+        verantwortlicher: orig.verantwortlicher,
+        wiederkehrend_interval: orig.wiederkehrend_interval,
+        naechste_faelligkeit: nextDate.toISOString().slice(0, 10),
+      }).select().single();
+      
+      if (err2) return res.status(500).json({ message: err2.message });
+      
+      // Original: naechste_faelligkeit aktualisieren
+      await supabase.from("auftraege").update({ naechste_faelligkeit: nextDate.toISOString().slice(0, 10) }).eq("id", req.params.id);
+      
+      res.json(newAuftrag);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 

@@ -69,6 +69,7 @@ const empty = {
   rechnungs_betrag: "",
   waehrung: "CHF",
   verantwortlicher: "",
+  wiederkehrend_interval: null as string | null,
 };
 
 export default function AuftragForm({ id }: Props) {
@@ -108,6 +109,7 @@ export default function AuftragForm({ id }: Props) {
           existing.rechnungs_betrag != null ? String(existing.rechnungs_betrag) : "",
         waehrung: existing.waehrung || "CHF",
         verantwortlicher: existing.verantwortlicher || "",
+        wiederkehrend_interval: (existing as any).wiederkehrend_interval || null,
       });
     }
   }, [existing]);
@@ -141,7 +143,8 @@ export default function AuftragForm({ id }: Props) {
       const data = await res.json();
 
       // Auto-Sync: Kunde im Kundenzentrum anlegen/aktualisieren
-      if (form.kunde.trim()) {
+      // NUR beim Erstellen, NICHT beim Bearbeiten (verhindert Duplikate)
+      if (!editing && form.kunde.trim()) {
         apiRequest("POST", "/api/kunden/sync-from-auftrag", {
           kunde: form.kunde,
           kunde_adresse: form.kunde_adresse,
@@ -231,6 +234,21 @@ export default function AuftragForm({ id }: Props) {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div>
+              <label className="text-sm font-medium">Wiederkehrend</label>
+              <select
+                className="mt-1 w-full border rounded-md px-3 py-2 text-sm bg-background"
+                value={form.wiederkehrend_interval || ""}
+                onChange={(e) => setForm({ ...form, wiederkehrend_interval: e.target.value || null })}
+              >
+                <option value="">Einmalig (kein Intervall)</option>
+                <option value="monatlich">Monatlich</option>
+                <option value="quartalsweise">Quartalsweise</option>
+                <option value="halbjaehrlich">Halbjährlich</option>
+                <option value="jaehrlich">Jährlich</option>
+              </select>
+              <p className="text-xs text-muted-foreground mt-1">Für Wartungsverträge, Jahresservice etc.</p>
             </div>
             <div>
               <Label>Kategorie</Label>

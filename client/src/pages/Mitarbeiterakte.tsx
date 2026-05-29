@@ -57,6 +57,7 @@ const STATUS_COLOR: Record<string, string> = {
 
 const emptyForm = {
   vorname: "", nachname: "", email: "", telefon: "",
+  email_geschaeftlich: "", telefon_direkt: "",
   position: "", stundensatz: "", eintrittsdatum: "", status: "aktiv", notiz: "",
 };
 
@@ -243,12 +244,22 @@ export default function Mitarbeiterakte() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs">E-Mail</Label>
+                <Label className="text-xs">E-Mail privat</Label>
                 <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
               </div>
               <div>
-                <Label className="text-xs">Telefon</Label>
+                <Label className="text-xs">Telefon privat</Label>
                 <Input value={form.telefon} onChange={(e) => setForm({ ...form, telefon: e.target.value })} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">E-Mail geschäftlich <span className="text-[10px] text-orange-600">(für PDF)</span></Label>
+                <Input type="email" value={form.email_geschaeftlich} onChange={(e) => setForm({ ...form, email_geschaeftlich: e.target.value })} placeholder="name@schneggenburger.ch" />
+              </div>
+              <div>
+                <Label className="text-xs">Telefon Direkt <span className="text-[10px] text-orange-600">(für PDF)</span></Label>
+                <Input value={form.telefon_direkt} onChange={(e) => setForm({ ...form, telefon_direkt: e.target.value })} placeholder="+41 71 411 16 87" />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -338,14 +349,18 @@ export default function Mitarbeiterakte() {
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-3 text-xs text-muted-foreground mt-2">
-                  {m.email && (
-                    <a href={`mailto:${m.email}`} className="flex items-center gap-1 hover:text-foreground">
-                      <Mail className="h-3 w-3" />{m.email}
+                  {(m.email_geschaeftlich || m.email) && (
+                    <a href={`mailto:${m.email_geschaeftlich || m.email}`} className="flex items-center gap-1 hover:text-foreground">
+                      <Mail className="h-3 w-3" />
+                      {m.email_geschaeftlich || m.email}
+                      {m.email_geschaeftlich && <span className="text-[9px] text-orange-500 ml-0.5">(gesch.)</span>}
                     </a>
                   )}
-                  {m.telefon && (
-                    <a href={`tel:${m.telefon}`} className="flex items-center gap-1 hover:text-foreground">
-                      <Phone className="h-3 w-3" />{m.telefon}
+                  {(m.telefon_direkt || m.telefon) && (
+                    <a href={`tel:${m.telefon_direkt || m.telefon}`} className="flex items-center gap-1 hover:text-foreground">
+                      <Phone className="h-3 w-3" />
+                      {m.telefon_direkt || m.telefon}
+                      {m.telefon_direkt && <span className="text-[9px] text-orange-500 ml-0.5">(direkt)</span>}
                     </a>
                   )}
                   {m.stundensatz > 0 && (

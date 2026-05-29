@@ -1,5 +1,7 @@
+import { useState, useRef, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
+import { apiRequest } from "@/lib/queryClient";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,6 +19,10 @@ import {
   CheckSquare,
   Bell,
   XCircle,
+  FileText,
+  Download,
+  RefreshCw,
+  ChevronDown,
 } from "lucide-react";
 import type { Auftrag, Stats, Rechnung } from "@shared/schema";
 import { STATUS_LABEL } from "@shared/schema";
@@ -28,36 +34,117 @@ function KpiCard({
   value,
   icon: Icon,
   tone,
+  auftraege,
 }: {
   label: string;
   value: number | string;
   icon: any;
   tone: "primary" | "amber" | "orange" | "green";
+  auftraege?: Auftrag[];
 }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Klick außerhalb schliesst Dropdown
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
   const tones: Record<string, string> = {
     primary: "bg-primary/10 text-primary",
     amber: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-200",
     orange: "bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-200",
     green: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-200",
   };
+
+  const hasAuftraege = auftraege && auftraege.length > 0;
+
   return (
-    <Card className="p-3 md:p-5 bg-card">
-      <div className="flex items-start justify-between">
-        <div className="min-w-0 flex-1">
-          <div className="text-xs md:text-sm text-muted-foreground truncate">{label}</div>
-          <div
-            className="text-xl md:text-3xl font-bold mt-1"
-            style={{ fontFamily: "var(--font-display)" }}
-            data-testid={`kpi-${label.toLowerCase()}`}
-          >
-            {value}
+    <div ref={ref} className="relative">
+      <Card
+        className={cn(
+          "p-3 md:p-5 bg-card select-none",
+          hasAuftraege && "cursor-pointer hover:shadow-md hover:border-foreground/20 transition-all"
+        )}
+        onClick={() => hasAuftraege && setOpen((o) => !o)}
+      >
+        <div className="flex items-start justify-between">
+          <div className="min-w-0 flex-1">
+            <div className="text-xs md:text-sm text-muted-foreground truncate">{label}</div>
+            <div
+              className="text-xl md:text-3xl font-bold mt-1"
+              style={{ fontFamily: "var(--font-display)" }}
+              data-testid={`kpi-${label.toLowerCase()}`}
+            >
+              {value}
+            </div>
+          </div>
+          <div className="flex flex-col items-end gap-1">
+            <div className={cn("h-10 w-10 rounded-md flex items-center justify-center", tones[tone])}>
+              <Icon className="h-5 w-5" />
+            </div>
           </div>
         </div>
-        <div className={cn("h-10 w-10 rounded-md flex items-center justify-center", tones[tone])}>
-          <Icon className="h-5 w-5" />
+        {hasAuftraege && (
+          <div className="mt-2 text-xs text-muted-foreground flex items-center gap-0.5">
+            <ChevronDown className={cn("h-3 w-3 transition-transform", open && "rotate-180")} />
+            {open ? "Schliessen" : "Aufträge anzeigen"}
+          </div>
+        )}
+      </Card>
+
+      {/* Dropdown */}
+      {open && hasAuftraege && (
+        <div
+          className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border border-border rounded-lg shadow-xl overflow-hidden"
+          style={{ minWidth: "260px" }}
+        >
+          <div className="px-3 py-2 bg-muted/50 border-b text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            {label} — {auftraege.length} Aufträge
+          </div>
+          <div className="max-h-72 overflow-y-auto divide-y">
+            {auftraege.map((a) => (
+              <Link key={a.id} href={`/auftraege/${a.id}`}>
+                <a
+                  className="flex items-center justify-between px-3 py-2.5 hover:bg-muted/60 transition-colors cursor-pointer"
+                  onClick={() => setOpen(false)}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-mono text-muted-foreground shrink-0">{a.nr}</span>
+                      <span className="text-sm font-medium truncate">{a.titel}</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground truncate mt-0.5">{a.kunde}</div>
+                  </div>
+                  <div className="flex items-center gap-2 ml-2 shrink-0">
+                    {a.angebots_betrag != null && (
+                      <span className="text-xs font-semibold tabular-nums" style={{ color: "#6b4c2a" }}>
+                        {formatCHF(a.angebots_betrag, a.waehrung)}
+                      </span>
+                    )}
+                    <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", STATUS_BADGE[a.status])}>
+                      {STATUS_LABEL[a.status]}
+                    </Badge>
+                  </div>
+                </a>
+              </Link>
+            ))}
+          </div>
+          <div className="px-3 py-2 border-t bg-muted/30">
+            <Link href={`/auftraege`}>
+              <a className="text-xs text-primary hover:underline flex items-center gap-1" onClick={() => setOpen(false)}>
+                Alle Aufträge öffnen <ArrowRight className="h-3 w-3" />
+              </a>
+            </Link>
+          </div>
         </div>
-      </div>
-    </Card>
+      )}
+    </div>
   );
 }
 
@@ -76,14 +163,19 @@ export default function Dashboard() {
   // Finanzen Übersicht
   const now = new Date();
   const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  // Monatsumsatz: bezahlte Rechnungen im aktuellen Monat (nach bezahlt_am)
+  // Fallback auf erstellt falls bezahlt_am nicht gesetzt
   const monatsumsatz = (rechnungen as any[])
-    .filter((r: any) => r.datum && r.datum.startsWith(thisMonth))
+    .filter((r: any) => {
+      const d = r.bezahlt_am || r.erstellt;
+      return d && d.startsWith(thisMonth);
+    })
     .reduce((s: number, r: any) => s + (Number(r.betrag) || 0), 0);
   const offenePosten = (rechnungen as any[])
-    .filter((r: any) => r.status !== "bezahlt")
+    .filter((r: any) => !r.bezahlt_am)
     .reduce((s: number, r: any) => s + (Number(r.betrag) || 0), 0);
   const bezahlt = (rechnungen as any[])
-    .filter((r: any) => r.status === "bezahlt")
+    .filter((r: any) => !!r.bezahlt_am)
     .reduce((s: number, r: any) => s + (Number(r.betrag) || 0), 0);
 
   const { data: offerten = [] } = useQuery<any[]>({
@@ -111,6 +203,13 @@ export default function Dashboard() {
     if (!g || isNaN(Date.parse(g))) return false; // "60 Tage" etc. überspringen
     const gDate = new Date(g); gDate.setHours(0,0,0,0);
     return gDate >= today && gDate <= in7Days;
+  });
+
+  // Wiederkehrende Aufträge die fällig sind
+  const faelligeWiederkehrende = (auftraege || []).filter((a: any) => {
+    if (!a.wiederkehrend_interval) return false;
+    if (!a.naechste_faelligkeit) return false;
+    return new Date(a.naechste_faelligkeit) <= today;
   });
 
   // Last 6 months for chart
@@ -161,29 +260,87 @@ export default function Dashboard() {
           </>
         ) : (
           <>
-            <KpiCard label="Gesamt" value={stats?.gesamt ?? 0} icon={Briefcase} tone="primary" />
-            <KpiCard label="Offen" value={stats?.offen ?? 0} icon={Clock} tone="amber" />
+            <KpiCard
+              label="Gesamt"
+              value={stats?.gesamt ?? 0}
+              icon={Briefcase}
+              tone="primary"
+              auftraege={(auftraege || []).filter(a => a.status !== "storniert")}
+            />
+            <KpiCard
+              label="Offen"
+              value={stats?.offen ?? 0}
+              icon={Clock}
+              tone="amber"
+              auftraege={(auftraege || []).filter(a => a.status === "anfrage" || a.status === "angebot" || a.status === "bestaetigt")}
+            />
             <KpiCard
               label="In Bearbeitung"
               value={stats?.in_bearbeitung ?? 0}
               icon={Hammer}
               tone="orange"
+              auftraege={(auftraege || []).filter(a => a.status === "in_arbeit")}
             />
             <KpiCard
               label="Abgeschlossen"
               value={stats?.abgeschlossen ?? 0}
               icon={CheckCircle2}
               tone="green"
+              auftraege={(auftraege || []).filter(a => a.status === "abgeschlossen")}
             />
           </>
         )}
       </div>
 
+      {/* Offerten Übersicht */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+        <KpiCard
+          label="Offene Offerten"
+          value={offerten.filter((o: any) => o.status !== 'angenommen' && o.status !== 'abgelehnt').length}
+          icon={FileText}
+          tone="amber"
+        />
+        <KpiCard
+          label="Offerten-Wert"
+          value={formatCHF(offerten.filter((o: any) => o.status !== 'angenommen' && o.status !== 'abgelehnt').reduce((s: number, o: any) => s + (Number(o.betrag_total) || 0), 0))}
+          icon={TrendingUp}
+          tone="primary"
+        />
+        <KpiCard
+          label="Angenommen"
+          value={offerten.filter((o: any) => o.status === 'angenommen').length}
+          icon={CheckSquare}
+          tone="green"
+        />
+        <KpiCard
+          label="Abgelaufen"
+          value={offerten.filter((o: any) => {
+            if (o.status === 'angenommen' || o.status === 'abgelehnt') return false;
+            const g = o.gueltigkeit; if (!g || isNaN(Date.parse(g))) return false;
+            return new Date(g) < today;
+          }).length}
+          icon={XCircle}
+          tone="amber"
+        />
+      </div>
+
       {/* Finanzen Übersicht */}
       <div className="mb-6">
-        <h2 className="text-base font-semibold mb-3" style={{ fontFamily: "var(--font-display)" }}>
-          Finanzen Übersicht
-        </h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-base font-semibold" style={{ fontFamily: "var(--font-display)" }}>
+            Finanzen Übersicht
+          </h2>
+          <a
+            href="/api/export/fibu"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
+            title="FIBU-Export als CSV (für Banana, Abacus, Excel)"
+          >
+            <Download className="h-3.5 w-3.5" />
+            FIBU-Export CSV
+          </a>
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
           <KpiCard label="Monatsumsatz" value={formatCHF(monatsumsatz)} icon={TrendingUp} tone="green" />
           <KpiCard label="Offene Posten" value={formatCHF(offenePosten)} icon={AlertTriangle} tone="amber" />
@@ -215,7 +372,7 @@ export default function Dashboard() {
       </div>
 
       {/* Fälligkeits-Warnungen */}
-      {(ueberfaelligeRechnungen.length > 0 || baldFaelligeRechnungen.length > 0 || ablaufendeOfferten.length > 0) && (
+      {(ueberfaelligeRechnungen.length > 0 || baldFaelligeRechnungen.length > 0 || ablaufendeOfferten.length > 0 || faelligeWiederkehrende.length > 0) && (
         <div className="space-y-2 mb-2">
           {ueberfaelligeRechnungen.map((r: any) => (
             <Link key={r.id} href="/rechnungen">
@@ -236,6 +393,17 @@ export default function Dashboard() {
                   <span className="font-semibold">{r.nr}</span> — fällig am {new Date(r.faellig_datum).toLocaleDateString("de-CH")}
                 </span>
                 <span className="font-bold tabular-nums text-amber-700">CHF {Number(r.betrag).toLocaleString("de-CH")}</span>
+              </a>
+            </Link>
+          ))}
+          {faelligeWiederkehrende.map((a: any) => (
+            <Link key={a.id} href={`/auftraege/${a.id}`}>
+              <a className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-blue-50 border border-blue-200 text-sm hover:bg-blue-100 transition-colors dark:bg-blue-950/30 dark:border-blue-800">
+                <RefreshCw className="h-4 w-4 text-blue-600 shrink-0" />
+                <span className="flex-1 text-blue-800 dark:text-blue-300">
+                  <span className="font-semibold">{a.nr} · {a.titel}</span> — Folge-Auftrag fällig seit {new Date(a.naechste_faelligkeit).toLocaleDateString("de-CH")}
+                </span>
+                <ArrowRight className="h-4 w-4 text-blue-500 shrink-0" />
               </a>
             </Link>
           ))}
