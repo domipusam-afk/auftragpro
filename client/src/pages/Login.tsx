@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "@/lib/auth";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Lock, User, ShieldCheck, Eye, EyeOff } from "lucide-react";
@@ -9,6 +10,13 @@ type Step = "credentials" | "totp";
 
 export default function Login() {
   const { login, verify2fa } = useAuth();
+
+  // Load background image from settings
+  const { data: einstellungenList = [] } = useQuery<{ schluessel: string; wert: string }[]>({
+    queryKey: ["/api/einstellungen"],
+    queryFn: () => apiRequest("GET", "/api/einstellungen").then((r) => r.json()),
+  });
+  const loginBg = einstellungenList.find((e) => e.schluessel === "login_hintergrund")?.wert || "";
   const [step, setStep] = useState<Step>("credentials");
   const [benutzername, setBenutzername] = useState("");
   const [passwort, setPasswort] = useState("");
@@ -53,7 +61,14 @@ export default function Login() {
   return (
     <div
       className="min-h-screen flex items-center justify-center px-4"
-      style={{ background: "hsl(var(--sidebar))" }}
+      style={loginBg
+        ? {
+            backgroundImage: `url(${loginBg})`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+          }
+        : { background: "hsl(var(--sidebar))" }
+      }
     >
       <div className="w-full max-w-sm">
         {/* Logo + Firmenname */}

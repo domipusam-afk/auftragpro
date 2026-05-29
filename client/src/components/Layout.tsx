@@ -420,6 +420,14 @@ export default function Layout({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  // App-Hintergrundbild aus Einstellungen
+  const { data: einstellungenList = [] } = useQuery<{ schluessel: string; wert: string }[]>({
+    queryKey: ["/api/einstellungen"],
+    queryFn: () => apiRequest("GET", "/api/einstellungen").then((r) => r.json()),
+    staleTime: 60000,
+  });
+  const appBg = einstellungenList.find((e) => e.schluessel === "app_hintergrund")?.wert || "";
+
   // Ungelesene Chat-Nachrichten (Polling alle 30 Sek.)
   const { data: ungelesenData } = useQuery<{ count: number }>({
     queryKey: ["/api/chat/ungelesen"],
@@ -844,7 +852,18 @@ export default function Layout({ children }: { children: ReactNode }) {
       )}
 
       {/* ── MAIN CONTENT ── */}
-      <main className="flex-1 min-w-0 overflow-x-hidden md:pt-0 pt-14">
+      <main
+        className="flex-1 min-w-0 overflow-x-hidden md:pt-0 pt-14"
+        style={appBg
+          ? {
+              backgroundImage: `url(${appBg})`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              backgroundAttachment: "fixed",
+            }
+          : undefined
+        }
+      >
         {children}
       </main>
     </div>

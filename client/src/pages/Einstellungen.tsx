@@ -9,7 +9,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import {
   Upload, Download, Trash, FileText, CheckCircle2, AlertTriangle, Info,
   Lock, Eye, EyeOff, DollarSign, Clock, Save, Building2, Mail, Phone,
-  Shield, ShieldCheck, Smartphone, Copy, Check, Server, Percent,
+  Shield, ShieldCheck, Smartphone, Copy, Check, Server, Percent, Image,
 } from "lucide-react";
 import { formatDate } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -750,6 +750,145 @@ function SicherheitTab({ settings }: { settings: EinstellungMap }) {
   );
 }
 
+// ─── Tab: Hintergrundbilder ──────────────────────────────────────────────────
+
+function HintergrundTab({ settings }: { settings: EinstellungMap }) {
+  const { toast } = useToast();
+  const save = useSaveEinstellung();
+
+  const [loginBg, setLoginBg] = useState<string>(settings.login_hintergrund || "");
+  const [appBg, setAppBg] = useState<string>(settings.app_hintergrund || "");
+  const loginInputRef = useRef<HTMLInputElement>(null);
+  const appInputRef = useRef<HTMLInputElement>(null);
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>, target: "login" | "app") {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      if (target === "login") {
+        setLoginBg(dataUrl);
+        save.mutate({ key: "login_hintergrund", wert: dataUrl });
+      } else {
+        setAppBg(dataUrl);
+        save.mutate({ key: "app_hintergrund", wert: dataUrl });
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function removeBg(target: "login" | "app") {
+    if (target === "login") {
+      setLoginBg("");
+      save.mutate({ key: "login_hintergrund", wert: "" });
+    } else {
+      setAppBg("");
+      save.mutate({ key: "app_hintergrund", wert: "" });
+    }
+  }
+
+  const UploadCard = ({
+    label,
+    description,
+    value,
+    inputRef,
+    onChange,
+    onRemove,
+  }: {
+    label: string;
+    description: string;
+    value: string;
+    inputRef: React.RefObject<HTMLInputElement>;
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+    onRemove: () => void;
+  }) => (
+    <Card className="p-6 bg-card">
+      <div className="space-y-3">
+        <div>
+          <h3 className="font-semibold text-sm">{label}</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+        </div>
+
+        {value ? (
+          <div className="space-y-3">
+            <div
+              className="relative w-full h-40 rounded-lg overflow-hidden border"
+              style={{
+                backgroundImage: `url(${value})`,
+                backgroundSize: "cover",
+                backgroundPosition: "center",
+              }}
+            >
+              <div className="absolute inset-0 bg-black/20 flex items-end p-2">
+                <span className="text-white text-xs font-medium bg-black/40 px-2 py-1 rounded">
+                  Vorschau
+                </span>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => inputRef.current?.click()}
+                className="flex-1"
+              >
+                <Upload className="h-4 w-4 mr-2" />
+                Bild ersetzen
+              </Button>
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={onRemove}
+              >
+                <Trash className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div
+            className="border-2 border-dashed border-muted-foreground/30 rounded-lg p-8 text-center cursor-pointer hover:border-primary/50 hover:bg-muted/20 transition-colors"
+            onClick={() => inputRef.current?.click()}
+          >
+            <Upload className="h-8 w-8 mx-auto mb-3 text-muted-foreground" />
+            <p className="text-sm font-medium text-muted-foreground">Bild hochladen</p>
+            <p className="text-xs text-muted-foreground mt-1">JPG, PNG, WebP — max. 5 MB</p>
+          </div>
+        )}
+
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={onChange}
+        />
+      </div>
+    </Card>
+  );
+
+  return (
+    <div className="space-y-4">
+      <UploadCard
+        label="Login-Hintergrund"
+        description="Hintergrundbild für die Anmeldeseite"
+        value={loginBg}
+        inputRef={loginInputRef}
+        onChange={(e) => handleFileChange(e, "login")}
+        onRemove={() => removeBg("login")}
+      />
+      <UploadCard
+        label="App-Hintergrund"
+        description="Hintergrundbild für den Hauptbereich der App (nach dem Login)"
+        value={appBg}
+        inputRef={appInputRef}
+        onChange={(e) => handleFileChange(e, "app")}
+        onRemove={() => removeBg("app")}
+      />
+    </div>
+  );
+}
+
 // ─── Main Einstellungen Component ──────────────────────────────────────────────
 
 export default function Einstellungen() {
@@ -796,6 +935,10 @@ export default function Einstellungen() {
             <ShieldCheck className="h-4 w-4 shrink-0" />
             <span>Sicherheit</span>
           </TabsTrigger>
+          <TabsTrigger value="hintergrund" className="flex flex-col sm:flex-row items-center gap-1 text-xs p-2 sm:px-3 sm:py-1.5 h-auto">
+            <Image className="h-4 w-4 shrink-0" />
+            <span>Hintergrund</span>
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="allgemein">
@@ -821,6 +964,10 @@ export default function Einstellungen() {
 
         <TabsContent value="sicherheit">
           <SicherheitTab settings={settings} />
+        </TabsContent>
+
+        <TabsContent value="hintergrund">
+          <HintergrundTab settings={settings} />
         </TabsContent>
       </Tabs>
     </div>
