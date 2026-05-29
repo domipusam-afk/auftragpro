@@ -5434,8 +5434,18 @@ html: string): Promise<Buffer> {
 
   app.post("/api/auftraege/:id/generate-token", async (req, res) => {
     try {
-      const token = uid() + uid();
-      const { data, error } = await supabase.from("auftraege").update({ public_token: token }).eq("id", req.params.id).select("public_token").single();
+      // Lesbarer Slug: Auftragsnummer + Titel, z.B. "a-2026-0001-liege"
+      const { data: auftrag } = await supabase.from("auftraege").select("nr,titel").eq("id", req.params.id).single();
+      const nr = (auftrag?.nr || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+      const titel = (auftrag?.titel || "").toLowerCase()
+        .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue")
+        .replace(/ß/g, "ss")
+        .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30);
+      const slug = [nr, titel].filter(Boolean).join("-") || uid();
+      // Eindeutigkeit sicherstellen: pruefen ob slug schon vergeben
+      const { data: existing } = await supabase.from("auftraege").select("id").eq("public_token", slug).maybeSingle();
+      const finalToken = existing && existing.id !== req.params.id ? `${slug}-${uid().slice(0, 4)}` : slug;
+      const { data, error } = await supabase.from("auftraege").update({ public_token: finalToken }).eq("id", req.params.id).select("public_token").single();
       if (error) return res.status(500).json({ message: error.message });
       res.json({ token: data.public_token });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
