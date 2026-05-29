@@ -294,9 +294,12 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
       <div>8001 Z&uuml;rich</div>
     </div>`;
 
-  // Ansprechperson
+  // Ansprechperson — zeigt Beispielwerte (wie in buildPdfHtml aus Mitarbeiter geladen)
   const apBlock = ansprechperson_aktiv
-    ? `<div style="font-size:${Math.round(9*S)}pt;color:#444;margin-bottom:${Math.round(8*S)}px;"><strong>${ansprechperson_label || "Ansprechperson"}:</strong> [beim PDF-Erstellen gesetzt]</div>`
+    ? `<div style="font-size:${Math.round(9*S)}pt;color:#444;margin-bottom:${Math.round(8*S)}px;">
+        <strong>${ansprechperson_label || "Ansprechperson"}:</strong> Dominik Pusam<br/>
+        <span style="font-size:${Math.round(8*S)}pt;color:#666;">dominik.pusam@schneggenburger.ch &nbsp;|&nbsp; +41 78 907 53 14</span>
+       </div>`
     : "";
 
   // Positions-Texte
@@ -365,12 +368,25 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
   const einlHtml = einleitung ? `<div style="font-size:${Math.round(9*S)}pt;color:#444;white-space:pre-line;margin-bottom:${Math.round(12*S)}px;">${einleitung}</div>` : "";
   const schlHtml = schluss ? `<div style="font-size:${Math.round(9*S)}pt;color:#444;white-space:pre-line;margin-top:${Math.round(14*S)}px;">${schluss}</div>` : "";
 
-  // Dokument-Info rechts oben (Datum, Nr, Fällig/Gültig)
+  // Dokument-Info rechts oben — neue 2-spaltige Info-Tabelle (spiegelt buildPdfHtml)
+  // Zeigt: Kundennummer / Datum / Gültig bis oder Zahlbar bis / Unsere Referenz
+  const sampleNr = docTyp === "offerte" ? "26001" : docTyp === "rechnung" ? "26001" : docTyp === "mahnung" ? "26001" : "26001";
+  const sampleKundenNr = "K26005";
+  const sampleDatum = "29. Mai 2026";
+  const datumLabel = docTyp === "offerte" ? "Offertendatum" : docTyp === "rechnung" ? "Rechnungsdatum" : docTyp === "mahnung" ? "Mahndatum" : "Datum";
+  const gueltigLabel = docTyp === "offerte" ? "G&uuml;ltig bis" : "Zahlbar bis";
+  const gueltigVal = docTyp === "offerte" ? "60 Tage" : `${zahlungsfrist} Tage`;
+  const tdL = `padding:${Math.round(1.5*S)}px ${Math.round(5*S)}px ${Math.round(1.5*S)}px 0;color:#666;white-space:nowrap;font-size:${Math.round(8*S)}pt;`;
+  const tdR = `padding:${Math.round(1.5*S)}px 0;font-weight:600;color:#222;font-size:${Math.round(8*S)}pt;`;
   const docInfoHtml = `
-    <div style="text-align:right;font-size:${Math.round(8.5*S)}pt;color:#555;line-height:1.6;">
-      <div>Nr: ${docTyp.substring(0,2).toUpperCase()}-2024-001</div>
-      <div>Datum: 15.04.2024</div>
-      ${(docTyp === "offerte" || docTyp === "rechnung") ? `<div>F&auml;llig: ${zahlungsfrist} Tage</div>` : ""}
+    <div style="text-align:right;">
+      <div style="font-size:${Math.round(8*S)}pt;color:#888;margin-bottom:${Math.round(2*S)}px;">Nr. ${sampleNr}</div>
+      <table style="border-collapse:collapse;margin-left:auto;">
+        <tr><td style="${tdL}">Ihre Kundennummer:</td><td style="${tdR}">${sampleKundenNr}</td></tr>
+        <tr><td style="${tdL}">${datumLabel}:</td><td style="${tdR}">${sampleDatum}</td></tr>
+        ${(docTyp === "offerte" || docTyp === "rechnung" || docTyp === "mahnung") ? `<tr><td style="${tdL}">${gueltigLabel}:</td><td style="${tdR}">${gueltigVal}</td></tr>` : ""}
+        <tr><td style="${tdL}">Unsere Referenz:</td><td style="${tdR}">Dominik Pusam</td></tr>
+      </table>
     </div>`;
 
   // Footer
