@@ -233,16 +233,16 @@ export default function Dashboard() {
     <div className="p-4 md:p-8 max-w-7xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-bold" style={{ fontFamily: "var(--font-display)" }}>
+          <h1 className="text-xl font-bold bg-background/80 backdrop-blur-sm rounded px-1 inline-block" style={{ fontFamily: "var(--font-display)" }}>
             Dashboard
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">
+          <p className="text-sm text-muted-foreground mt-1 bg-background/70 backdrop-blur-sm rounded px-1 inline-block">
             Übersicht aller laufenden Aufträge
           </p>
         </div>
         <Link href="/neu">
           <a>
-            <Button data-testid="button-new-order" className="bg-secondary hover:bg-secondary/90 text-white">
+            <Button data-testid="button-new-order" className="bg-primary hover:bg-primary/90 text-white font-semibold shadow-md">
               <Plus className="h-4 w-4 mr-2" />
               Neuer Auftrag
             </Button>
@@ -327,14 +327,14 @@ export default function Dashboard() {
       {/* Finanzen Übersicht */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-base font-semibold" style={{ fontFamily: "var(--font-display)" }}>
+          <h2 className="text-base font-semibold bg-background/80 backdrop-blur-sm rounded px-1 inline-block" style={{ fontFamily: "var(--font-display)" }}>
             Finanzen Übersicht
           </h2>
           <a
             href="/api/export/fibu"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-card border border-border text-foreground font-medium shadow-sm hover:bg-muted transition-colors"
             title="FIBU-Export als CSV (für Banana, Abacus, Excel)"
           >
             <Download className="h-3.5 w-3.5" />
@@ -424,7 +424,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
         <Card className="p-5 lg:col-span-2 bg-card">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold" style={{ fontFamily: "var(--font-display)" }}>
+            <h2 className="font-semibold bg-background/80 backdrop-blur-sm rounded px-1 inline-block" style={{ fontFamily: "var(--font-display)" }}>
               Neueste Aufträge
             </h2>
             <Link href="/auftraege">
@@ -473,7 +473,7 @@ export default function Dashboard() {
         <Card className="p-5 bg-card">
           <div className="flex items-center gap-2 mb-4">
             <AlertTriangle className="h-4 w-4 text-destructive" />
-            <h2 className="font-semibold" style={{ fontFamily: "var(--font-display)" }}>
+            <h2 className="font-semibold bg-background/80 backdrop-blur-sm rounded px-1 inline-block" style={{ fontFamily: "var(--font-display)" }}>
               Dringend
             </h2>
           </div>

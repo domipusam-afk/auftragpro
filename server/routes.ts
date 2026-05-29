@@ -2532,8 +2532,20 @@ html: string): Promise<Buffer> {
   app.post("/api/mahnungen", async (req, res) => {
     try {
       const { auftrag_id, mahnstufe, betrag, faellig_datum, notiz } = req.body;
+      // Mahnungsnummer: M + YY + 4-stellig, z.B. M260001
+      const { data: allMahnNr } = await supabase.from("mahnungen").select("nr");
+      const mahnNrYY = String(new Date().getFullYear()).slice(2);
+      const mahnPrefix = "M" + mahnNrYY;
+      const mahnMax = (allMahnNr || []).reduce((max: number, m: any) => {
+        const nr = String(m.nr || "");
+        const match = nr.match(/^M\d{2}(\d{4})$/);
+        const seq = match ? parseInt(match[1], 10) : 0;
+        return seq > max ? seq : max;
+      }, 0);
+      const mahnNr = mahnPrefix + String(mahnMax + 1).padStart(4, "0");
       const eintrag = {
         id: uid(),
+        nr: mahnNr,
         auftrag_id,
         mahnstufe: mahnstufe || 1,
         betrag: betrag || 0,
@@ -2764,18 +2776,19 @@ html: string): Promise<Buffer> {
   app.post("/api/auftraege/:auftr_id/offerten", async (req, res) => {
     try {
       const { data: allRows } = await supabase.from("offerten").select("nr");
-      // Format: YY + 3-stellig laufend, z.B. 26001, 26002 …
+      // Format: O + YY + 4-stellig laufend, z.B. O260001
       const yy = String(new Date().getFullYear()).slice(2);
-      const prefix = yy;
+      const prefix = "O" + yy;
       const maxSeq = (allRows || []).reduce((max: number, r: any) => {
         const nr = String(r.nr || "");
-        if (nr.startsWith(prefix)) {
-          const seq = parseInt(nr.slice(prefix.length), 10);
-          if (!isNaN(seq) && seq > max) return seq;
-        }
+        // Support both old format (26001) and new (O260001)
+        const matchNew = nr.match(/^O\d{2}(\d{4})$/);
+        const matchOld = nr.match(/^\d{2}(\d{3,4})$/);
+        const seq = matchNew ? parseInt(matchNew[1], 10) : matchOld ? parseInt(matchOld[1], 10) : 0;
+        if (!isNaN(seq) && seq > max) return seq;
         return max;
       }, 0);
-      const nextNr = `${prefix}${String(maxSeq + 1).padStart(3, "0")}`; // z.B. 26001
+      const nextNr = prefix + String(maxSeq + 1).padStart(4, "0"); // z.B. O260001
       const body = req.body;
       const eintrag = {
         id: uid(),
@@ -5436,12 +5449,14 @@ html: string): Promise<Buffer> {
     try {
       // Lesbarer Slug: Auftragsnummer + Titel, z.B. "a-2026-0001-liege"
       const { data: auftrag } = await supabase.from("auftraege").select("nr,titel").eq("id", req.params.id).single();
-      const nr = (auftrag?.nr || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-      const titel = (auftrag?.titel || "").toLowerCase()
-        .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue")
-        .replace(/ß/g, "ss")
+      // Slug: Auftragsnr (uppercase) + Titel-slug, z.B. A260001-liege
+      const nrRaw = (auftrag?.nr || "").toUpperCase().replace(/[^A-Z0-9]+/g, "");
+      const titelSlug = (auftrag?.titel || "").toLowerCase()
+        .replace(/\u00e4/g, "ae").replace(/\u00f6/g, "oe").replace(/\u00fc/g, "ue")
+        .replace(/\u00df/g, "ss")
         .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30);
-      const slug = [nr, titel].filter(Boolean).join("-") || uid();
+      const slug = (nrRaw && titelSlug) ? nrRaw + "-" + titelSlug
+                 : nrRaw || titelSlug || uid();
       // Eindeutigkeit sicherstellen: pruefen ob slug schon vergeben
       const { data: existing } = await supabase.from("auftraege").select("id").eq("public_token", slug).maybeSingle();
       const finalToken = existing && existing.id !== req.params.id ? `${slug}-${uid().slice(0, 4)}` : slug;
