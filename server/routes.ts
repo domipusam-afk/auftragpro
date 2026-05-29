@@ -863,6 +863,7 @@ export async function registerRoutes(
     schluss?: string;
     showTotals?: boolean;
     extraHtml?: string;
+    extraHtmlFullWidth?: string;
     mahngebuehr?: number;
     ansprechpersonIntern?: string;
     ansprechpersonInternEmail?: string;
@@ -1431,6 +1432,7 @@ export async function registerRoutes(
         ${schl ? `<div class="schluss" style="margin-top:14px;">${schl}</div>` : ""}
         ${data.extraHtml || ""}
       </div>
+      ${data.extraHtmlFullWidth ? `<div style="font-family:Arial,Helvetica,sans-serif;">${data.extraHtmlFullWidth}</div>` : ""}
     </body></html>`;
   }
 
@@ -1495,6 +1497,38 @@ html: string): Promise<Buffer> {
     const pdfBuf = await page.pdf({ format: "A4", printBackground: true, margin: { top: "10mm", bottom: "10mm", left: "10mm", right: "10mm" } });
     await browser.close();
     return Buffer.from(pdfBuf);
+  }
+
+  // Rechnung PDF: Seiten + QR-Bill als separate PDFs mergen (QR braucht margin:0 fuer volle 210mm)
+  async function renderRechnungPdfFromHtml(htmlSeiten: string, htmlQR: string): Promise<Buffer> {
+    const puppeteer = await import("puppeteer");
+    const { PDFDocument } = await import("pdf-lib") as any;
+    const execPath = process.env.PUPPETEER_EXECUTABLE_PATH || undefined;
+    const browser = await puppeteer.default.launch({
+      executablePath: execPath,
+      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
+    });
+    try {
+      const page = await browser.newPage();
+      // PDF A: Rechnung-Seiten mit Header/Footer
+      await page.setContent(htmlSeiten, { waitUntil: "domcontentloaded" });
+      const pdfA = await page.pdf({ format: "A4", printBackground: true, margin: { top: "10mm", bottom: "10mm", left: "10mm", right: "10mm" } });
+      // PDF B: QR-Bill volle Seite, margin:0
+      await page.setContent(htmlQR, { waitUntil: "domcontentloaded" });
+      const pdfB = await page.pdf({ format: "A4", printBackground: true, margin: { top: "0", bottom: "0", left: "0", right: "0" } });
+      // Merge
+      const docA = await PDFDocument.load(pdfA);
+      const docB = await PDFDocument.load(pdfB);
+      const merged = await PDFDocument.create();
+      const pagesA = await merged.copyPages(docA, docA.getPageIndices());
+      pagesA.forEach((p: any) => merged.addPage(p));
+      const pagesB = await merged.copyPages(docB, docB.getPageIndices());
+      pagesB.forEach((p: any) => merged.addPage(p));
+      const mergedBytes = await merged.save();
+      return Buffer.from(mergedBytes);
+    } finally {
+      await browser.close();
+    }
   }
 
   // ─── Rechnung PDF (Vorlage aus DB) ──────────────────────────────────────────
@@ -1623,116 +1657,61 @@ html: string): Promise<Buffer> {
       // IBAN formatiert für Anzeige: Gruppen à 4 Zeichen
       const ibanFormatted = ibanClean.replace(/(.{4})/g, "$1 ").trim();
 
-      // Swiss QR Bill — offizielles 3-Spalten Layout (SIX Standard)
-      // Spalte 1: Empfangsschein (62mm), Spalte 2: Zahlteil+QR (105mm), Spalte 3: Infos (Rest)
-      const qrZahlscheinHtml = `
-        <div style="page-break-before:always;font-family:Arial,Helvetica,sans-serif;font-size:10pt;color:#000;width:190mm;box-sizing:border-box;">
-          ${(ibanMissing || qrIbanError) ? `<div style="background:#fff3cd;border:1px solid #ffc107;padding:6px 10px;margin-bottom:4mm;font-size:8pt;color:#856404;">&#9888; ${qrIbanError || "Bitte IBAN in Einstellungen hinterlegen."}</div>` : ""}
-
-          <!-- Trennlinie oben mit Schere -->
-          <div style="display:flex;align-items:center;margin-bottom:2mm;">
-            <div style="flex:1;border-top:1px dashed #000;"></div>
-            <div style="padding:0 2mm;font-size:11pt;line-height:1;">&#9986;</div>
-          </div>
-
-          <!-- 3 Spalten: Empfangsschein (52mm) | Zahlteil (90mm) | Infos (rest) -->
-          <div style="display:flex;align-items:flex-start;width:100%;min-height:85mm;">
-
-            <!-- ── SPALTE 1: Empfangsschein (52mm) ── -->
-            <div style="width:52mm;flex-shrink:0;padding-right:4mm;border-right:1px solid #000;min-height:85mm;display:flex;flex-direction:column;gap:0;">
-
-              <div style="font-size:10pt;font-weight:700;margin-bottom:3mm;">Empfangsschein</div>
-
-              <div style="margin-bottom:2.5mm;">
-                <div style="font-size:6pt;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;">Konto / Zahlbar an</div>
-                <div style="font-size:7.5pt;line-height:1.35;">${ibanFormatted}</div>
-                <div style="font-size:7.5pt;line-height:1.35;">${firmaName}</div>
-                <div style="font-size:7.5pt;line-height:1.35;">${firmaAdr}</div>
-                <div style="font-size:7.5pt;line-height:1.35;">${firmaPlz} ${firmaOrt}</div>
-              </div>
-
-              ${empfaenger ? `
-              <div style="margin-bottom:2.5mm;">
-                <div style="font-size:6pt;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;">Zahlbar durch</div>
-                <div style="font-size:7.5pt;line-height:1.35;">${empfaenger}</div>
-                ${empStrasse ? `<div style="font-size:7.5pt;line-height:1.35;">${empStrasse}</div>` : ""}
-                ${empPlzOrt  ? `<div style="font-size:7.5pt;line-height:1.35;">${empPlzOrt}</div>`  : ""}
-              </div>` : ""}
-
-              <div style="margin-top:auto;padding-top:2mm;">
-                <div style="display:flex;gap:4mm;align-items:flex-end;">
-                  <div>
-                    <div style="font-size:6pt;font-weight:700;text-transform:uppercase;">Währung</div>
-                    <div style="font-size:8pt;font-weight:700;">CHF</div>
-                  </div>
-                  <div>
-                    <div style="font-size:6pt;font-weight:700;text-transform:uppercase;">Betrag</div>
-                    <div style="font-size:8pt;font-weight:700;">${betragFormatted}</div>
-                  </div>
-                </div>
-                <div style="font-size:6pt;font-weight:700;text-transform:uppercase;text-align:right;margin-top:5mm;">Annahmestelle</div>
-              </div>
-            </div>
-
-            <!-- ── SPALTE 2: Zahlteil mit QR-Code (90mm) ── -->
-            <div style="width:90mm;flex-shrink:0;padding-left:4mm;padding-right:4mm;display:flex;flex-direction:column;align-items:flex-start;">
-
-              <div style="font-size:10pt;font-weight:700;margin-bottom:3mm;">Zahlteil</div>
-
-              <!-- QR-Code 46mm x 46mm -->
-              ${qrCodeSvg
-                ? `<div style="width:46mm;height:46mm;margin-bottom:3mm;flex-shrink:0;">${qrCodeSvg}</div>`
-                : `<div style="width:46mm;height:46mm;border:1.5px dashed #bbb;display:flex;align-items:center;justify-content:center;font-size:7pt;color:#999;text-align:center;margin-bottom:3mm;flex-shrink:0;">QR-Code<br/>IBAN prüfen</div>`
-              }
-
-              <!-- Währung + Betrag unter dem QR-Code -->
-              <div style="display:flex;gap:6mm;align-items:flex-end;">
-                <div>
-                  <div style="font-size:6pt;font-weight:700;text-transform:uppercase;">Währung</div>
-                  <div style="font-size:10pt;font-weight:700;">CHF</div>
-                </div>
-                <div>
-                  <div style="font-size:6pt;font-weight:700;text-transform:uppercase;">Betrag</div>
-                  <div style="font-size:10pt;font-weight:700;">${betragFormatted}</div>
-                </div>
-              </div>
-            </div>
-
-            <!-- ── SPALTE 3: Infos rechts (restliche Breite) ── -->
-            <div style="flex:1;min-width:0;padding-left:4mm;display:flex;flex-direction:column;gap:3mm;">
-
-              <div>
-                <div style="font-size:6pt;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:1mm;">Konto / Zahlbar an</div>
-                <div style="font-size:9pt;line-height:1.4;">${ibanFormatted}</div>
-                <div style="font-size:9pt;line-height:1.4;">${firmaName}</div>
-                <div style="font-size:9pt;line-height:1.4;">${firmaAdr}</div>
-                <div style="font-size:9pt;line-height:1.4;">${firmaPlz} ${firmaOrt}</div>
-              </div>
-
-              <div>
-                <div style="font-size:6pt;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:1mm;">Zusätzliche Informationen</div>
-                <div style="font-size:9pt;line-height:1.4;">Rechnung ${rechnung.nr || ""}</div>
-                ${faelligStr ? `<div style="font-size:9pt;line-height:1.4;">Zahlbar bis: ${faelligStr}</div>` : ""}
-              </div>
-
-              ${empfaenger ? `
-              <div>
-                <div style="font-size:6pt;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:1mm;">Zahlbar durch</div>
-                <div style="font-size:9pt;line-height:1.4;">${empfaenger}</div>
-                ${empStrasse ? `<div style="font-size:9pt;line-height:1.4;">${empStrasse}</div>` : ""}
-                ${empPlzOrt  ? `<div style="font-size:9pt;line-height:1.4;">${empPlzOrt}</div>`  : ""}
-              </div>` : ""}
-
-            </div>
-          </div>
-
-          <!-- Trennlinie unten -->
-          <div style="display:flex;align-items:center;margin-top:2mm;">
-            <div style="padding:0 2mm;font-size:11pt;line-height:1;">&#9986;</div>
-            <div style="flex:1;border-top:1px dashed #000;"></div>
-          </div>
+      // Swiss QR Bill — eigenstaendige HTML-Seite (margin:0, volle 210mm Breite)
+      // Wird als separates PDF gerendert und mit pdf-lib zusammengemischt
+      const qrZahlscheinHtml = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>
+  * { box-sizing:border-box; -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; }
+  @page { margin: 0; size: A4; }
+  body { font-family:Arial,Helvetica,sans-serif;font-size:10pt;color:#000;margin:0;padding:0;width:210mm; }
+</style></head>
+<body>
+${(ibanMissing || qrIbanError) ? `<div style="background:#fff3cd;border:1px solid #ffc107;padding:6px 10px;margin:5mm 5mm 0 5mm;font-size:8pt;color:#856404;">&#9888; ${qrIbanError || "Bitte IBAN in Einstellungen hinterlegen."}</div>` : ""}
+<div style="width:210mm;padding-top:10mm;">
+  <div style="display:flex;align-items:center;margin-bottom:3mm;">
+    <div style="flex:1;border-top:1px dashed #000;"></div>
+    <div style="padding:0 2mm;font-size:11pt;line-height:1;">&#9986;</div>
+  </div>
+  <div style="display:flex;align-items:flex-start;width:210mm;min-height:85mm;">
+    <div style="width:62mm;flex-shrink:0;padding:0 4mm;border-right:1px solid #000;min-height:85mm;display:flex;flex-direction:column;">
+      <div style="font-size:11pt;font-weight:700;margin-bottom:4mm;">Empfangsschein</div>
+      <div style="font-size:6pt;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;">Konto / Zahlbar an</div>
+      <div style="font-size:8pt;line-height:1.35;margin-bottom:3mm;">${ibanFormatted}<br>${firmaName}<br>${firmaAdr}<br>${firmaPlz} ${firmaOrt}</div>
+      ${empfaenger ? `<div style="font-size:6pt;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;">Zahlbar durch</div><div style="font-size:8pt;line-height:1.35;margin-bottom:3mm;">${empfaenger}${empStrasse ? "<br>" + empStrasse : ""}${empPlzOrt ? "<br>" + empPlzOrt : ""}</div>` : ""}
+      <div style="margin-top:auto;">
+        <div style="display:flex;gap:4mm;align-items:flex-end;">
+          <div><div style="font-size:6pt;font-weight:700;text-transform:uppercase;">Währung</div><div style="font-size:9pt;font-weight:700;">CHF</div></div>
+          <div><div style="font-size:6pt;font-weight:700;text-transform:uppercase;">Betrag</div><div style="font-size:9pt;font-weight:700;">${betragFormatted}</div></div>
         </div>
-      `;
+        <div style="font-size:6pt;font-weight:700;text-transform:uppercase;text-align:right;margin-top:6mm;">Annahmestelle</div>
+      </div>
+    </div>
+    <div style="width:90mm;flex-shrink:0;padding:0 5mm;display:flex;flex-direction:column;align-items:flex-start;">
+      <div style="font-size:11pt;font-weight:700;margin-bottom:4mm;">Zahlteil</div>
+      ${qrCodeSvg ? `<div style="width:46mm;height:46mm;margin-bottom:4mm;flex-shrink:0;">${qrCodeSvg}</div>` : `<div style="width:46mm;height:46mm;border:1.5px dashed #bbb;display:flex;align-items:center;justify-content:center;font-size:7pt;color:#999;text-align:center;margin-bottom:4mm;flex-shrink:0;">QR-Code<br>IBAN prüfen</div>`}
+      <div style="display:flex;gap:8mm;align-items:flex-end;">
+        <div><div style="font-size:6pt;font-weight:700;text-transform:uppercase;">Währung</div><div style="font-size:11pt;font-weight:700;">CHF</div></div>
+        <div><div style="font-size:6pt;font-weight:700;text-transform:uppercase;">Betrag</div><div style="font-size:11pt;font-weight:700;">${betragFormatted}</div></div>
+      </div>
+    </div>
+    <div style="flex:1;min-width:0;padding:0 4mm;display:flex;flex-direction:column;gap:4mm;">
+      <div>
+        <div style="font-size:6pt;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:1mm;">Konto / Zahlbar an</div>
+        <div style="font-size:8.5pt;line-height:1.4;">${ibanFormatted}<br>${firmaName}<br>${firmaAdr}<br>${firmaPlz} ${firmaOrt}</div>
+      </div>
+      <div>
+        <div style="font-size:6pt;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:1mm;">Zusätzliche Informationen</div>
+        <div style="font-size:8.5pt;line-height:1.4;">Rechnung ${rechnung.nr || ""}${faelligStr ? "<br>Zahlbar bis: " + faelligStr : ""}</div>
+      </div>
+      ${empfaenger ? `<div><div style="font-size:6pt;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:1mm;">Zahlbar durch</div><div style="font-size:8.5pt;line-height:1.4;">${empfaenger}${empStrasse ? "<br>" + empStrasse : ""}${empPlzOrt ? "<br>" + empPlzOrt : ""}</div></div>` : ""}
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;margin-top:2mm;">
+    <div style="padding:0 2mm;font-size:11pt;line-height:1;">&#9986;</div>
+    <div style="flex:1;border-top:1px dashed #000;"></div>
+  </div>
+</div>
+</body></html>`;
 
       const html = await buildPdfHtml("rechnung", {
         titel: "RECHNUNG",
@@ -1750,7 +1729,7 @@ html: string): Promise<Buffer> {
         positionen,
         subtotal, mwstPct, mwstBetrag, total: totalInkl,
         showTotals: true,
-        extraHtml: ((rechnung.notiz && !rechnung.notiz.startsWith("offerte_id:")) ? `<div style="margin-top:12px;padding:8px 12px;background:#f9f6f0;border-left:3px solid #6b4c2a;font-size:8.5pt;color:#444;white-space:pre-line;">${rechnung.notiz}</div>` : "") + qrZahlscheinHtml,
+        extraHtml: (rechnung.notiz && !rechnung.notiz.startsWith("offerte_id:")) ? `<div style="margin-top:12px;padding:8px 12px;background:#f9f6f0;border-left:3px solid #6b4c2a;font-size:8.5pt;color:#444;white-space:pre-line;">${rechnung.notiz}</div>` : "",
         ansprechpersonIntern: (req.body as any)?.ansprechpersonIntern || rechnung.ansprechperson_intern || auftrag?.verantwortlicher || "",
         ansprechpersonInternEmail: (req.body as any)?.ansprechpersonInternEmail || "",
         ansprechpersonInternTelefon: (req.body as any)?.ansprechpersonInternTelefon || "",
@@ -1758,7 +1737,7 @@ html: string): Promise<Buffer> {
         kundenNr: await getKundenNr(auftrag?.kunde || ""),
       });
 
-      const pdfBuf = await renderPdfFromHtml(html);
+      const pdfBuf = await renderRechnungPdfFromHtml(html, qrZahlscheinHtml);
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `inline; filename="Rechnung-${rechnung.nr || rid}.pdf"`);
       res.send(pdfBuf);
