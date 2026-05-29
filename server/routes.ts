@@ -802,8 +802,16 @@ export async function registerRoutes(
           s + (Number(p.menge) || 0) * (Number(p.einzelpreis) || 0),
         0
       );
-      const { data: allRows } = await supabase.from("rechnungen").select("nr");
-      const nr = body.nr || nextNr("R", allRows || []);
+      // Rechnungsnummer = R(AuftragNr), bei 2.+ Rechnung = R(AuftragNr)_2
+      let nr = body.nr;
+      if (!nr) {
+        const { data: auftragNrRow } = await supabase.from("auftraege").select("nr").eq("id", id).single();
+        const auftragsNr = (auftragNrRow?.nr || "").replace(/^A/, "");
+        const baseNr = "R" + auftragsNr;
+        const { data: existingR } = await supabase.from("rechnungen").select("nr").eq("auftrag_id", id);
+        const countR = (existingR || []).length;
+        nr = countR === 0 ? baseNr : baseNr + "_" + (countR + 1);
+      }
       const row = {
         id: uid(),
         auftrag_id: id,
@@ -1401,7 +1409,7 @@ export async function registerRoutes(
       </div>
       <!-- MAIN CONTENT -->
       <div class="pdf-content" style="padding:4px 40px 10px;">
-        <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:6mm;font-size:10pt;color:#333;${absenderPosH==="rechts"?"text-align:right;":absenderPosH==="mitte"?"text-align:center;":"text-align:left;"}line-height:1.55;">
+        <div style="margin-top:${Math.max(2, absenderTopMm - headerHeightMm - 8)}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:6mm;font-size:10pt;color:#333;${absenderPosH==="rechts"?"text-align:right;":absenderPosH==="mitte"?"text-align:center;":"text-align:left;"}line-height:1.55;">
           <div style="font-weight:600;">${data.empfaenger}</div>
           ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
           ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
@@ -1484,7 +1492,7 @@ html: string): Promise<Buffer> {
     });
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "domcontentloaded" });
-    const pdfBuf = await page.pdf({ format: "A4", printBackground: true, margin: { top: "10mm", bottom: "10mm", left: "10mm", right: "10mm" } });
+    const pdfBuf = await page.pdf({ format: "A4", printBackground: true, margin: { top: "0", bottom: "0", left: "0", right: "0" } });
     await browser.close();
     return Buffer.from(pdfBuf);
   }
@@ -1618,106 +1626,110 @@ html: string): Promise<Buffer> {
       // Swiss QR Bill — offizielles 3-Spalten Layout (SIX Standard)
       // Spalte 1: Empfangsschein (62mm), Spalte 2: Zahlteil+QR (105mm), Spalte 3: Infos (Rest)
       const qrZahlscheinHtml = `
-        <div style="page-break-before:always;font-family:Arial,Helvetica,sans-serif;font-size:10pt;color:#000;width:210mm;box-sizing:border-box;">
-          ${(ibanMissing || qrIbanError) ? `<div style="background:#fff3cd;border:1px solid #ffc107;padding:6px 10px;margin-bottom:6px;font-size:8pt;color:#856404;">&#9888; ${qrIbanError || "Bitte IBAN in Einstellungen hinterlegen."}</div>` : ""}
+        <div style="page-break-before:always;font-family:Arial,Helvetica,sans-serif;font-size:10pt;color:#000;width:100%;margin-left:-40px;margin-right:-40px;padding:0 40px;box-sizing:border-box;">
+          ${(ibanMissing || qrIbanError) ? `<div style="background:#fff3cd;border:1px solid #ffc107;padding:6px 10px;margin-bottom:4mm;font-size:8pt;color:#856404;">&#9888; ${qrIbanError || "Bitte IBAN in Einstellungen hinterlegen."}</div>` : ""}
+
           <!-- Trennlinie oben mit Schere -->
-          <div style="display:flex;align-items:center;margin-bottom:3mm;">
-            <div style="flex:1;border-top:1px solid #000;"></div>
-            <div style="padding:0 2mm;font-size:12pt;">&#9986;</div>
+          <div style="display:flex;align-items:center;margin-bottom:2mm;">
+            <div style="flex:1;border-top:1px dashed #000;"></div>
+            <div style="padding:0 2mm;font-size:11pt;line-height:1;">&#9986;</div>
           </div>
-          <!-- 3 Spalten -->
-          <div style="display:flex;align-items:flex-start;width:100%;">
 
-            <!-- ── SPALTE 1: Empfangsschein (62mm) ── -->
-            <div style="width:62mm;flex-shrink:0;padding-right:5mm;border-right:1px solid #000;min-height:85mm;display:flex;flex-direction:column;">
-              <div style="font-size:11pt;font-weight:700;margin-bottom:4mm;">Empfangsschein</div>
+          <!-- 3 Spalten: Empfangsschein (52mm) | Zahlteil (90mm) | Infos (rest) -->
+          <div style="display:flex;align-items:flex-start;width:100%;min-height:85mm;">
 
-              <div style="margin-bottom:3mm;">
-                <div style="font-size:6pt;font-weight:700;">Konto / Zahlbar an</div>
-                <div style="font-size:8pt;">${ibanFormatted}</div>
-                <div style="font-size:8pt;">${firmaName}</div>
-                <div style="font-size:8pt;">${firmaAdr}</div>
-                <div style="font-size:8pt;">${firmaPlz} ${firmaOrt}</div>
+            <!-- ── SPALTE 1: Empfangsschein (52mm) ── -->
+            <div style="width:52mm;flex-shrink:0;padding-right:4mm;border-right:1px solid #000;min-height:85mm;display:flex;flex-direction:column;gap:0;">
+
+              <div style="font-size:10pt;font-weight:700;margin-bottom:3mm;">Empfangsschein</div>
+
+              <div style="margin-bottom:2.5mm;">
+                <div style="font-size:6pt;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;">Konto / Zahlbar an</div>
+                <div style="font-size:7.5pt;line-height:1.35;">${ibanFormatted}</div>
+                <div style="font-size:7.5pt;line-height:1.35;">${firmaName}</div>
+                <div style="font-size:7.5pt;line-height:1.35;">${firmaAdr}</div>
+                <div style="font-size:7.5pt;line-height:1.35;">${firmaPlz} ${firmaOrt}</div>
               </div>
 
               ${empfaenger ? `
-              <div style="margin-bottom:3mm;">
-                <div style="font-size:6pt;font-weight:700;">Zahlbar durch</div>
-                <div style="font-size:8pt;">${empfaenger}</div>
-                ${empStrasse ? `<div style="font-size:8pt;">${empStrasse}</div>` : ""}
-                ${empPlzOrt  ? `<div style="font-size:8pt;">${empPlzOrt}</div>`  : ""}
+              <div style="margin-bottom:2.5mm;">
+                <div style="font-size:6pt;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;">Zahlbar durch</div>
+                <div style="font-size:7.5pt;line-height:1.35;">${empfaenger}</div>
+                ${empStrasse ? `<div style="font-size:7.5pt;line-height:1.35;">${empStrasse}</div>` : ""}
+                ${empPlzOrt  ? `<div style="font-size:7.5pt;line-height:1.35;">${empPlzOrt}</div>`  : ""}
               </div>` : ""}
 
-              <div style="margin-top:auto;">
-                <div style="display:flex;gap:6mm;align-items:baseline;margin-bottom:3mm;">
+              <div style="margin-top:auto;padding-top:2mm;">
+                <div style="display:flex;gap:4mm;align-items:flex-end;">
                   <div>
-                    <div style="font-size:6pt;font-weight:700;">Währung</div>
+                    <div style="font-size:6pt;font-weight:700;text-transform:uppercase;">Währung</div>
                     <div style="font-size:8pt;font-weight:700;">CHF</div>
                   </div>
                   <div>
-                    <div style="font-size:6pt;font-weight:700;">Betrag</div>
+                    <div style="font-size:6pt;font-weight:700;text-transform:uppercase;">Betrag</div>
                     <div style="font-size:8pt;font-weight:700;">${betragFormatted}</div>
                   </div>
                 </div>
-                <div style="font-size:6pt;font-weight:700;text-align:right;margin-top:4mm;">Annahmestelle</div>
+                <div style="font-size:6pt;font-weight:700;text-transform:uppercase;text-align:right;margin-top:5mm;">Annahmestelle</div>
               </div>
             </div>
 
-            <!-- ── SPALTE 2: Zahlteil + QR-Code (105mm) ── -->
-            <div style="width:105mm;flex-shrink:0;padding:0 5mm;display:flex;flex-direction:column;align-items:flex-start;">
-              <div style="font-size:11pt;font-weight:700;margin-bottom:4mm;">Zahlteil</div>
+            <!-- ── SPALTE 2: Zahlteil mit QR-Code (90mm) ── -->
+            <div style="width:90mm;flex-shrink:0;padding-left:4mm;padding-right:4mm;display:flex;flex-direction:column;align-items:flex-start;">
 
-              <!-- QR-Code -->
+              <div style="font-size:10pt;font-weight:700;margin-bottom:3mm;">Zahlteil</div>
+
+              <!-- QR-Code 46mm x 46mm -->
               ${qrCodeSvg
-                ? `<div style="width:46mm;height:46mm;margin-bottom:4mm;">${qrCodeSvg}</div>`
-                : `<div style="width:46mm;height:46mm;border:2px dashed #999;display:flex;align-items:center;justify-content:center;font-size:7pt;color:#999;text-align:center;margin-bottom:4mm;">QR-Code<br/>IBAN prüfen</div>`
+                ? `<div style="width:46mm;height:46mm;margin-bottom:3mm;flex-shrink:0;">${qrCodeSvg}</div>`
+                : `<div style="width:46mm;height:46mm;border:1.5px dashed #bbb;display:flex;align-items:center;justify-content:center;font-size:7pt;color:#999;text-align:center;margin-bottom:3mm;flex-shrink:0;">QR-Code<br/>IBAN prüfen</div>`
               }
 
-              <!-- Währung + Betrag unter QR -->
-              <div style="display:flex;gap:8mm;align-items:baseline;">
+              <!-- Währung + Betrag unter dem QR-Code -->
+              <div style="display:flex;gap:6mm;align-items:flex-end;">
                 <div>
-                  <div style="font-size:6pt;font-weight:700;">Währung</div>
+                  <div style="font-size:6pt;font-weight:700;text-transform:uppercase;">Währung</div>
                   <div style="font-size:10pt;font-weight:700;">CHF</div>
                 </div>
                 <div>
-                  <div style="font-size:6pt;font-weight:700;">Betrag</div>
+                  <div style="font-size:6pt;font-weight:700;text-transform:uppercase;">Betrag</div>
                   <div style="font-size:10pt;font-weight:700;">${betragFormatted}</div>
                 </div>
               </div>
             </div>
 
-            <!-- ── SPALTE 3: Infos rechts ── -->
-            <div style="flex:1;padding-left:3mm;font-size:9pt;">
+            <!-- ── SPALTE 3: Infos rechts (restliche Breite) ── -->
+            <div style="flex:1;min-width:0;padding-left:4mm;display:flex;flex-direction:column;gap:3mm;">
 
-              <div style="margin-bottom:4mm;">
-                <div style="font-size:7pt;font-weight:700;">Konto / Zahlbar an</div>
-                <div style="font-size:9pt;">${ibanFormatted}</div>
-                <div style="font-size:9pt;">${firmaName}</div>
-                <div style="font-size:9pt;">${firmaAdr}</div>
-                <div style="font-size:9pt;">${firmaPlz} ${firmaOrt}</div>
+              <div>
+                <div style="font-size:6pt;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:1mm;">Konto / Zahlbar an</div>
+                <div style="font-size:9pt;line-height:1.4;">${ibanFormatted}</div>
+                <div style="font-size:9pt;line-height:1.4;">${firmaName}</div>
+                <div style="font-size:9pt;line-height:1.4;">${firmaAdr}</div>
+                <div style="font-size:9pt;line-height:1.4;">${firmaPlz} ${firmaOrt}</div>
               </div>
 
-              <div style="margin-bottom:4mm;">
-                <div style="font-size:7pt;font-weight:700;">Zusätzliche Informationen</div>
-                <div style="font-size:9pt;">Rechnung ${rechnung.nr || ""}</div>
-                ${faelligStr ? `<div style="font-size:9pt;">Zahlbar bis: ${faelligStr}</div>` : ""}
+              <div>
+                <div style="font-size:6pt;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:1mm;">Zusätzliche Informationen</div>
+                <div style="font-size:9pt;line-height:1.4;">Rechnung ${rechnung.nr || ""}</div>
+                ${faelligStr ? `<div style="font-size:9pt;line-height:1.4;">Zahlbar bis: ${faelligStr}</div>` : ""}
               </div>
 
               ${empfaenger ? `
-              <div style="margin-bottom:4mm;">
-                <div style="font-size:7pt;font-weight:700;">Zahlbar durch</div>
-                <div style="font-size:9pt;">${empfaenger}</div>
-                ${empStrasse ? `<div style="font-size:9pt;">${empStrasse}</div>` : ""}
-                ${empPlzOrt  ? `<div style="font-size:9pt;">${empPlzOrt}</div>`  : ""}
+              <div>
+                <div style="font-size:6pt;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:1mm;">Zahlbar durch</div>
+                <div style="font-size:9pt;line-height:1.4;">${empfaenger}</div>
+                ${empStrasse ? `<div style="font-size:9pt;line-height:1.4;">${empStrasse}</div>` : ""}
+                ${empPlzOrt  ? `<div style="font-size:9pt;line-height:1.4;">${empPlzOrt}</div>`  : ""}
               </div>` : ""}
 
             </div>
           </div>
 
-          <!-- Trennlinie unten mit Schere -->
-          <div style="display:flex;align-items:center;margin-top:3mm;">
-            <div style="padding:0 2mm;font-size:12pt;">&#9986;</div>
-            <div style="flex:1;border-top:1px solid #000;"></div>
+          <!-- Trennlinie unten -->
+          <div style="display:flex;align-items:center;margin-top:2mm;">
+            <div style="padding:0 2mm;font-size:11pt;line-height:1;">&#9986;</div>
+            <div style="flex:1;border-top:1px dashed #000;"></div>
           </div>
         </div>
       `;
@@ -3023,9 +3035,16 @@ html: string): Promise<Buffer> {
         .from("offerten").select("*").eq("id", req.params.id).single();
       if (error || !offerte) return res.status(404).json({ message: "Offerte nicht gefunden" });
 
-      // Rechnungs-Nummer generieren
-      const { data: allRows } = await supabase.from("rechnungen").select("nr");
-      const nr = nextNr("R", allRows || []);
+      // Rechnungs-Nummer = R(AuftragNr), bei 2.+ Rechnung = R(AuftragNr)_2
+      const _auftrId = offerte.auftrag_id;
+      let nr: string;
+      {
+        const { data: _aNr } = await supabase.from("auftraege").select("nr").eq("id", _auftrId).single();
+        const _baseNr = "R" + ((_aNr?.nr || "").replace(/^A/, ""));
+        const { data: _existR } = await supabase.from("rechnungen").select("nr").eq("auftrag_id", _auftrId);
+        const _cnt = (_existR || []).length;
+        nr = _cnt === 0 ? _baseNr : _baseNr + "_" + (_cnt + 1);
+      }
 
       // Positionen von Offerte übernehmen (jede Position mit total-Feld normalisieren)
       const positionen: any[] = (Array.isArray(offerte.positionen) ? offerte.positionen : []).map((p: any) => ({
