@@ -5,13 +5,27 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { CheckCircle2, Clock, AlertTriangle, Hammer, Briefcase } from "lucide-react";
 
 const STATUS_MAP: Record<string, { label: string; color: string; icon: any }> = {
-  anfrage:      { label: "Anfrage eingegangen", color: "bg-blue-100 text-blue-700",   icon: Clock },
-  angebot:      { label: "Angebot erstellt",    color: "bg-blue-100 text-blue-700",   icon: Briefcase },
-  bestaetigt:   { label: "Auftrag bestätigt",   color: "bg-green-100 text-green-700", icon: CheckCircle2 },
-  in_bearbeitung: { label: "In Bearbeitung",    color: "bg-amber-100 text-amber-700", icon: Hammer },
-  abgeschlossen: { label: "Abgeschlossen",      color: "bg-green-100 text-green-700", icon: CheckCircle2 },
-  storniert:    { label: "Storniert",           color: "bg-red-100 text-red-700",     icon: AlertTriangle },
+  anfrage:        { label: "Anfrage eingegangen",  color: "bg-blue-100 text-blue-700",   icon: Clock },
+  angebot:        { label: "Angebot erstellt",     color: "bg-blue-100 text-blue-700",   icon: Briefcase },
+  bestaetigt:     { label: "Auftrag bestätigt",    color: "bg-green-100 text-green-700", icon: CheckCircle2 },
+  in_arbeit:      { label: "In Arbeit",            color: "bg-amber-100 text-amber-700", icon: Hammer },
+  in_bearbeitung: { label: "In Bearbeitung",       color: "bg-amber-100 text-amber-700", icon: Hammer },
+  qualitaet:      { label: "Qualitätsprüfung",     color: "bg-purple-100 text-purple-700", icon: CheckCircle2 },
+  rechnung:       { label: "Rechnung gestellt",    color: "bg-indigo-100 text-indigo-700", icon: Briefcase },
+  abgeschlossen:  { label: "Abgeschlossen",        color: "bg-green-100 text-green-700", icon: CheckCircle2 },
+  storniert:      { label: "Storniert",            color: "bg-red-100 text-red-700",     icon: AlertTriangle },
 };
+
+// Normalize Auftragsnummer: A-2026-0001 → A260001
+function normalizeNr(nr: string): string {
+  // Old format: A-2026-0001 or R-2026-0001 etc.
+  const m = nr.match(/^([A-Z])-(\d{4})-(\d+)$/);
+  if (m) {
+    const yy = m[2].slice(2); // "2026" -> "26"
+    return m[1] + yy + m[3].padStart(4, "0");
+  }
+  return nr;
+}
 
 const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
 
@@ -61,7 +75,7 @@ export default function ProjektStatus({ token }: { token: string }) {
             <div className="space-y-5">
               <div>
                 <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">Auftragsnummer</p>
-                <p className="font-mono font-bold text-lg text-[#6b4c2a]">{data.nr}</p>
+                <p className="font-mono font-bold text-lg text-[#6b4c2a]">{normalizeNr(data.nr || "")}</p>
               </div>
 
               <div>
