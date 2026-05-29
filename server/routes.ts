@@ -2523,22 +2523,19 @@ html: string): Promise<Buffer> {
   app.post("/api/mahnungen", async (req, res) => {
     try {
       const { auftrag_id, mahnstufe, betrag, faellig_datum, notiz } = req.body;
-      const stufe = mahnstufe || 1;
-      const faellig = faellig_datum || null;
       const eintrag = {
         id: uid(),
         auftrag_id,
-        stufe,
+        mahnstufe: mahnstufe || 1,
         betrag: betrag || 0,
-        faellig_bis: faellig,
+        faellig_datum: faellig_datum || null,
         notiz: notiz || "",
         status: "offen",
         erstellt: new Date().toISOString(),
       };
       const { data, error } = await supabase.from("mahnungen").insert(eintrag).select().single();
       if (error) throw error;
-      // Return with legacy fields for frontend compatibility
-      res.json({ ...data, mahnstufe: data.stufe, faellig_datum: data.faellig_bis });
+      res.json(data);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
@@ -2597,7 +2594,7 @@ html: string): Promise<Buffer> {
         : new Date().toLocaleDateString("de-CH", { day: "2-digit", month: "long", year: "numeric" });
 
       const empfaenger = mahnung.empfaenger_name || rechnung?.kunde_name || auftrag?.kunde_name || auftrag?.kunde || "";
-      const stufe = mahnung.stufe ? ` (${mahnung.stufe}. Mahnung)` : "";
+      const stufe = mahnung.mahnstufe ? ` (${mahnung.mahnstufe}. Mahnung)` : "";
 
       const html = await buildPdfHtml("mahnung", {
         titel: "MAHNUNG" + stufe,
