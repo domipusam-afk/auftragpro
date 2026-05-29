@@ -1526,22 +1526,60 @@ html: string): Promise<Buffer> {
         qrCodeDataUrl = await QRCodeLib.default.toDataURL(qrData, { errorCorrectionLevel: "M", width: 180, margin: 1 });
       } catch {}
 
+      // Swiss QR Bill Layout — offizielles Format (links QR + Betrag, rechts Infos)
+      const firmaName = sMap.firmenname || "Schneggenburger GmbH";
+      const firmaAdr  = sMap.adresse    || "Hefenhoferstrasse 7";
+      const firmaPlzOrt = (sMap.plz_ort || "8580 Sommeri");
       const qrZahlscheinHtml = `
-        <div style="page-break-before:always;padding:20px 0 0 0;">
-          <div style="border-top:2px solid #000;padding-top:16px;">
-            ${ibanMissing ? `<div style="background:#fff3cd;border:1px solid #ffc107;padding:8px 12px;border-radius:4px;margin-bottom:12px;font-size:8.5pt;color:#856404;">⚠️ Bitte IBAN in Einstellungen hinterlegen damit der QR-Zahlschein korrekt generiert wird.</div>` : ""}
-            <div style="font-size:9pt;font-weight:700;margin-bottom:10px;letter-spacing:1px;">ZAHLTEIL / SECTION DE PAIEMENT</div>
-            <div style="display:flex;gap:20px;align-items:flex-start;">
-              ${qrCodeDataUrl ? `<div style="flex-shrink:0;border:1px solid #ccc;padding:4px;"><img src="${qrCodeDataUrl}" style="width:100px;height:100px;display:block;" /></div>` : '<div style="width:100px;height:100px;border:2px solid #ccc;display:flex;align-items:center;justify-content:center;font-size:8pt;color:#666;">QR-Code</div>'}
-              <div style="flex:1;font-size:8.5pt;">
-                <div style="margin-bottom:6px;"><strong>Konto / Payable à</strong><br/>${iban}</div>
-                <div style="margin-bottom:6px;"><strong>Zahlbar durch</strong><br/>${empfaenger}<br/>${empStrasse}<br/>${empPlzOrt}</div>
-                <div style="margin-bottom:6px;"><strong>Währung / Betrag</strong><br/>CHF ${betragFormatted}</div>
-                <div><strong>Mitteilung</strong><br/>Rechnung ${rechnung.nr || ""}</div>
+        <div style="page-break-before:always;font-family:Arial,Helvetica,sans-serif;padding:12mm 10mm 0 10mm;">
+          ${ibanMissing ? `<div style="background:#fff3cd;border:1px solid #ffc107;padding:6px 10px;border-radius:4px;margin-bottom:10px;font-size:8pt;color:#856404;">&#9888; Bitte IBAN in Einstellungen hinterlegen.</div>` : ""}
+          <div style="font-size:11pt;font-weight:700;margin-bottom:6mm;">Zahlteil QR-Rechnung</div>
+          <div style="display:flex;gap:0;align-items:flex-start;">
+            <!-- Links: QR-Code + Währung/Betrag -->
+            <div style="width:62mm;flex-shrink:0;">
+              <div style="font-size:7pt;color:#666;margin-bottom:1mm;">Unterstützt</div>
+              <div style="font-size:9pt;font-weight:700;margin-bottom:4mm;">Überweisung</div>
+              ${qrCodeDataUrl
+                ? `<img src="${qrCodeDataUrl}" style="width:46mm;height:46mm;display:block;margin-bottom:5mm;" />`
+                : `<div style="width:46mm;height:46mm;border:2px solid #000;display:flex;align-items:center;justify-content:center;font-size:8pt;margin-bottom:5mm;">QR-Code fehlt</div>`
+              }
+              <div style="display:flex;gap:8mm;align-items:baseline;">
+                <div>
+                  <div style="font-size:7pt;color:#444;">Währung</div>
+                  <div style="font-size:11pt;font-weight:700;">CHF</div>
+                </div>
+                <div>
+                  <div style="font-size:7pt;color:#444;">Betrag</div>
+                  <div style="font-size:11pt;font-weight:700;">${betragFormatted}</div>
+                </div>
               </div>
-              <div style="flex-shrink:0;text-align:right;font-size:8pt;color:#888;">
-                <div>Fällig: ${faelligStr || "30 Tage netto"}</div>
-                <div style="margin-top:4px;">MWST: ${sMap.uid_nummer || "CHE-000.000.000 MWST"}</div>
+            </div>
+            <!-- Rechts: alle Zahlungsinfos -->
+            <div style="flex:1;font-size:8.5pt;padding-left:6mm;border-left:1px solid #ccc;">
+              <div style="margin-bottom:4mm;">
+                <div style="font-size:7pt;color:#666;margin-bottom:0.5mm;">Konto</div>
+                <div style="font-size:10pt;font-weight:700;">${iban}</div>
+              </div>
+              <div style="margin-bottom:4mm;">
+                <div style="font-size:7pt;color:#666;margin-bottom:0.5mm;">Zahlungsempfänger</div>
+                <div style="font-size:10pt;font-weight:700;">${firmaName}</div>
+                <div style="font-size:9pt;">${firmaAdr}</div>
+                <div style="font-size:9pt;">CH-${firmaPlzOrt}</div>
+              </div>
+              <div style="margin-bottom:4mm;">
+                <div style="font-size:7pt;color:#666;margin-bottom:0.5mm;">Zusätzliche Informationen</div>
+                <div style="font-size:9pt;">Rechnung ${rechnung.nr || ""}</div>
+              </div>
+              ${empfaenger ? `
+              <div style="margin-bottom:4mm;">
+                <div style="font-size:7pt;color:#666;margin-bottom:0.5mm;">Zahlungspflichtiger</div>
+                <div style="font-size:10pt;font-weight:700;">${empfaenger}</div>
+                ${empStrasse ? `<div style="font-size:9pt;">${empStrasse}</div>` : ""}
+                ${empPlzOrt  ? `<div style="font-size:9pt;">${empPlzOrt}</div>`  : ""}
+              </div>` : ""}
+              <div>
+                <div style="font-size:7pt;color:#666;margin-bottom:0.5mm;">Zahlbar bis</div>
+                <div style="font-size:10pt;font-weight:700;">${faelligStr || "30 Tage netto"}</div>
               </div>
             </div>
           </div>
@@ -1564,7 +1602,7 @@ html: string): Promise<Buffer> {
         positionen,
         subtotal, mwstPct, mwstBetrag, total: totalInkl,
         showTotals: true,
-        extraHtml: rechnung.notiz ? `<div style="margin-top:12px;padding:8px 12px;background:#f9f6f0;border-left:3px solid #6b4c2a;font-size:8.5pt;color:#444;white-space:pre-line;">${rechnung.notiz}</div>` : "",
+        extraHtml: ((rechnung.notiz && !rechnung.notiz.startsWith("offerte_id:")) ? `<div style="margin-top:12px;padding:8px 12px;background:#f9f6f0;border-left:3px solid #6b4c2a;font-size:8.5pt;color:#444;white-space:pre-line;">${rechnung.notiz}</div>` : "") + qrZahlscheinHtml,
         ansprechpersonIntern: (req.body as any)?.ansprechpersonIntern || rechnung.ansprechperson_intern || auftrag?.verantwortlicher || "",
         ansprechpersonInternEmail: (req.body as any)?.ansprechpersonInternEmail || "",
         ansprechpersonInternTelefon: (req.body as any)?.ansprechpersonInternTelefon || "",
@@ -1572,8 +1610,7 @@ html: string): Promise<Buffer> {
         kundenNr: await getKundenNr(auftrag?.kunde || ""),
       });
 
-      const finalHtml = html.replace(/<\/body>\s*<\/html>/, qrZahlscheinHtml + "</body></html>");
-      const pdfBuf = await renderPdfFromHtml(finalHtml);
+      const pdfBuf = await renderPdfFromHtml(html);
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `inline; filename="Rechnung-${rechnung.nr || rid}.pdf"`);
       res.send(pdfBuf);
