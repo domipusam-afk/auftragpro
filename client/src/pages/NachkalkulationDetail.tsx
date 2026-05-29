@@ -220,7 +220,8 @@ function NkMaterialBlock({ auftragId }: { auftragId: string }) {
 
   const addMutation = useMutation({
     mutationFn: async () => apiRequest("POST", `/api/kalkulation/${auftragId}/nk-material`, { ...newRow, betrag_chf: num(newRow.betrag_chf) }),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/nk-material", auftragId] }); setNewRow(emptyRow); toast({ title: "IST-Material erfasst" }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/nk-material", auftragId] }); setNewRow(emptyRow); toast({ title: "IST-Material erfasst ✓" }); },
+    onError: (err: any) => toast({ title: "Fehler beim Speichern", description: err?.message || "Unbekannter Fehler", variant: "destructive" }),
   });
 
   const deleteMutation = useMutation({
@@ -292,7 +293,8 @@ function NkFremdBlock({ auftragId }: { auftragId: string }) {
 
   const addMutation = useMutation({
     mutationFn: async () => apiRequest("POST", `/api/kalkulation/${auftragId}/nk-fremd`, { ...newRow, betrag_chf: num(newRow.betrag_chf) }),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/nk-fremd", auftragId] }); setNewRow(emptyRow); toast({ title: "IST-Fremdleistung erfasst" }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/nk-fremd", auftragId] }); setNewRow(emptyRow); toast({ title: "IST-Fremdleistung erfasst ✓" }); },
+    onError: (err: any) => toast({ title: "Fehler beim Speichern", description: err?.message || "Unbekannter Fehler", variant: "destructive" }),
   });
 
   const deleteMutation = useMutation({
@@ -367,7 +369,8 @@ function NkSoekBlock({ auftragId }: { auftragId: string }) {
       const anzahl = num(newRow.anzahl), preis = num(newRow.preis_pro_einheit);
       return apiRequest("POST", `/api/kalkulation/${auftragId}/nk-soek`, { ...newRow, anzahl, preis_pro_einheit: preis, total_chf: anzahl * preis });
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/nk-soek", auftragId] }); setNewRow(emptyRow); toast({ title: "IST-SOEK erfasst" }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/nk-soek", auftragId] }); setNewRow(emptyRow); toast({ title: "IST-SOEK erfasst ✓" }); },
+    onError: (err: any) => toast({ title: "Fehler beim Speichern", description: err?.message || "Unbekannter Fehler", variant: "destructive" }),
   });
 
   const deleteMutation = useMutation({
