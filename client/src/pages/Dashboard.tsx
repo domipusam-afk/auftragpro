@@ -15,6 +15,8 @@ import {
   TrendingUp,
   Banknote,
   CheckSquare,
+  Bell,
+  XCircle,
 } from "lucide-react";
 import type { Auftrag, Stats, Rechnung } from "@shared/schema";
 import { STATUS_LABEL } from "@shared/schema";
@@ -83,6 +85,33 @@ export default function Dashboard() {
   const bezahlt = (rechnungen as any[])
     .filter((r: any) => r.status === "bezahlt")
     .reduce((s: number, r: any) => s + (Number(r.betrag) || 0), 0);
+
+  const { data: offerten = [] } = useQuery<any[]>({
+    queryKey: ["/api/offerten"],
+    queryFn: async () => {
+      const r = await apiRequest("GET", "/api/offerten");
+      return r.json();
+    },
+  });
+
+  // Fälligkeits-Warnungen
+  const today = new Date(); today.setHours(0,0,0,0);
+  const in7Days = new Date(today); in7Days.setDate(today.getDate() + 7);
+
+  const ueberfaelligeRechnungen = (rechnungen as any[]).filter((r: any) =>
+    !r.bezahlt_am && r.faellig_datum && new Date(r.faellig_datum) < today
+  );
+  const baldFaelligeRechnungen = (rechnungen as any[]).filter((r: any) =>
+    !r.bezahlt_am && r.faellig_datum &&
+    new Date(r.faellig_datum) >= today && new Date(r.faellig_datum) <= in7Days
+  );
+  const ablaufendeOfferten = (offerten as any[]).filter((o: any) => {
+    if (o.status === "angenommen" || o.status === "abgelehnt") return false;
+    const g = o.gueltigkeit;
+    if (!g || isNaN(Date.parse(g))) return false; // "60 Tage" etc. überspringen
+    const gDate = new Date(g); gDate.setHours(0,0,0,0);
+    return gDate >= today && gDate <= in7Days;
+  });
 
   // Last 6 months for chart
   const last6Months = Array.from({ length: 6 }, (_, i) => {
@@ -184,6 +213,45 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* Fälligkeits-Warnungen */}
+      {(ueberfaelligeRechnungen.length > 0 || baldFaelligeRechnungen.length > 0 || ablaufendeOfferten.length > 0) && (
+        <div className="space-y-2 mb-2">
+          {ueberfaelligeRechnungen.map((r: any) => (
+            <Link key={r.id} href="/rechnungen">
+              <a className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-red-50 border border-red-200 text-sm hover:bg-red-100 transition-colors dark:bg-red-950/30 dark:border-red-800">
+                <XCircle className="h-4 w-4 text-red-600 shrink-0" />
+                <span className="flex-1 text-red-800 dark:text-red-300">
+                  <span className="font-semibold">{r.nr}</span> — Rechnung überfällig seit {new Date(r.faellig_datum).toLocaleDateString("de-CH")}
+                </span>
+                <span className="font-bold tabular-nums text-red-700">CHF {Number(r.betrag).toLocaleString("de-CH")}</span>
+              </a>
+            </Link>
+          ))}
+          {baldFaelligeRechnungen.map((r: any) => (
+            <Link key={r.id} href="/rechnungen">
+              <a className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-amber-50 border border-amber-200 text-sm hover:bg-amber-100 transition-colors dark:bg-amber-950/30 dark:border-amber-800">
+                <Bell className="h-4 w-4 text-amber-600 shrink-0" />
+                <span className="flex-1 text-amber-800 dark:text-amber-300">
+                  <span className="font-semibold">{r.nr}</span> — fällig am {new Date(r.faellig_datum).toLocaleDateString("de-CH")}
+                </span>
+                <span className="font-bold tabular-nums text-amber-700">CHF {Number(r.betrag).toLocaleString("de-CH")}</span>
+              </a>
+            </Link>
+          ))}
+          {ablaufendeOfferten.map((o: any) => (
+            <Link key={o.id} href={`/auftraege/${o.auftrag_id}`}>
+              <a className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-blue-50 border border-blue-200 text-sm hover:bg-blue-100 transition-colors dark:bg-blue-950/30 dark:border-blue-800">
+                <Bell className="h-4 w-4 text-blue-600 shrink-0" />
+                <span className="flex-1 text-blue-800 dark:text-blue-300">
+                  <span className="font-semibold">{o.nr}</span> {o.titel && `· ${o.titel}`} — Offerte läuft ab am {new Date(o.gueltigkeit).toLocaleDateString("de-CH")}
+                </span>
+                <ArrowRight className="h-4 w-4 text-blue-500 shrink-0" />
+              </a>
+            </Link>
+          ))}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
         <Card className="p-5 lg:col-span-2 bg-card">

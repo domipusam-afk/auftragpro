@@ -58,6 +58,7 @@ import {
   Link2,
   Link2Off,
   Copy,
+  AlertCircle,
   CheckCircle2,
   ArrowDown,
   ArrowUp,
@@ -372,6 +373,37 @@ function DokumenteTab({ id, dokumente }: { id: string; dokumente: Dokument[] }) 
   );
 }
 
+function rechnungZahlungsBadge(r: Rechnung) {
+  if (r.bezahlt_am) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700 border border-green-200">
+        <CheckCircle2 className="w-3 h-3" /> Bezahlt {r.bezahlt_am}
+      </span>
+    );
+  }
+  if (!r.faellig_datum) return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-muted text-muted-foreground border">Offen</span>
+  );
+  const faellig = new Date(r.faellig_datum);
+  const heute = new Date(); heute.setHours(0,0,0,0);
+  if (faellig < heute) return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700 border border-red-200">
+      <AlertCircle className="w-3 h-3" /> Überfällig
+    </span>
+  );
+  const diffDays = Math.ceil((faellig.getTime() - heute.getTime()) / (1000*60*60*24));
+  if (diffDays <= 7) return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 border border-amber-200">
+      <Clock className="w-3 h-3" /> Fällig in {diffDays}d
+    </span>
+  );
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+      <Clock className="w-3 h-3" /> Fällig {formatDate(r.faellig_datum!)}
+    </span>
+  );
+}
+
 function RechnungenTab({
   id,
   auftrag,
@@ -392,6 +424,19 @@ function RechnungenTab({
       const r = await apiRequest("GET", `/api/auftraege/${id}/rechnungen`);
       return r.json();
     },
+  });
+
+  const bezahltMut = useMutation({
+    mutationFn: async ({ rid, bezahlt_am }: { rid: string; bezahlt_am: string | null }) => {
+      const r = await apiRequest("PATCH", `/api/rechnungen/${rid}`, { bezahlt_am });
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auftraege", id, "rechnungen"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/rechnungen"] });
+      toast({ title: "Zahlungsstatus aktualisiert" });
+    },
+    onError: (e: Error) => toast({ title: "Fehler", description: e.message, variant: "destructive" }),
   });
 
   const total = positionen.reduce(
@@ -588,29 +633,63 @@ function RechnungenTab({
             {rechnungen.map((r) => (
               <div
                 key={r.id}
-                className="flex items-center justify-between gap-2 p-3 rounded border bg-card"
+                className={`rounded border bg-card p-3 space-y-2 ${r.bezahlt_am ? "opacity-75" : ""}`}
                 data-testid={`rechnung-${r.id}`}
               >
-                <div className="flex-1 min-w-0">
-                  <div className="font-mono text-sm">{r.nr}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {formatDate(r.erstellt)}
-                    {r.faellig_datum && ` · fällig ${formatDate(r.faellig_datum)}`} ·{" "}
-                    {Array.isArray(r.positionen) ? r.positionen.length : 0} Positionen
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono text-sm font-semibold">{r.nr}</span>
+                      {rechnungZahlungsBadge(r)}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      {formatDate(r.erstellt)}
+                      {r.faellig_datum && ` · fällig ${formatDate(r.faellig_datum)}`} ·{" "}
+                      {Array.isArray(r.positionen) ? r.positionen.length : 0} Pos.
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className={`font-bold tabular-nums ${r.bezahlt_am ? "text-green-700 line-through" : ""}`}>
+                      {formatCHF(r.betrag, r.waehrung)}
+                    </div>
                   </div>
                 </div>
-                <div className="font-bold tabular-nums">
-                  {formatCHF(r.betrag, r.waehrung)}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    data-testid={`button-pdf-${r.id}`}
+                    onClick={() => downloadPdf(r.id, r.nr)}
+                    className="h-7 text-xs"
+                  >
+                    <Printer className="h-3 w-3 mr-1" />
+                    PDF
+                  </Button>
+                  {r.bezahlt_am ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-xs text-muted-foreground"
+                      onClick={() => bezahltMut.mutate({ rid: r.id, bezahlt_am: null })}
+                      disabled={bezahltMut.isPending}
+                      data-testid={`button-unbezahlt-${r.id}`}
+                    >
+                      Als offen markieren
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs border-green-300 text-green-700 hover:bg-green-50"
+                      onClick={() => bezahltMut.mutate({ rid: r.id, bezahlt_am: new Date().toISOString().slice(0,10) })}
+                      disabled={bezahltMut.isPending}
+                      data-testid={`button-bezahlt-${r.id}`}
+                    >
+                      <CheckCircle2 className="h-3 w-3 mr-1" />
+                      Als bezahlt markieren
+                    </Button>
+                  )}
                 </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  data-testid={`button-pdf-${r.id}`}
-                  onClick={() => downloadPdf(r.id, r.nr)}
-                >
-                  <Printer className="h-3 w-3 mr-1" />
-                  PDF
-                </Button>
               </div>
             ))}
           </div>

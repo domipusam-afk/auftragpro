@@ -1523,6 +1523,81 @@ html: string): Promise<Buffer> {
     }
   });
 
+  // PATCH /api/rechnungen/:id — Zahlungsstatus setzen (bezahlt / offen)
+  app.patch("/api/rechnungen/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { bezahlt_am } = req.body;
+      const updates: any = {};
+      if (bezahlt_am !== undefined) {
+        // bezahlt_am = ISO-Datum -> bezahlt; null -> offen zurücksetzen
+        updates.bezahlt_am = bezahlt_am;
+      }
+      const { data, error } = await supabase
+        .from("rechnungen")
+        .update(updates)
+        .eq("id", id)
+        .select()
+        .single();
+      if (error) throw error;
+      res.json(data);
+    } catch (e) {
+      res.status(500).json({ message: asError(e) });
+    }
+  });
+
+  // GET /api/suche?q=... — globale Volltextsuche
+  app.get("/api/suche", async (req, res) => {
+    try {
+      const q = String(req.query.q || "").toLowerCase().trim();
+      if (!q || q.length < 2) return res.json({ auftraege: [], rechnungen: [], offerten: [], kunden: [] });
+
+      const [
+        { data: auftraege },
+        { data: rechnungen },
+        { data: offerten },
+      ] = await Promise.all([
+        supabase.from("auftraege").select("id,nr,titel,kunde,status,angebots_betrag,waehrung").order("erstellt", { ascending: false }).limit(200),
+        supabase.from("rechnungen").select("id,nr,betrag,waehrung,auftrag_id,faellig_datum,bezahlt_am,erstellt").order("erstellt", { ascending: false }).limit(200),
+        supabase.from("offerten").select("id,nr,titel,auftrag_id,status,gueltigkeit,erstellt").order("erstellt", { ascending: false }).limit(200),
+      ]);
+
+      const matchAuftraege = (auftraege || []).filter((a: any) =>
+        (a.nr || "").toLowerCase().includes(q) ||
+        (a.titel || "").toLowerCase().includes(q) ||
+        (a.kunde || "").toLowerCase().includes(q)
+      ).slice(0, 8);
+
+      const matchRechnungen = (rechnungen || []).filter((r: any) =>
+        (r.nr || "").toLowerCase().includes(q)
+      ).slice(0, 5);
+
+      const matchOfferten = (offerten || []).filter((o: any) =>
+        (o.nr || "").toLowerCase().includes(q) ||
+        (o.titel || "").toLowerCase().includes(q)
+      ).slice(0, 5);
+
+      // Kunden aus Aufträgen dedupliziert
+      const kundenSet = new Map<string, any>();
+      for (const a of (auftraege || [])) {
+        const k = (a.kunde || "").toLowerCase();
+        if (k && k.includes(q) && !kundenSet.has(a.kunde)) {
+          kundenSet.set(a.kunde, { name: a.kunde, auftrag_id: a.id, auftrag_nr: a.nr });
+        }
+      }
+      const matchKunden = Array.from(kundenSet.values()).slice(0, 5);
+
+      res.json({
+        auftraege: matchAuftraege,
+        rechnungen: matchRechnungen,
+        offerten: matchOfferten,
+        kunden: matchKunden,
+      });
+    } catch (e) {
+      res.status(500).json({ message: asError(e) });
+    }
+  });
+
   // ============= BANANA BUCHHALTUNG / Q3 EXPORT =============
   // Format: Banana Buchhaltung Schweiz (semicolon, Schweizer Dezimal mit Punkt)
   app.get("/api/export/q3", async (req, res) => {

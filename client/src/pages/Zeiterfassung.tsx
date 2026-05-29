@@ -813,6 +813,136 @@ function Monatsauswertung({ mitarbeiter, stundensaetze }: { mitarbeiter: Mitarbe
 }
 
 // ─── Hauptseite ───────────────────────────────────────────────────────────────
+// ─── Mobile Quick-Strip ────────────────────────────────────────────────────────
+function MobileQuickStrip({
+  mitarbeiter,
+  auftraege,
+  stundensaetze,
+}: {
+  mitarbeiter: Mitarbeiter[];
+  auftraege: Auftrag[];
+  stundensaetze: Stundensatz[];
+}) {
+  const { toast } = useToast();
+  const [maId, setMaId] = useState(mitarbeiter[0]?.id || "");
+  const [auftragId, setAuftragId] = useState<string>("none");
+  const [ort, setOrt] = useState<string>("Werkstatt");
+
+  const selectedMa = mitarbeiter.find((m) => m.id === maId);
+  const maName = selectedMa ? `${selectedMa.vorname} ${selectedMa.nachname}` : "";
+
+  const { data: aktiverStempel, refetch } = useQuery<Zeiteintrag | null>({
+    queryKey: ["/api/stempel/aktiv/quick", maName],
+    queryFn: () =>
+      maName
+        ? apiRequest("GET", `/api/stempel/aktiv?mitarbeiter_name=${encodeURIComponent(maName)}`).then((r) => r.json())
+        : Promise.resolve(null),
+    enabled: !!maName,
+    refetchInterval: 30000,
+  });
+
+  const einMut = useMutation({
+    mutationFn: () =>
+      apiRequest("POST", "/api/stempel/ein", {
+        mitarbeiter_name: maName,
+        auftrag_id: auftragId !== "none" ? auftragId : null,
+        beschreibung: "Tagesarbeitszeit",
+        ort: ort || null,
+        maschinenpark: null,
+      }),
+    onSuccess: () => {
+      refetch();
+      queryClient.invalidateQueries({ queryKey: ["/api/zeiteintraege"] });
+      toast({ title: "✓ Eingestempelt", description: `${maName} · ${new Date().toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" })} Uhr` });
+    },
+  });
+
+  const ausMut = useMutation({
+    mutationFn: () =>
+      apiRequest("POST", "/api/stempel/aus", { mitarbeiter_name: maName }),
+    onSuccess: () => {
+      refetch();
+      queryClient.invalidateQueries({ queryKey: ["/api/zeiteintraege"] });
+      toast({ title: "✓ Ausgestempelt", description: `${maName} · ${new Date().toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" })} Uhr` });
+    },
+  });
+
+  const isActive = !!(aktiverStempel && aktiverStempel.id && !aktiverStempel.end_zeit);
+  const isPending = einMut.isPending || ausMut.isPending;
+
+  return (
+    <div className="md:hidden">
+      <Card className={`p-3 border-2 ${isActive ? "border-green-400 bg-green-50 dark:bg-green-950/20" : "border-primary/20"}`}>
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="flex items-center gap-1.5">
+            <div className={`h-2 w-2 rounded-full ${isActive ? "bg-green-500 animate-pulse" : "bg-muted-foreground"}`} />
+            <span className="text-xs font-semibold">
+              {isActive ? `Eingestempelt seit ${aktiverStempel?.start_zeit?.slice(0,5)} Uhr` : "Nicht eingestempelt"}
+            </span>
+          </div>
+          <span className="text-xs text-muted-foreground">Schnellerfassung</span>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 mb-2">
+          <Select value={maId} onValueChange={setMaId}>
+            <SelectTrigger className="h-9 text-xs">
+              <SelectValue placeholder="Person" />
+            </SelectTrigger>
+            <SelectContent>
+              {mitarbeiter.map((m) => (
+                <SelectItem key={m.id} value={m.id}>
+                  {m.vorname} {m.nachname}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={auftragId} onValueChange={setAuftragId} disabled={isActive}>
+            <SelectTrigger className="h-9 text-xs">
+              <SelectValue placeholder="Auftrag" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Kein Auftrag</SelectItem>
+              {auftraege
+                .filter((a) => !["abgeschlossen","storniert"].includes(a.status))
+                .slice(0, 15)
+                .map((a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.nr} {a.titel}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={ort} onValueChange={setOrt} disabled={isActive}>
+            <SelectTrigger className="h-9 text-xs">
+              <SelectValue placeholder="Ort" />
+            </SelectTrigger>
+            <SelectContent>
+              {ORT_OPTIONS.map((o) => (
+                <SelectItem key={o} value={o}>{o}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <button
+          onClick={() => isActive ? ausMut.mutate() : einMut.mutate()}
+          disabled={isPending || !maName}
+          className={`w-full py-3 rounded-lg text-white font-bold text-sm transition-all active:scale-95 disabled:opacity-50 ${
+            isActive
+              ? "bg-red-500 hover:bg-red-600 active:bg-red-700"
+              : "bg-green-600 hover:bg-green-700 active:bg-green-800"
+          }`}
+          data-testid="button-quick-stempel"
+        >
+          {isPending ? "…" : isActive ? "⏹ Ausstempeln" : "▶ Einstempeln"}
+        </button>
+      </Card>
+    </div>
+  );
+}
+
 export default function Zeiterfassung() {
   const { data: auftraege = [] } = useQuery<Auftrag[]>({
     queryKey: ["/api/auftraege"],
@@ -840,6 +970,11 @@ export default function Zeiterfassung() {
           <p className="text-sm text-muted-foreground">Ein-/Ausstempeln &amp; Stundenauswertung</p>
         </div>
       </div>
+
+      {/* Mobile Quick-Strip — nur auf kleinen Bildschirmen sichtbar */}
+      {!maLoading && mitarbeiter.length > 0 && (
+        <MobileQuickStrip mitarbeiter={mitarbeiter} auftraege={auftraege} stundensaetze={stundensaetze} />
+      )}
 
       {maLoading ? (
         <Skeleton className="h-48 w-full" />

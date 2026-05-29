@@ -1,9 +1,10 @@
 import { Link, useLocation } from "wouter";
-import { ReactNode, useState, useEffect } from "react";
+import { ReactNode, useState, useEffect, useRef, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import {
   LayoutDashboard,
+  Search,
   ListChecks,
   FileText,
   Settings,
@@ -225,6 +226,178 @@ function LogoutButton({ collapsed }: { collapsed: boolean }) {
   );
 }
 
+// ─── Globale Suche ──────────────────────────────────────────────────────────
+function GlobalSearch({ collapsed }: { collapsed: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [results, setResults] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [, setLocation] = useLocation();
+
+  useEffect(() => {
+    if (open) setTimeout(() => inputRef.current?.focus(), 50);
+    else { setQ(""); setResults(null); }
+  }, [open]);
+
+  useEffect(() => {
+    if (q.length < 2) { setResults(null); return; }
+    const timer = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
+        const r = await fetch(`${API_BASE}/api/suche?q=${encodeURIComponent(q)}`);
+        const data = await r.json();
+        setResults(data);
+      } catch { setResults(null); }
+      finally { setLoading(false); }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [q]);
+
+  const go = (path: string) => {
+    setOpen(false);
+    setLocation(path);
+  };
+
+  const hasResults = results && (
+    results.auftraege?.length > 0 ||
+    results.rechnungen?.length > 0 ||
+    results.offerten?.length > 0 ||
+    results.kunden?.length > 0
+  );
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm text-white/60 hover:text-white hover:bg-white/10 transition-colors ${collapsed ? "justify-center px-2" : ""}`}
+        title="Suche (Ctrl+K)"
+        data-testid="button-global-search"
+      >
+        <Search className="h-4 w-4 shrink-0" />
+        {!collapsed && <span className="flex-1 text-left truncate">Suchen…</span>}
+        {!collapsed && <kbd className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded text-white/40">⌘K</kbd>}
+      </button>
+
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 px-4" onClick={() => setOpen(false)}>
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+          <div
+            className="relative bg-background border rounded-xl shadow-2xl w-full max-w-lg overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 px-4 py-3 border-b">
+              <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+              <input
+                ref={inputRef}
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Aufträge, Kunden, Rechnungen, Offerten…"
+                className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                data-testid="input-global-search"
+                onKeyDown={(e) => e.key === "Escape" && setOpen(false)}
+              />
+              {loading && <div className="h-4 w-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />}
+              <kbd
+                className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded cursor-pointer"
+                onClick={() => setOpen(false)}
+              >Esc</kbd>
+            </div>
+
+            <div className="max-h-96 overflow-y-auto p-2">
+              {q.length < 2 && (
+                <div className="px-3 py-8 text-center text-sm text-muted-foreground">
+                  Mindestens 2 Zeichen eingeben…
+                </div>
+              )}
+
+              {q.length >= 2 && !loading && !hasResults && (
+                <div className="px-3 py-8 text-center text-sm text-muted-foreground">
+                  Keine Ergebnisse für „{q}"
+                </div>
+              )}
+
+              {results?.auftraege?.length > 0 && (
+                <div className="mb-2">
+                  <div className="px-3 py-1 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Aufträge</div>
+                  {results.auftraege.map((a: any) => (
+                    <button
+                      key={a.id}
+                      onClick={() => go(`/auftraege/${a.id}`)}
+                      className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg hover:bg-muted/60 text-left"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs text-muted-foreground">{a.nr}</span>
+                          <span className="text-sm font-medium truncate">{a.titel}</span>
+                        </div>
+                        <div className="text-xs text-muted-foreground truncate">{a.kunde}</div>
+                      </div>
+                      {a.angebots_betrag > 0 && (
+                        <span className="text-xs font-semibold tabular-nums shrink-0">CHF {Number(a.angebots_betrag).toLocaleString("de-CH")}</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {results?.kunden?.length > 0 && (
+                <div className="mb-2">
+                  <div className="px-3 py-1 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Kunden</div>
+                  {results.kunden.map((k: any, i: number) => (
+                    <button
+                      key={i}
+                      onClick={() => go(`/auftraege/${k.auftrag_id}`)}
+                      className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/60 text-left"
+                    >
+                      <span className="text-sm">{k.name}</span>
+                      <span className="text-xs text-muted-foreground">→ {k.auftrag_nr}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {results?.rechnungen?.length > 0 && (
+                <div className="mb-2">
+                  <div className="px-3 py-1 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Rechnungen</div>
+                  {results.rechnungen.map((r: any) => (
+                    <button
+                      key={r.id}
+                      onClick={() => go(`/rechnungen`)}
+                      className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg hover:bg-muted/60 text-left"
+                    >
+                      <span className="font-mono text-sm">{r.nr}</span>
+                      <span className="text-xs text-muted-foreground">{r.bezahlt_am ? "✓ Bezahlt" : "Offen"}</span>
+                      <span className="text-xs font-semibold tabular-nums">CHF {Number(r.betrag).toLocaleString("de-CH")}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {results?.offerten?.length > 0 && (
+                <div className="mb-2">
+                  <div className="px-3 py-1 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Offerten</div>
+                  {results.offerten.map((o: any) => (
+                    <button
+                      key={o.id}
+                      onClick={() => go(`/auftraege/${o.auftrag_id}`)}
+                      className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/60 text-left"
+                    >
+                      <span className="font-mono text-xs text-muted-foreground">{o.nr}</span>
+                      <span className="text-sm truncate">{o.titel}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 export default function Layout({ children }: { children: ReactNode }) {
   const [location] = useLocation();
   const { theme, toggle } = useTheme();
@@ -269,6 +442,17 @@ export default function Layout({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        document.querySelector<HTMLButtonElement>("[data-testid='button-global-search']")?.click();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
   // Auto-open groups when navigating to their pages
   useEffect(() => {
     if (location === "/auftraege" || location.startsWith("/auftraege/")) setAuftraegeOpen(true);
@@ -290,6 +474,11 @@ export default function Layout({ children }: { children: ReactNode }) {
               Schneggenburger GmbH
             </div>
           )}
+        </div>
+
+        {/* Globale Suche */}
+        <div className="px-2 pb-1 pt-1">
+          <GlobalSearch collapsed={!show} />
         </div>
 
         {/* Main Nav */}

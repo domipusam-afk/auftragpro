@@ -94,6 +94,9 @@ export interface Rechnung {
   positionen: RechnungsPosition[];
   notiz?: string | null;
   faellig_datum?: string | null;
+  bezahlt_am?: string | null;
+  datum?: string | null;
+  empfaenger_name?: string | null;
   erstellt: string;
 }
 
