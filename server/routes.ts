@@ -2854,24 +2854,34 @@ html: string): Promise<Buffer> {
       const { data: allRows } = await supabase.from("rechnungen").select("nr");
       const nr = nextNr("R", allRows || []);
 
-      // Positionen von Offerte übernehmen
-      const positionen: any[] = Array.isArray(offerte.positionen) ? offerte.positionen : [];
-      const betrag = positionen.reduce((s: number, p: any) =>
-        s + Number(p.total || (Number(p.menge||0)*Number(p.einzelpreis||0))), 0);
-      const rabattProzent = Number(offerte.rabatt_prozent) || 0;
-      const totalExkl = betrag * (1 - rabattProzent/100);
-      const totalInkl = totalExkl * (1 + (Number(offerte.mwst_prozent)||8.1)/100);
+      // Positionen von Offerte übernehmen (jede Position mit total-Feld normalisieren)
+      const positionen: any[] = (Array.isArray(offerte.positionen) ? offerte.positionen : []).map((p: any) => ({
+        ...p,
+        betrag: Number(p.total ?? p.betrag ?? (Number(p.menge||0)*Number(p.einzelpreis||0))),
+      }));
 
-      // Rechnung erstellen — nur Felder die in der Tabelle existieren
-      // Offerte-ID in notiz speichern damit PDF die Offerte-Daten nachladen kann
+      // Betrag = Nettosumme (exkl. MWST) — gleich wie direkte Rechnung
+      const betrag = positionen.reduce((s: number, p: any) =>
+        s + Number(p.betrag || p.total || (Number(p.menge||0)*Number(p.einzelpreis||0))), 0);
+
+      // Fälligkeitsdatum: heute + 30 Tage (Standard)
+      const faelligDate = new Date();
+      faelligDate.setDate(faelligDate.getDate() + 30);
+      const faellig_datum = faelligDate.toISOString().slice(0, 10);
+
+      // Rechnung erstellen mit allen relevanten Feldern aus Offerte
+      // Offerte-ID in notiz speichern damit PDF die Offerte-Daten (Empfänger etc.) nachladen kann
       const row = {
         id: uid(),
         auftrag_id: offerte.auftrag_id,
         nr,
-        betrag: Math.round(totalInkl * 100) / 100,
-        waehrung: "CHF",
+        betrag: Math.round(betrag * 100) / 100,
+        waehrung: offerte.waehrung || "CHF",
         positionen,
         notiz: `offerte_id:${req.params.id}|Aus Offerte ${offerte.nr} erstellt`,
+        faellig_datum,
+        ansprechperson_intern: offerte.ansprechpartner || null,
+        ansprechperson_extern: offerte.empfaenger_name || null,
         erstellt: new Date().toISOString(),
       };
       const { data: rechnung, error: e2 } = await supabase
