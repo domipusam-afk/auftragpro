@@ -257,6 +257,19 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
   const lh = Math.round(45 * (logo_scale/100));
   // Scale for mini-preview: actual PDF is ~794px wide, preview is ~340px → factor ~0.43
   const S = 0.38;
+
+  // Adaptive Schriftfarbe je nach Hintergrundfarbe
+  const contrastColor = (hex: string): string => {
+    const h = (hex||"").replace("#","");
+    if (h.length < 6) return "#ffffff";
+    const r = parseInt(h.substring(0,2),16);
+    const g = parseInt(h.substring(2,4),16);
+    const b = parseInt(h.substring(4,6),16);
+    const lum = 0.2126*(r/255)**2.2 + 0.7152*(g/255)**2.2 + 0.0722*(b/255)**2.2;
+    return lum > 0.179 ? "#1a1a1a" : "#ffffff";
+  };
+  const hcText = contrastColor(hc||"#6b4c2a");
+  const fcText = contrastColor(fc||"#1a3a6b");
   const lws = Math.round(lw * S);
   const lhs = Math.round(lh * S);
 
@@ -283,12 +296,13 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
         <img src="${watermark_data_url}" style="opacity:${wmOp};${watermark_pos==='full'?`width:100%;height:100%;object-fit:cover`:`width:${wmSz}%;max-width:none;object-fit:contain`};display:block;"/></div>`
     : "";
 
-  // Empfänger-Block (linksbündig, kein Label)
-  const absTop = `${Math.max(0,(absender_top_mm||55)-20)*S*3.78}px`;
-  const absLeft = `${(absender_left_mm||0)*S*3.78}px`;
-  const absAlign = absender_pos_h === "rechts" ? "text-align:right;" : absender_pos_h === "mitte" ? "text-align:center;" : "";
+  // Empfänger-Block: Couvert-Versatz NUR für Offerte, alle anderen fix linkbündig oben
+  const isOfferte = docTyp === "offerte";
+  const absTop = isOfferte ? `${Math.max(0,(absender_top_mm||55)-20)*S*3.78}px` : "0px";
+  const absLeft = isOfferte ? `${(absender_left_mm||0)*S*3.78}px` : "0px";
+  const absAlign = isOfferte ? (absender_pos_h === "rechts" ? "text-align:right;" : absender_pos_h === "mitte" ? "text-align:center;" : "") : "";
   const empfaengerBlock = `
-    <div style="margin-top:${absTop};${absLeft ? `margin-left:${absLeft};` : ""}${absAlign}font-size:${Math.round(10*S)}pt;color:#333;line-height:1.55;margin-bottom:${Math.round(6*S)}mm;">
+    <div style="margin-top:${absTop};${absLeft && absLeft !== "0px" ? `margin-left:${absLeft};` : ""}${absAlign}font-size:${Math.round(10*S)}pt;color:#333;line-height:1.55;margin-bottom:${Math.round(6*S)}mm;">
       <div style="font-weight:600;">Musterfirma AG</div>
       <div>Musterstrasse 42</div>
       <div>8001 Z&uuml;rich</div>
@@ -315,7 +329,7 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
   const tableHtml = `
     <table style="width:100%;border-collapse:collapse;font-size:${fs}pt;margin-bottom:${Math.round(4*S)}px;">
       <thead>
-        <tr style="background:${hc};color:white;">
+        <tr style="background:${hc};color:${hcText};">
           <th style="padding:${Math.round(8*S)}px ${Math.round(4*S)}px;text-align:left;width:${Math.round(28*S)}px;">${ptPos}</th>
           <th style="padding:${Math.round(8*S)}px ${Math.round(4*S)}px;text-align:left;">${ptBeschr}</th>
           <th style="padding:${Math.round(8*S)}px ${Math.round(4*S)}px;text-align:right;width:${Math.round(65*S)}px;">${ptMenge}</th>
@@ -420,7 +434,7 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
       <div style="padding:${Math.round(14*S)}px ${Math.round(40*S)}px;flex:1;position:relative;z-index:1;">
         ${contentBlock}
       </div>
-      <div style="background:${fc};color:white;padding:${Math.round(6*S)}px ${Math.round(40*S)}px;font-size:${Math.round(8*S)}pt;display:flex;justify-content:space-between;align-items:center;">
+      <div style="background:${fc};color:${fcText};padding:${Math.round(6*S)}px ${Math.round(40*S)}px;font-size:${Math.round(8*S)}pt;display:flex;justify-content:space-between;align-items:center;">
         <span>${footerContact}</span><span>${footerPage}</span>
       </div>
     </div>`;
@@ -431,15 +445,15 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
     const logoLeft = logo_pos !== "rechts";
     return `<div style="font-family:Arial,sans-serif;font-size:${Math.round(10*S)}pt;color:#222;min-height:100%;display:flex;flex-direction:column;position:relative;padding-bottom:${Math.round(24*S)}px;box-sizing:border-box;">
       ${wmHtml}
-      <div style="background:${hc};color:white;padding:${Math.round(22*S)}px ${Math.round(40*S)}px ${Math.round(18*S)}px;display:flex;align-items:center;gap:${Math.round(16*S)}px;flex-direction:${logoLeft?"row":"row-reverse"};position:relative;z-index:1;">
-        <div style="flex-shrink:0;">${logo_data_url ? `<img src="${logo_data_url}" style="max-width:${lws}px;max-height:${lhs}px;object-fit:contain;filter:brightness(0) invert(1);" alt="Logo"/>` : `<span style="font-size:${Math.round(14*S)}pt;font-weight:700;color:white;">SG</span>`}${slogan ? `<div style="font-size:${Math.round(7*S)}pt;opacity:0.8;margin-top:${Math.round(2*S)}px;">${slogan}</div>` : ""}</div>
+      <div style="background:${hc};color:${hcText};padding:${Math.round(22*S)}px ${Math.round(40*S)}px ${Math.round(18*S)}px;display:flex;align-items:center;gap:${Math.round(16*S)}px;flex-direction:${logoLeft?"row":"row-reverse"};position:relative;z-index:1;">
+        <div style="flex-shrink:0;">${logo_data_url ? `<img src="${logo_data_url}" style="max-width:${lws}px;max-height:${lhs}px;object-fit:contain;filter:brightness(0) invert(1);" alt="Logo"/>` : `<span style="font-size:${Math.round(14*S)}pt;font-weight:700;color:${hcText};">SG</span>`}${slogan ? `<div style="font-size:${Math.round(7*S)}pt;opacity:0.8;margin-top:${Math.round(2*S)}px;">${slogan}</div>` : ""}</div>
         <div style="flex:1;font-size:${Math.round(15*S)}pt;font-weight:700;">${docTitle}</div>
         ${docInfoHtml.replace(`color:#555`, "color:rgba(255,255,255,0.85)")}
       </div>
       <div style="padding:${Math.round(10*S)}px ${Math.round(40*S)}px;flex:1;position:relative;z-index:1;">
         ${contentBlock}
       </div>
-      <div style="background:${fc};color:white;padding:${Math.round(6*S)}px ${Math.round(40*S)}px;font-size:${Math.round(8*S)}pt;display:flex;justify-content:space-between;align-items:center;">
+      <div style="background:${fc};color:${fcText};padding:${Math.round(6*S)}px ${Math.round(40*S)}px;font-size:${Math.round(8*S)}pt;display:flex;justify-content:space-between;align-items:center;">
         <span>${footerContact}</span><span>${footerPage}</span>
       </div>
     </div>`;
@@ -460,7 +474,7 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
         <div style="height:1px;background:#ddd;margin-bottom:${Math.round(10*S)}px;"></div>
         ${contentBlock}
       </div>
-      <div style="background:${fc};color:white;padding:${Math.round(6*S)}px ${Math.round(40*S)}px;font-size:${Math.round(8*S)}pt;display:flex;justify-content:space-between;align-items:center;">
+      <div style="background:${fc};color:${fcText};padding:${Math.round(6*S)}px ${Math.round(40*S)}px;font-size:${Math.round(8*S)}pt;display:flex;justify-content:space-between;align-items:center;">
         <span>${footerContact}</span><span>${footerPage}</span>
       </div>
     </div>`;
@@ -471,7 +485,7 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
     return `<div style="font-family:Arial,sans-serif;font-size:${Math.round(10*S)}pt;color:#222;min-height:100%;display:flex;position:relative;padding-bottom:${Math.round(24*S)}px;box-sizing:border-box;">
       ${wmHtml}
       <div style="width:${Math.round(22*S)}px;background:${hc};flex-shrink:0;display:flex;flex-direction:column;align-items:center;padding-top:${Math.round(20*S)}px;z-index:1;">
-        ${logo_data_url ? `<img src="${logo_data_url}" style="width:${Math.round(16*S)}px;object-fit:contain;filter:brightness(0) invert(1);opacity:0.9;" alt="Logo"/>` : `<span style="color:white;font-weight:700;font-size:${Math.round(7*S)}pt;writing-mode:vertical-rl;transform:rotate(180deg);">SG</span>`}
+        ${logo_data_url ? `<img src="${logo_data_url}" style="width:${Math.round(16*S)}px;object-fit:contain;filter:brightness(0) invert(1);opacity:0.9;" alt="Logo"/>` : `<span style="color:${hcText};font-weight:700;font-size:${Math.round(7*S)}pt;writing-mode:vertical-rl;transform:rotate(180deg);">SG</span>`}
       </div>
       <div style="flex:1;display:flex;flex-direction:column;position:relative;z-index:1;">
         <div style="padding:${Math.round(18*S)}px ${Math.round(36*S)}px ${Math.round(10*S)}px;">
@@ -484,7 +498,7 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
         <div style="padding:0 ${Math.round(36*S)}px;flex:1;">
           ${contentBlock}
         </div>
-        <div style="background:${fc};color:white;padding:${Math.round(6*S)}px ${Math.round(36*S)}px;font-size:${Math.round(8*S)}pt;display:flex;justify-content:space-between;align-items:center;">
+        <div style="background:${fc};color:${fcText};padding:${Math.round(6*S)}px ${Math.round(36*S)}px;font-size:${Math.round(8*S)}pt;display:flex;justify-content:space-between;align-items:center;">
           <span>${footerContact}</span><span>${footerPage}</span>
         </div>
       </div>
@@ -520,8 +534,8 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
     const logoLeft = logo_pos !== "rechts";
     return `<div style="font-family:Arial,sans-serif;font-size:${Math.round(10*S)}pt;color:#222;min-height:100%;display:flex;flex-direction:column;position:relative;padding-bottom:${Math.round(24*S)}px;box-sizing:border-box;">
       ${wmHtml}
-      <div style="background:${hc};color:white;padding:${Math.round(22*S)}px ${Math.round(40*S)}px ${Math.round(18*S)}px;display:flex;align-items:flex-end;justify-content:space-between;gap:${Math.round(16*S)}px;flex-direction:${logoLeft?"row":"row-reverse"};position:relative;z-index:1;">
-        <div style="flex-shrink:0;">${logo_data_url ? `<img src="${logo_data_url}" style="max-width:${lws}px;max-height:${lhs}px;object-fit:contain;filter:brightness(0) invert(1);" alt="Logo"/>` : `<span style="font-size:${Math.round(16*S)}pt;font-weight:900;color:white;letter-spacing:2px;">SG</span>`}${slogan ? `<div style="font-size:${Math.round(7*S)}pt;opacity:0.75;margin-top:${Math.round(4*S)}px;">${slogan}</div>` : ""}</div>
+      <div style="background:${hc};color:${hcText};padding:${Math.round(22*S)}px ${Math.round(40*S)}px ${Math.round(18*S)}px;display:flex;align-items:flex-end;justify-content:space-between;gap:${Math.round(16*S)}px;flex-direction:${logoLeft?"row":"row-reverse"};position:relative;z-index:1;">
+        <div style="flex-shrink:0;">${logo_data_url ? `<img src="${logo_data_url}" style="max-width:${lws}px;max-height:${lhs}px;object-fit:contain;filter:brightness(0) invert(1);" alt="Logo"/>` : `<span style="font-size:${Math.round(16*S)}pt;font-weight:900;color:${hcText};letter-spacing:2px;">SG</span>`}${slogan ? `<div style="font-size:${Math.round(7*S)}pt;opacity:0.75;margin-top:${Math.round(4*S)}px;">${slogan}</div>` : ""}</div>
         <div style="text-align:right;">
           <div style="font-size:${Math.round(14*S)}pt;font-weight:800;letter-spacing:1px;">${docTitle}</div>
           ${docInfoHtml.replace("color:#555", "color:rgba(255,255,255,0.8)")}
@@ -530,7 +544,7 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
       <div style="padding:${Math.round(12*S)}px ${Math.round(40*S)}px;flex:1;position:relative;z-index:1;">
         ${contentBlock}
       </div>
-      <div style="background:${fc};color:white;padding:${Math.round(6*S)}px ${Math.round(40*S)}px;font-size:${Math.round(8*S)}pt;display:flex;justify-content:space-between;align-items:center;">
+      <div style="background:${fc};color:${fcText};padding:${Math.round(6*S)}px ${Math.round(40*S)}px;font-size:${Math.round(8*S)}pt;display:flex;justify-content:space-between;align-items:center;">
         <span>${footerContact}</span><span>${footerPage}</span>
       </div>
     </div>`;
@@ -560,7 +574,7 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
       <div style="padding:0 ${Math.round(40*S)}px;flex:1;position:relative;z-index:1;">
         ${contentBlock}
       </div>
-      <div style="background:${fc};color:white;padding:${Math.round(6*S)}px ${Math.round(40*S)}px;font-size:${Math.round(8*S)}pt;display:flex;justify-content:space-between;align-items:center;">
+      <div style="background:${fc};color:${fcText};padding:${Math.round(6*S)}px ${Math.round(40*S)}px;font-size:${Math.round(8*S)}pt;display:flex;justify-content:space-between;align-items:center;">
         <span>${footerContact}</span><span>${footerPage}</span>
       </div>
     </div>`;
@@ -623,7 +637,7 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
         <div style="padding:0 ${Math.round(36*S)}px;flex:1;">
           ${contentBlock}
         </div>
-        <div style="background:${fc};color:white;padding:${Math.round(6*S)}px ${Math.round(36*S)}px;font-size:${Math.round(8*S)}pt;display:flex;justify-content:space-between;align-items:center;">
+        <div style="background:${fc};color:${fcText};padding:${Math.round(6*S)}px ${Math.round(36*S)}px;font-size:${Math.round(8*S)}pt;display:flex;justify-content:space-between;align-items:center;">
           <span>${footerContact}</span><span>${footerPage}</span>
         </div>
       </div>
@@ -1293,63 +1307,67 @@ export default function PdfVorlagenTab() {
               </div>
             )}
 
-            {/* Absender / Couvert-Fenster */}
-            <SectionHeader title="Absender / Couvert-Fenster" />
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs text-gray-600">Horizontale Ausrichtung</Label>
-                <div className="flex gap-2">
-                  {([["links", "Links"], ["mitte", "Mitte"], ["rechts", "Rechts"]] as const).map(([val, lbl]) => (
-                    <button
-                      key={val}
-                      type="button"
-                      onClick={() => updateVorlage({ absender_pos_h: val })}
-                      className={`flex-1 py-1 px-2 rounded text-xs border transition-colors ${
-                        vorlage.absender_pos_h === val
-                          ? "text-white border-transparent"
-                          : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
-                      }`}
-                      style={vorlage.absender_pos_h === val ? { background: "#6b4c2a", borderColor: "#6b4c2a" } : undefined}
-                    >
-                      {lbl}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label className="text-xs text-gray-600">Abstand oben (mm)</Label>
-                  <div className="flex items-center gap-1.5">
-                    <Input
-                      type="number"
-                      min={20}
-                      max={120}
-                      value={vorlage.absender_top_mm}
-                      onChange={(e) => updateVorlage({ absender_top_mm: Number(e.target.value) })}
-                      className="h-8 text-xs w-20"
-                    />
-                    <span className="text-xs text-gray-400">mm</span>
+            {/* Absender / Couvert-Fenster — NUR für Offerte (Briefumschlag-Fenster) */}
+            {activeDoc === "offerte" && (
+              <>
+                <SectionHeader title="Absender / Couvert-Fenster" />
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-gray-600">Horizontale Ausrichtung</Label>
+                    <div className="flex gap-2">
+                      {([["links", "Links"], ["mitte", "Mitte"], ["rechts", "Rechts"]] as const).map(([val, lbl]) => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => updateVorlage({ absender_pos_h: val })}
+                          className={`flex-1 py-1 px-2 rounded text-xs border transition-colors ${
+                            vorlage.absender_pos_h === val
+                              ? "text-white border-transparent"
+                              : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
+                          }`}
+                          style={vorlage.absender_pos_h === val ? { background: "#6b4c2a", borderColor: "#6b4c2a" } : undefined}
+                        >
+                          {lbl}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                  <p className="text-xs text-gray-400">Standard: 55 mm</p>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-gray-600">Abstand links (mm)</Label>
-                  <div className="flex items-center gap-1.5">
-                    <Input
-                      type="number"
-                      min={0}
-                      max={150}
-                      value={vorlage.absender_left_mm ?? 0}
-                      onChange={(e) => updateVorlage({ absender_left_mm: Number(e.target.value) })}
-                      className="h-8 text-xs w-20"
-                    />
-                    <span className="text-xs text-gray-400">mm</span>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs text-gray-600">Abstand oben (mm)</Label>
+                      <div className="flex items-center gap-1.5">
+                        <Input
+                          type="number"
+                          min={20}
+                          max={120}
+                          value={vorlage.absender_top_mm}
+                          onChange={(e) => updateVorlage({ absender_top_mm: Number(e.target.value) })}
+                          className="h-8 text-xs w-20"
+                        />
+                        <span className="text-xs text-gray-400">mm</span>
+                      </div>
+                      <p className="text-xs text-gray-400">Standard: 55 mm</p>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-gray-600">Abstand links (mm)</Label>
+                      <div className="flex items-center gap-1.5">
+                        <Input
+                          type="number"
+                          min={0}
+                          max={150}
+                          value={vorlage.absender_left_mm ?? 0}
+                          onChange={(e) => updateVorlage({ absender_left_mm: Number(e.target.value) })}
+                          className="h-8 text-xs w-20"
+                        />
+                        <span className="text-xs text-gray-400">mm</span>
+                      </div>
+                      <p className="text-xs text-gray-400">Standard: 0 mm</p>
+                    </div>
                   </div>
-                  <p className="text-xs text-gray-400">Standard: 0 mm</p>
+                  <p className="text-xs text-gray-400">Typisches Couvert-Fenster: 45–55 mm oben, 20–30 mm links.</p>
                 </div>
-              </div>
-              <p className="text-xs text-gray-400">Typisches Couvert-Fenster: 45–55 mm oben, 20–30 mm links.</p>
-            </div>
+              </>
+            )}
 
             {/* Ansprechperson */}
             <SectionHeader title="Ansprechperson" />

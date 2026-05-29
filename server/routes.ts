@@ -915,6 +915,21 @@ export async function registerRoutes(
     const absenderLeftMm = _useCovert ? (Number(v.absender_left_mm) || 0) : 0;
     const fmtCHF = (n: number) => `CHF ${n.toFixed(2)}`;
 
+    // Hilfsfunktion: Schriftfarbe je nach Hintergrundfarbe (schwarz oder weiss)
+    const contrastColor = (hex: string): string => {
+      const h = hex.replace("#","");
+      const r = parseInt(h.substring(0,2),16);
+      const g = parseInt(h.substring(2,4),16);
+      const b = parseInt(h.substring(4,6),16);
+      // WCAG Luminanz
+      const lum = 0.2126*(r/255)**2.2 + 0.7152*(g/255)**2.2 + 0.0722*(b/255)**2.2;
+      return lum > 0.179 ? "#1a1a1a" : "#ffffff";
+    };
+    const hcText = contrastColor(hc.replace(/[^0-9a-fA-F]/g,"").padStart(6,"0").slice(-6).replace(/^/,"#"));
+    const fcText = contrastColor(fc.replace(/[^0-9a-fA-F]/g,"").padStart(6,"0").slice(-6).replace(/^/,"#"));
+
+
+
     // Logo
     const lw = Math.round(70 * logoScale / 100);
     const lh = Math.round(45 * logoScale / 100);
@@ -938,9 +953,9 @@ export async function registerRoutes(
     // Header
     let headerHtml = "";
     if (design === "B") {
-      headerHtml = `<div style="background:${hc};color:#fff;padding:22px 40px 18px;display:flex;align-items:center;gap:16px;${logoPos==="rechts"?"flex-direction:row-reverse":""}">
+      headerHtml = `<div style="background:${hc};color:${hcText};padding:22px 40px 18px;display:flex;align-items:center;gap:16px;${logoPos==="rechts"?"flex-direction:row-reverse":""}">
         <div style="flex-shrink:0">${logoHtml}</div>
-        <div><div style="font-size:15pt;font-weight:700;">${data.firma}</div><div style="font-size:9pt;opacity:0.85;">${slogan}</div></div>
+        <div><div style="font-size:15pt;font-weight:700;color:${hcText};">${data.firma}</div><div style="font-size:9pt;opacity:0.85;color:${hcText};">${slogan}</div></div>
       </div>`;
     } else if (design === "C") {
       headerHtml = `<div style="padding:16px 40px 6px;">${logoHtml}</div>`;
@@ -959,11 +974,11 @@ export async function registerRoutes(
       <div style="height:3px;background:linear-gradient(90deg,${hc},${fc});margin:0 40px 0;border-radius:2px;"></div>`;
     } else if (design === "F") {
       // Box-Header: voller Farbblock
-      headerHtml = `<div style="background:${hc};color:#fff;padding:22px 40px 18px;display:flex;align-items:flex-end;justify-content:space-between;gap:16px;${logoPos==="rechts"?"flex-direction:row-reverse":""}">
+      headerHtml = `<div style="background:${hc};color:${hcText};padding:22px 40px 18px;display:flex;align-items:flex-end;justify-content:space-between;gap:16px;${logoPos==="rechts"?"flex-direction:row-reverse":""}">
         <div style="flex-shrink:0">${logoHtml}<div style="font-size:8.5pt;opacity:0.75;margin-top:4px;">${slogan}</div></div>
         <div style="text-align:right">
-          <div style="font-size:14pt;font-weight:800;letter-spacing:1px;">${data.firma}</div>
-          <div style="font-size:8.5pt;opacity:0.8;">${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
+          <div style="font-size:14pt;font-weight:800;letter-spacing:1px;color:${hcText};">${data.firma}</div>
+          <div style="font-size:8.5pt;opacity:0.8;color:${hcText};">${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
         </div>
       </div>`;
     } else {
@@ -1063,7 +1078,7 @@ export async function registerRoutes(
           </div>
         </div>`
       : `<div style="margin-top:auto;">
-          <div style="background:${fc};color:#fff;padding:6px 40px;font-size:8pt;display:flex;justify-content:space-between;align-items:center;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+          <div style="background:${fc};color:${fcText};padding:6px 40px;font-size:8pt;display:flex;justify-content:space-between;align-items:center;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
             ${showContact ? `<div>${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt} · ${data.firmaTel} · ${data.firmaEmail}</div>` : "<div></div>"}
             ${showPageNum ? `<div>Seite 1 / 1</div>` : ""}
           </div>
@@ -1126,14 +1141,14 @@ export async function registerRoutes(
         * { box-sizing:border-box; -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
         body { font-family:Arial,sans-serif;font-size:10pt;color:#222;margin:0;padding:0; }
         table { width:100%;border-collapse:collapse; }
-        th { background:${hc};color:#fff;padding:8px 4px;text-align:left;font-size:8.5pt; }
+        th { background:${hc};color:${hcText};padding:8px 4px;text-align:left;font-size:8.5pt; }
         td { font-size:9pt; }
         .intro,.schluss { font-size:9pt;color:#444;white-space:pre-line; }
       </style></head>
       <body style="position:relative;display:flex;min-height:100vh;">
         ${wmHtml}
         <div style="width:22px;background:${hc};flex-shrink:0;display:flex;flex-direction:column;align-items:center;padding-top:20px;">
-          ${logoUrl ? `<img src="${logoUrl}" style="width:16px;object-fit:contain;filter:brightness(0) invert(1);opacity:0.9;" />` : `<span style="color:white;font-weight:700;font-size:8pt;writing-mode:vertical-rl;transform:rotate(180deg);">${data.firma.substring(0,2).toUpperCase()}</span>`}
+          ${logoUrl ? `<img src="${logoUrl}" style="width:16px;object-fit:contain;filter:brightness(0) invert(1);opacity:0.9;" />` : `<span style="color:${hcText};font-weight:700;font-size:8pt;writing-mode:vertical-rl;transform:rotate(180deg);">${data.firma.substring(0,2).toUpperCase()}</span>`}
         </div>
         <div style="flex:1;display:flex;flex-direction:column;position:relative;z-index:1;">
           <div style="padding:18px 36px 10px;">
@@ -1375,7 +1390,7 @@ export async function registerRoutes(
       @page { margin: ${headerHeightMm + 4}mm 10mm ${footerHeightMm + 4}mm 10mm; }
       body { font-family:Arial,sans-serif;font-size:10pt;color:#222;margin:0;padding:0; }
       table { width:100%;border-collapse:collapse; }
-      th { background:${hc};color:#fff;padding:8px 4px;text-align:left;font-size:8.5pt; }
+      th { background:${hc};color:${hcText};padding:8px 4px;text-align:left;font-size:8.5pt; }
       td { font-size:9pt; }
       .intro,.schluss { font-size:9pt;color:#444;white-space:pre-line; }
       /* Fixed header — repeats on every page */
