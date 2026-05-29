@@ -1534,21 +1534,49 @@ html: string): Promise<Buffer> {
       const iban = ibanRaw || "CH00 0000 0000 0000 0000 0";
       const ibanClean = iban.replace(/\s/g, "");
       const betragFormatted = totalInkl.toFixed(2);
-      // QR-Code Daten (Swiss QR Bill Referenz-Format)
+      // Swiss QR Bill — exakt 31 Zeilen, Adresstyp S (strukturiert: Strasse | PLZ | Ort separat)
+      const firmaPlzOrtRaw = sMap.plz_ort || "8580 Sommeri";
+      const firmaPlzMatch = firmaPlzOrtRaw.match(/^(\d{4})\s+(.+)$/);
+      const firmaPlz  = firmaPlzMatch ? firmaPlzMatch[1] : "8580";
+      const firmaOrt  = firmaPlzMatch ? firmaPlzMatch[2] : firmaPlzOrtRaw;
+
+      // Kunden PLZ/Ort aufteilen
+      const empPlzMatch = empPlzOrt.match(/^(\d{4,5})\s+(.+)$/);
+      const empPlz = empPlzMatch ? empPlzMatch[1] : empPlzOrt;
+      const empOrtOnly = empPlzMatch ? empPlzMatch[2] : "";
+
       const qrData = [
-        "SPC", "0200", "1",
-        ibanClean,
-        "K", sMap.firmenname || "Schneggenburger GmbH",
-        sMap.adresse || "Hefenhoferstrasse 7",
-        (sMap.plz_ort || "8580 Sommeri").replace(/^(\d+)\s+(.+)$/, "$1 $2"),
-        "", "", "CH",
-        "", "", "", "", "", "", "",
-        betragFormatted, "CHF",
-        "K", empfaenger || "",
-        empStrasse || "", empPlzOrt || "",
-        "", "", "CH",
-        "NON", "", "Rechnung " + (rechnung.nr || rid.substring(0,8)),
-        "EPD"
+        "SPC",                                        // 1: Header
+        "0200",                                       // 2: Version
+        "1",                                          // 3: Coding (UTF-8)
+        ibanClean,                                    // 4: IBAN
+        // Zahlungsempfänger (Firma) — Typ S = strukturiert
+        "S",                                          // 5: Adresstyp
+        sMap.firmenname || "Schneggenburger GmbH",   // 6: Name
+        sMap.adresse    || "Hefenhoferstrasse 7",    // 7: Strasse+Nr
+        "",                                           // 8: Hausnummer (leer bei kombiniert)
+        firmaPlz,                                     // 9: PLZ
+        firmaOrt,                                     // 10: Ort
+        "CH",                                         // 11: Land
+        // Endgültiger Zahlungsempfänger (leer = gleich wie oben)
+        "", "", "", "", "", "",                       // 12-17: leer
+        // Betrag + Währung
+        betragFormatted,                              // 18: Betrag
+        "CHF",                                        // 19: Währung
+        // Zahlungspflichtiger (Kunde) — Typ S
+        empfaenger ? "S" : "",                        // 20: Adresstyp
+        empfaenger  || "",                            // 21: Name
+        empStrasse  || "",                            // 22: Strasse+Nr
+        "",                                           // 23: Hausnummer (leer)
+        empPlz      || "",                            // 24: PLZ
+        empOrtOnly  || "",                            // 25: Ort
+        empfaenger ? "CH" : "",                       // 26: Land
+        // Referenz
+        "NON",                                        // 27: Referenztyp (keine QR-Ref)
+        "",                                           // 28: Referenz (leer)
+        "Rechnung " + (rechnung.nr || rid.substring(0,8)), // 29: Zusatzinfo
+        "EPD",                                        // 30: Trailer
+        "",                                           // 31: AV1 (leer)
       ].join("\n");
       let qrCodeDataUrl = "";
       try {
