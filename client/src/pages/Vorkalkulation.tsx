@@ -36,6 +36,7 @@ import {
   Minus,
   MapPin,
   Clock,
+  AlertCircle,
   AlertTriangle,
   CheckCircle2,
 } from "lucide-react";
@@ -1155,6 +1156,12 @@ function ZusammenfassungBlock({
 
 // ─── Nachkalkulation (Soll-Ist-Vergleich) ──────────────────────────────────────
 
+interface VkConfigNaka {
+  risiko_gewinn_prozent: number;
+  rabatt_prozent: number;
+  mwst_prozent: number;
+}
+
 function NachkalkulationBlock({
   auftragId,
   saetze,
@@ -1204,6 +1211,16 @@ function NachkalkulationBlock({
     queryKey: ["/api/nachkalkulation/fremd", auftragId],
     queryFn: () =>
       apiRequest("GET", `/api/nachkalkulation/${auftragId}/fremdleistungen`).then((r) => r.json()),
+  });
+
+  const { data: auftragData } = useQuery<Auftrag>({
+    queryKey: ["/api/auftraege", auftragId],
+    queryFn: () => apiRequest("GET", `/api/auftraege/${auftragId}`).then((r) => r.json()),
+  });
+
+  const { data: vkConfigNaka } = useQuery<VkConfigNaka>({
+    queryKey: ["/api/vorkalkulation/config", auftragId],
+    queryFn: () => apiRequest("GET", `/api/vorkalkulation/${auftragId}/config`).then((r) => r.json()),
   });
 
   const addNakaMaterial = useMutation({
@@ -1287,6 +1304,20 @@ function NachkalkulationBlock({
 
   const vkSelbstkosten = vkTotalStundenKosten + vkTotalMaterial + vkTotalFremd + vkTotalSoek;
   const istSelbstkosten = istTotalStundenKosten + istTotalMaterial + istTotalFremd;
+
+  // VK-Offertpreis aus Konfiguration
+  const risikoGewinnPctNaka = vkConfigNaka?.risiko_gewinn_prozent ?? 15;
+  const rabattPctNaka = vkConfigNaka?.rabatt_prozent ?? 0;
+  const mwstPctNaka = vkConfigNaka?.mwst_prozent ?? 8.1;
+  const vkRisikoGewinnNaka = vkSelbstkosten * (risikoGewinnPctNaka / 100);
+  const vkNettoOhneRabattNaka = vkSelbstkosten + vkRisikoGewinnNaka;
+  const vkRabattNaka = vkNettoOhneRabattNaka * (rabattPctNaka / 100);
+  const vkNettoNaka = vkNettoOhneRabattNaka - vkRabattNaka;
+  const vkMwstNaka = vkNettoNaka * (mwstPctNaka / 100);
+  const vkBruttoNaka = vkNettoNaka + vkMwstNaka;
+  const gewinnVsVkNaka = vkNettoNaka - istSelbstkosten;
+  const auftragswert = auftragData?.angebots_betrag || 0;
+  const gewinnVsAuftragNaka = auftragswert > 0 ? auftragswert - istSelbstkosten : null;
 
   function DiffRow({
     label,
@@ -1446,6 +1477,90 @@ function NachkalkulationBlock({
             </tbody>
           </table>
         </Card>
+      )}
+
+      {/* Gewinnprognose Kalkulations-Übersicht */}
+      {vkNettoNaka > 0 && istSelbstkosten > 0 && (
+        <div className="space-y-3">
+          {/* VK-Offertpreis kompakt */}
+          <Card className="p-4">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">VK-Offertpreis</p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+              <div>
+                <p className="text-xs text-muted-foreground">Selbstkosten</p>
+                <p className="font-semibold tabular-nums">{formatCHF(vkSelbstkosten)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Nettooffertpreis</p>
+                <p className="font-semibold tabular-nums">{formatCHF(vkNettoNaka)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">MWST {mwstPctNaka}%</p>
+                <p className="font-semibold tabular-nums">+{formatCHF(vkMwstNaka)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Bruttooffertpreis</p>
+                <p className="font-bold tabular-nums" style={{ color: "hsl(var(--primary))" }}>{formatCHF(vkBruttoNaka)}</p>
+              </div>
+            </div>
+            {auftragswert > 0 && (
+              <div className="mt-2 pt-2 border-t text-xs text-muted-foreground flex justify-between">
+                <span>Eingetragener Auftragswert</span>
+                <span className="tabular-nums font-mono">{formatCHF(auftragswert)}</span>
+              </div>
+            )}
+          </Card>
+
+          {/* Gewinn vs. VK-Nettooffertpreis */}
+          <Card className={`p-4 flex items-center justify-between ${gewinnVsVkNaka >= 0 ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"}`}>
+            <div className="flex items-center gap-2">
+              {gewinnVsVkNaka >= 0
+                ? <CheckCircle2 className="h-5 w-5 text-green-600" />
+                : <AlertTriangle className="h-5 w-5 text-red-600" />
+              }
+              <div>
+                <p className="text-sm font-semibold">Gewinn vs. VK-Offertpreis</p>
+                <p className="text-xs text-muted-foreground">
+                  Netto {formatCHF(vkNettoNaka)} − IST-Kosten {formatCHF(istSelbstkosten)}
+                </p>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className={`text-2xl font-bold ${gewinnVsVkNaka >= 0 ? "text-green-700" : "text-red-700"}`}>
+                {formatCHF(gewinnVsVkNaka)}
+              </p>
+              <p className={`text-xs font-medium ${gewinnVsVkNaka >= 0 ? "text-green-600" : "text-red-600"}`}>
+                {vkNettoNaka > 0 ? ((gewinnVsVkNaka / vkNettoNaka) * 100).toFixed(1) : "0"}% Marge
+              </p>
+            </div>
+          </Card>
+
+          {/* Gewinn vs. Auftragswert */}
+          {gewinnVsAuftragNaka !== null && (
+            <Card className={`p-4 flex items-center justify-between border-dashed ${gewinnVsAuftragNaka >= 0 ? "border-green-200 bg-green-50/50" : "border-orange-200 bg-orange-50/50"}`}>
+              <div className="flex items-center gap-2">
+                {gewinnVsAuftragNaka >= 0
+                  ? <CheckCircle2 className="h-4 w-4 text-green-600" />
+                  : <AlertCircle className="h-4 w-4 text-orange-600" />
+                }
+                <div>
+                  <p className="text-sm font-medium">Gewinn vs. Auftragswert</p>
+                  <p className="text-xs text-muted-foreground">
+                    Auftrag {formatCHF(auftragswert)} − IST-Kosten {formatCHF(istSelbstkosten)}
+                  </p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className={`text-xl font-bold ${gewinnVsAuftragNaka >= 0 ? "text-green-700" : "text-orange-700"}`}>
+                  {formatCHF(gewinnVsAuftragNaka)}
+                </p>
+                <p className={`text-xs font-medium ${gewinnVsAuftragNaka >= 0 ? "text-green-600" : "text-orange-600"}`}>
+                  {auftragswert > 0 ? ((gewinnVsAuftragNaka / auftragswert) * 100).toFixed(1) : "0"}% Marge
+                </p>
+              </div>
+            </Card>
+          )}
+        </div>
       )}
 
       {/* IST-Material Erfassung */}

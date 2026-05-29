@@ -95,6 +95,12 @@ interface Eingangsrechnung {
   auftrag_id?: string | null;
 }
 
+interface VkConfig {
+  risiko_gewinn_prozent: number;
+  rabatt_prozent: number;
+  mwst_prozent: number;
+}
+
 const OPEN_STATUSES = ["anfrage", "angebot", "bestaetigt", "in_arbeit", "qualitaet", "rechnung"];
 
 export default function Nachkalkulation() {
@@ -118,6 +124,12 @@ export default function Nachkalkulation() {
   const { data: kalkPositionen = [], isLoading: kalkLoading } = useQuery<KalkulationsPosition[]>({
     queryKey: ["/api/kalkulation", selectedAuftrag],
     queryFn: () => apiRequest("GET", `/api/kalkulation/${selectedAuftrag}`).then((r) => r.json()),
+    enabled: !!selectedAuftrag,
+  });
+
+  const { data: vkConfig } = useQuery<VkConfig>({
+    queryKey: ["/api/vorkalkulation/config", selectedAuftrag],
+    queryFn: () => apiRequest("GET", `/api/vorkalkulation/${selectedAuftrag}/config`).then((r) => r.json()),
     enabled: !!selectedAuftrag,
   });
 
@@ -156,11 +168,27 @@ export default function Nachkalkulation() {
 
   const angebotsBetrag = selectedAuftragData?.angebots_betrag || 0;
 
-  // Abweichungen
+  // VK-Offertpreis berechnen (gleiche Logik wie ZusammenfassungBlock)
+  const vkSelbstkosten = sollGesamt; // Aus kalkPositionen (Arbeit + Material + Fremd + SOEK)
+  const risikoGewinnPct = vkConfig?.risiko_gewinn_prozent ?? 15;
+  const rabattPct = vkConfig?.rabatt_prozent ?? 0;
+  const mwstPct = vkConfig?.mwst_prozent ?? 8.1;
+  const vkRisikoGewinn = vkSelbstkosten * (risikoGewinnPct / 100);
+  const vkNettoOhneRabatt = vkSelbstkosten + vkRisikoGewinn;
+  const vkRabatt = vkNettoOhneRabatt * (rabattPct / 100);
+  const vkNetto = vkNettoOhneRabatt - vkRabatt; // Nettooffertpreis exkl. MWST
+  const vkMwst = vkNetto * (mwstPct / 100);
+  const vkBrutto = vkNetto + vkMwst; // Bruttooffertpreis inkl. MWST
+
+  // Gewinn: VK-Nettooffertpreis vs. IST-Kosten (korrekte Vergleichsbasis)
+  const gewinnVsVk = vkNetto - istGesamt;
+  // Gewinn vs. manuell eingetragener Auftragswert (zusätzlich, wenn vorhanden)
+  const gewinnVsAngebot = angebotsBetrag > 0 ? angebotsBetrag - istGesamt : null;
+
+  // Abweichungen Soll/Ist
   const abwMaterial = istMaterial - sollMaterial;
   const abwArbeit = istArbeit - sollArbeit;
   const abwGesamt = istGesamt - sollGesamt;
-  const gewinnPrognose = angebotsBetrag - istGesamt;
 
   const abwPct = sollGesamt > 0 ? (abwGesamt / sollGesamt) * 100 : 0;
 
@@ -282,29 +310,97 @@ export default function Nachkalkulation() {
               </div>
 
               {/* Gewinnprognose */}
-              {angebotsBetrag > 0 && (
-                <Card className={cn("p-4 flex items-center justify-between", gewinnPrognose >= 0 ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50")}>
-                  <div className="flex items-center gap-2">
-                    {gewinnPrognose >= 0
-                      ? <CheckCircle2 className="h-5 w-5 text-green-600" />
-                      : <AlertCircle className="h-5 w-5 text-red-600" />
-                    }
-                    <div>
-                      <p className="text-sm font-semibold">Gewinnprognose (Echtzeit)</p>
-                      <p className="text-xs text-muted-foreground">
-                        Angebot {formatCHF(angebotsBetrag)} − Ist-Kosten {formatCHF(istGesamt)}
+              {vkNetto > 0 && (
+                <div className="space-y-3">
+                  {/* VK-Offertpreis Übersicht */}
+                  <Card className="p-4">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">VK-Offertpreis (berechnet)</p>
+                    <div className="space-y-1.5 text-sm">
+                      <div className="flex justify-between text-muted-foreground">
+                        <span>Selbstkosten (Soll)</span>
+                        <span className="tabular-nums font-mono">{formatCHF(vkSelbstkosten)}</span>
+                      </div>
+                      <div className="flex justify-between text-muted-foreground">
+                        <span>+ Risiko/Gewinn {risikoGewinnPct}%</span>
+                        <span className="tabular-nums font-mono">+{formatCHF(vkRisikoGewinn)}</span>
+                      </div>
+                      {rabattPct > 0 && (
+                        <div className="flex justify-between text-muted-foreground">
+                          <span>− Rabatt {rabattPct}%</span>
+                          <span className="tabular-nums font-mono">−{formatCHF(vkRabatt)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between font-semibold border-t pt-1.5">
+                        <span>Nettooffertpreis (exkl. MWST)</span>
+                        <span className="tabular-nums font-mono">{formatCHF(vkNetto)}</span>
+                      </div>
+                      <div className="flex justify-between text-muted-foreground">
+                        <span>+ MWST {mwstPct}%</span>
+                        <span className="tabular-nums font-mono">+{formatCHF(vkMwst)}</span>
+                      </div>
+                      <div className="flex justify-between font-bold text-base border-t pt-1.5" style={{ color: "hsl(var(--primary))" }}>
+                        <span>Bruttooffertpreis (inkl. MWST)</span>
+                        <span className="tabular-nums font-mono">{formatCHF(vkBrutto)}</span>
+                      </div>
+                      {angebotsBetrag > 0 && (
+                        <div className="flex justify-between text-xs text-muted-foreground pt-1 border-t">
+                          <span>Eingetragener Auftragswert</span>
+                          <span className="tabular-nums font-mono">{formatCHF(angebotsBetrag)}</span>
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+
+                  {/* Gewinn vs. VK-Nettooffertpreis (Hauptvergleich) */}
+                  <Card className={cn("p-4 flex items-center justify-between", gewinnVsVk >= 0 ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50")}>
+                    <div className="flex items-center gap-2">
+                      {gewinnVsVk >= 0
+                        ? <CheckCircle2 className="h-5 w-5 text-green-600" />
+                        : <AlertCircle className="h-5 w-5 text-red-600" />
+                      }
+                      <div>
+                        <p className="text-sm font-semibold">Gewinn vs. VK-Offertpreis</p>
+                        <p className="text-xs text-muted-foreground">
+                          Netto {formatCHF(vkNetto)} − IST-Kosten {formatCHF(istGesamt)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className={cn("text-2xl font-bold", gewinnVsVk >= 0 ? "text-green-700" : "text-red-700")}>
+                        {formatCHF(gewinnVsVk)}
+                      </p>
+                      <p className={cn("text-xs font-medium", gewinnVsVk >= 0 ? "text-green-600" : "text-red-600")}>
+                        {vkNetto > 0 ? ((gewinnVsVk / vkNetto) * 100).toFixed(1) : "0"}% Marge
                       </p>
                     </div>
-                  </div>
-                  <div className="text-right">
-                    <p className={cn("text-2xl font-bold", gewinnPrognose >= 0 ? "text-green-700" : "text-red-700")}>
-                      {formatCHF(gewinnPrognose)}
-                    </p>
-                    <p className={cn("text-xs font-medium", gewinnPrognose >= 0 ? "text-green-600" : "text-red-600")}>
-                      {angebotsBetrag > 0 ? ((gewinnPrognose / angebotsBetrag) * 100).toFixed(1) : "0"}% Marge
-                    </p>
-                  </div>
-                </Card>
+                  </Card>
+
+                  {/* Gewinn vs. Auftragswert (wenn eingetragen) */}
+                  {gewinnVsAngebot !== null && (
+                    <Card className={cn("p-4 flex items-center justify-between border-dashed", gewinnVsAngebot >= 0 ? "border-green-200 bg-green-50/50" : "border-orange-200 bg-orange-50/50")}>
+                      <div className="flex items-center gap-2">
+                        {gewinnVsAngebot >= 0
+                          ? <CheckCircle2 className="h-4 w-4 text-green-600" />
+                          : <AlertCircle className="h-4 w-4 text-orange-600" />
+                        }
+                        <div>
+                          <p className="text-sm font-medium">Gewinn vs. Auftragswert</p>
+                          <p className="text-xs text-muted-foreground">
+                            Auftrag {formatCHF(angebotsBetrag)} − IST-Kosten {formatCHF(istGesamt)}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className={cn("text-xl font-bold", gewinnVsAngebot >= 0 ? "text-green-700" : "text-orange-700")}>
+                          {formatCHF(gewinnVsAngebot)}
+                        </p>
+                        <p className={cn("text-xs font-medium", gewinnVsAngebot >= 0 ? "text-green-600" : "text-orange-600")}>
+                          {angebotsBetrag > 0 ? ((gewinnVsAngebot / angebotsBetrag) * 100).toFixed(1) : "0"}% Marge
+                        </p>
+                      </div>
+                    </Card>
+                  )}
+                </div>
               )}
 
               {/* Zeiteinträge Detail */}
