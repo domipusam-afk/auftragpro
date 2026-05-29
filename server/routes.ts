@@ -1612,58 +1612,112 @@ html: string): Promise<Buffer> {
       const firmaName = sMap.firmenname || "Schneggenburger GmbH";
       const firmaAdr  = sMap.adresse    || "Hefenhoferstrasse 7";
       const firmaPlzOrt = (sMap.plz_ort || "8580 Sommeri");
+      // IBAN formatiert für Anzeige: Gruppen à 4 Zeichen
+      const ibanFormatted = ibanClean.replace(/(.{4})/g, "$1 ").trim();
+
+      // Swiss QR Bill — offizielles 3-Spalten Layout (SIX Standard)
+      // Spalte 1: Empfangsschein (62mm), Spalte 2: Zahlteil+QR (105mm), Spalte 3: Infos (Rest)
       const qrZahlscheinHtml = `
-        <div style="page-break-before:always;font-family:Arial,Helvetica,sans-serif;padding:12mm 10mm 0 10mm;">
-          ${(ibanMissing || qrIbanError) ? `<div style="background:#fff3cd;border:1px solid #ffc107;padding:6px 10px;border-radius:4px;margin-bottom:10px;font-size:8pt;color:#856404;">&#9888; ${qrIbanError || "Bitte IBAN in Einstellungen hinterlegen."}</div>` : ""}
-          <div style="font-size:11pt;font-weight:700;margin-bottom:6mm;">Zahlteil QR-Rechnung</div>
-          <div style="display:flex;gap:0;align-items:flex-start;">
-            <!-- Links: QR-Code + Währung/Betrag -->
-            <div style="width:62mm;flex-shrink:0;">
-              <div style="font-size:7pt;color:#666;margin-bottom:1mm;">Unterstützt</div>
-              <div style="font-size:9pt;font-weight:700;margin-bottom:4mm;">Überweisung</div>
+        <div style="page-break-before:always;font-family:Arial,Helvetica,sans-serif;font-size:10pt;color:#000;width:210mm;box-sizing:border-box;">
+          ${(ibanMissing || qrIbanError) ? `<div style="background:#fff3cd;border:1px solid #ffc107;padding:6px 10px;margin-bottom:6px;font-size:8pt;color:#856404;">&#9888; ${qrIbanError || "Bitte IBAN in Einstellungen hinterlegen."}</div>` : ""}
+          <!-- Trennlinie oben mit Schere -->
+          <div style="display:flex;align-items:center;margin-bottom:3mm;">
+            <div style="flex:1;border-top:1px solid #000;"></div>
+            <div style="padding:0 2mm;font-size:12pt;">&#9986;</div>
+          </div>
+          <!-- 3 Spalten -->
+          <div style="display:flex;align-items:flex-start;width:100%;">
+
+            <!-- ── SPALTE 1: Empfangsschein (62mm) ── -->
+            <div style="width:62mm;flex-shrink:0;padding-right:5mm;border-right:1px solid #000;min-height:85mm;display:flex;flex-direction:column;">
+              <div style="font-size:11pt;font-weight:700;margin-bottom:4mm;">Empfangsschein</div>
+
+              <div style="margin-bottom:3mm;">
+                <div style="font-size:6pt;font-weight:700;">Konto / Zahlbar an</div>
+                <div style="font-size:8pt;">${ibanFormatted}</div>
+                <div style="font-size:8pt;">${firmaName}</div>
+                <div style="font-size:8pt;">${firmaAdr}</div>
+                <div style="font-size:8pt;">${firmaPlz} ${firmaOrt}</div>
+              </div>
+
+              ${empfaenger ? `
+              <div style="margin-bottom:3mm;">
+                <div style="font-size:6pt;font-weight:700;">Zahlbar durch</div>
+                <div style="font-size:8pt;">${empfaenger}</div>
+                ${empStrasse ? `<div style="font-size:8pt;">${empStrasse}</div>` : ""}
+                ${empPlzOrt  ? `<div style="font-size:8pt;">${empPlzOrt}</div>`  : ""}
+              </div>` : ""}
+
+              <div style="margin-top:auto;">
+                <div style="display:flex;gap:6mm;align-items:baseline;margin-bottom:3mm;">
+                  <div>
+                    <div style="font-size:6pt;font-weight:700;">Währung</div>
+                    <div style="font-size:8pt;font-weight:700;">CHF</div>
+                  </div>
+                  <div>
+                    <div style="font-size:6pt;font-weight:700;">Betrag</div>
+                    <div style="font-size:8pt;font-weight:700;">${betragFormatted}</div>
+                  </div>
+                </div>
+                <div style="font-size:6pt;font-weight:700;text-align:right;margin-top:4mm;">Annahmestelle</div>
+              </div>
+            </div>
+
+            <!-- ── SPALTE 2: Zahlteil + QR-Code (105mm) ── -->
+            <div style="width:105mm;flex-shrink:0;padding:0 5mm;display:flex;flex-direction:column;align-items:flex-start;">
+              <div style="font-size:11pt;font-weight:700;margin-bottom:4mm;">Zahlteil</div>
+
+              <!-- QR-Code -->
               ${qrCodeSvg
-                ? `<div style="width:46mm;height:46mm;margin-bottom:5mm;">${qrCodeSvg}</div>`
-                : `<div style="width:46mm;height:46mm;border:2px dashed #ccc;display:flex;align-items:center;justify-content:center;font-size:7pt;color:#999;text-align:center;padding:4px;margin-bottom:5mm;">QR-Code nicht verfügbar<br/>IBAN prüfen</div>`
+                ? `<div style="width:46mm;height:46mm;margin-bottom:4mm;">${qrCodeSvg}</div>`
+                : `<div style="width:46mm;height:46mm;border:2px dashed #999;display:flex;align-items:center;justify-content:center;font-size:7pt;color:#999;text-align:center;margin-bottom:4mm;">QR-Code<br/>IBAN prüfen</div>`
               }
+
+              <!-- Währung + Betrag unter QR -->
               <div style="display:flex;gap:8mm;align-items:baseline;">
                 <div>
-                  <div style="font-size:7pt;color:#444;">Währung</div>
-                  <div style="font-size:11pt;font-weight:700;">CHF</div>
+                  <div style="font-size:6pt;font-weight:700;">Währung</div>
+                  <div style="font-size:10pt;font-weight:700;">CHF</div>
                 </div>
                 <div>
-                  <div style="font-size:7pt;color:#444;">Betrag</div>
-                  <div style="font-size:11pt;font-weight:700;">${betragFormatted}</div>
+                  <div style="font-size:6pt;font-weight:700;">Betrag</div>
+                  <div style="font-size:10pt;font-weight:700;">${betragFormatted}</div>
                 </div>
               </div>
             </div>
-            <!-- Rechts: alle Zahlungsinfos -->
-            <div style="flex:1;font-size:8.5pt;padding-left:6mm;border-left:1px solid #ccc;">
+
+            <!-- ── SPALTE 3: Infos rechts ── -->
+            <div style="flex:1;padding-left:3mm;font-size:9pt;">
+
               <div style="margin-bottom:4mm;">
-                <div style="font-size:7pt;color:#666;margin-bottom:0.5mm;">Konto</div>
-                <div style="font-size:10pt;font-weight:700;">${iban}</div>
-              </div>
-              <div style="margin-bottom:4mm;">
-                <div style="font-size:7pt;color:#666;margin-bottom:0.5mm;">Zahlungsempfänger</div>
-                <div style="font-size:10pt;font-weight:700;">${firmaName}</div>
+                <div style="font-size:7pt;font-weight:700;">Konto / Zahlbar an</div>
+                <div style="font-size:9pt;">${ibanFormatted}</div>
+                <div style="font-size:9pt;">${firmaName}</div>
                 <div style="font-size:9pt;">${firmaAdr}</div>
-                <div style="font-size:9pt;">CH-${firmaPlzOrt}</div>
+                <div style="font-size:9pt;">${firmaPlz} ${firmaOrt}</div>
               </div>
+
               <div style="margin-bottom:4mm;">
-                <div style="font-size:7pt;color:#666;margin-bottom:0.5mm;">Zusätzliche Informationen</div>
+                <div style="font-size:7pt;font-weight:700;">Zusätzliche Informationen</div>
                 <div style="font-size:9pt;">Rechnung ${rechnung.nr || ""}</div>
+                ${faelligStr ? `<div style="font-size:9pt;">Zahlbar bis: ${faelligStr}</div>` : ""}
               </div>
+
               ${empfaenger ? `
               <div style="margin-bottom:4mm;">
-                <div style="font-size:7pt;color:#666;margin-bottom:0.5mm;">Zahlungspflichtiger</div>
-                <div style="font-size:10pt;font-weight:700;">${empfaenger}</div>
+                <div style="font-size:7pt;font-weight:700;">Zahlbar durch</div>
+                <div style="font-size:9pt;">${empfaenger}</div>
                 ${empStrasse ? `<div style="font-size:9pt;">${empStrasse}</div>` : ""}
                 ${empPlzOrt  ? `<div style="font-size:9pt;">${empPlzOrt}</div>`  : ""}
               </div>` : ""}
-              <div>
-                <div style="font-size:7pt;color:#666;margin-bottom:0.5mm;">Zahlbar bis</div>
-                <div style="font-size:10pt;font-weight:700;">${faelligStr || "30 Tage netto"}</div>
-              </div>
+
             </div>
+          </div>
+
+          <!-- Trennlinie unten mit Schere -->
+          <div style="display:flex;align-items:center;margin-top:3mm;">
+            <div style="padding:0 2mm;font-size:12pt;">&#9986;</div>
+            <div style="flex:1;border-top:1px solid #000;"></div>
           </div>
         </div>
       `;
