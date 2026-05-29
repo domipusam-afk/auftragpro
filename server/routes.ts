@@ -2699,18 +2699,26 @@ html: string): Promise<Buffer> {
       const datumStr = offerte.datum
         ? new Date(offerte.datum).toLocaleDateString("de-CH", { day: "2-digit", month: "long", year: "numeric" })
         : new Date().toLocaleDateString("de-CH", { day: "2-digit", month: "long", year: "numeric" });
-      const gueltigBisStr = offerte.gueltigkeit
-        ? new Date(offerte.gueltigkeit).toLocaleDateString("de-CH", { day: "2-digit", month: "long", year: "numeric" })
-        : undefined;
+      // gueltigkeit kann ein Datum (ISO) oder ein Text wie "60 Tage" sein
+      const _gueltigRaw = offerte.gueltigkeit || "";
+      let gueltigBisStr: string | undefined = undefined;
+      if (_gueltigRaw) {
+        const _gDate = new Date(_gueltigRaw);
+        if (!isNaN(_gDate.getTime())) {
+          gueltigBisStr = _gDate.toLocaleDateString("de-CH", { day: "2-digit", month: "long", year: "numeric" });
+        } else {
+          gueltigBisStr = _gueltigRaw; // Text direkt übernehmen z.B. "60 Tage"
+        }
+      }
 
       const html = await buildPdfHtml("offerte", {
         titel: "OFFERTE",
         nummer: offerte.nr || req.params.id.substring(0, 8).toUpperCase(),
         datum: datumStr,
         gueltigBis: gueltigBisStr,
-        empfaenger: offerte.empfaenger_name || offerte.anrede || "",
-        empfaengerStrasse: offerte.empfaenger_strasse || "",
-        empfaengerPlzOrt: offerte.empfaenger_plz_ort || "",
+        empfaenger: (offerte.empfaenger_name || offerte.anrede || "").replace(/  +/g, " ").trim(),
+        empfaengerStrasse: (() => { const s = splitAdresse(offerte.empfaenger_strasse || ""); return offerte.empfaenger_plz_ort ? (offerte.empfaenger_strasse || "") : s.strasse; })(),
+        empfaengerPlzOrt: offerte.empfaenger_plz_ort || splitAdresse(offerte.empfaenger_strasse || "").plzOrt,
         firma:        sMap.firmenname || "Schneggenburger GmbH",
         firmaAdresse: sMap.adresse    || "Hefenhoferstrasse 7",
         firmaPlzOrt:  sMap.plz_ort   || "8580 Sommeri",
@@ -2754,18 +2762,26 @@ html: string): Promise<Buffer> {
       const datumStr = offerte.datum
         ? new Date(offerte.datum).toLocaleDateString("de-CH", { day: "2-digit", month: "long", year: "numeric" })
         : new Date().toLocaleDateString("de-CH", { day: "2-digit", month: "long", year: "numeric" });
-      const gueltigBisStr = offerte.gueltigkeit
-        ? new Date(offerte.gueltigkeit).toLocaleDateString("de-CH", { day: "2-digit", month: "long", year: "numeric" })
-        : undefined;
+      // gueltigkeit kann ein Datum (ISO) oder ein Text wie "60 Tage" sein
+      const _gueltigRaw = offerte.gueltigkeit || "";
+      let gueltigBisStr: string | undefined = undefined;
+      if (_gueltigRaw) {
+        const _gDate = new Date(_gueltigRaw);
+        if (!isNaN(_gDate.getTime())) {
+          gueltigBisStr = _gDate.toLocaleDateString("de-CH", { day: "2-digit", month: "long", year: "numeric" });
+        } else {
+          gueltigBisStr = _gueltigRaw; // Text direkt übernehmen z.B. "60 Tage"
+        }
+      }
 
       const html = await buildPdfHtml("offerte", {
         titel: "OFFERTE",
         nummer: offerte.offerten_nr || offerte.nr || req.params.id.substring(0, 8).toUpperCase(),
         datum: datumStr,
         gueltigBis: gueltigBisStr,
-        empfaenger: offerte.empfaenger_name || offerte.anrede || offerte.kunde || "",
-        empfaengerStrasse: offerte.empfaenger_strasse || "",
-        empfaengerPlzOrt: offerte.empfaenger_plz_ort || "",
+        empfaenger: (offerte.empfaenger_name || offerte.anrede || offerte.kunde || "").replace(/  +/g, " ").trim(),
+        empfaengerStrasse: (() => { const s = splitAdresse(offerte.empfaenger_strasse || ""); return offerte.empfaenger_plz_ort ? (offerte.empfaenger_strasse || "") : s.strasse; })(),
+        empfaengerPlzOrt: offerte.empfaenger_plz_ort || splitAdresse(offerte.empfaenger_strasse || "").plzOrt,
         firma:        sMap.firmenname || "Schneggenburger GmbH",
         firmaAdresse: sMap.adresse    || "Hefenhoferstrasse 7",
         firmaPlzOrt:  sMap.plz_ort   || "8580 Sommeri",
