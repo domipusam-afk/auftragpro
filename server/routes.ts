@@ -1534,55 +1534,59 @@ html: string): Promise<Buffer> {
       const iban = ibanRaw || "CH00 0000 0000 0000 0000 0";
       const ibanClean = iban.replace(/\s/g, "");
       const betragFormatted = totalInkl.toFixed(2);
-      // Swiss QR Bill — exakt 31 Zeilen, Adresstyp S (strukturiert: Strasse | PLZ | Ort separat)
+      // Swiss QR Bill — via swissqrbill Library (korrekt validiert, ISO 20022 konform)
       const firmaPlzOrtRaw = sMap.plz_ort || "8580 Sommeri";
       const firmaPlzMatch = firmaPlzOrtRaw.match(/^(\d{4})\s+(.+)$/);
-      const firmaPlz  = firmaPlzMatch ? firmaPlzMatch[1] : "8580";
+      const firmaPlz  = firmaPlzMatch ? parseInt(firmaPlzMatch[1]) : 8580;
       const firmaOrt  = firmaPlzMatch ? firmaPlzMatch[2] : firmaPlzOrtRaw;
 
       // Kunden PLZ/Ort aufteilen
       const empPlzMatch = empPlzOrt.match(/^(\d{4,5})\s+(.+)$/);
-      const empPlz = empPlzMatch ? empPlzMatch[1] : empPlzOrt;
-      const empOrtOnly = empPlzMatch ? empPlzMatch[2] : "";
+      const empPlzNum = empPlzMatch ? parseInt(empPlzMatch[1]) : 0;
+      const empOrtOnly = empPlzMatch ? empPlzMatch[2] : (empPlzOrt || "");
 
-      const qrData = [
-        "SPC",                                        // 1: Header
-        "0200",                                       // 2: Version
-        "1",                                          // 3: Coding (UTF-8)
-        ibanClean,                                    // 4: IBAN
-        // Zahlungsempfänger (Firma) — Typ S = strukturiert
-        "S",                                          // 5: Adresstyp
-        sMap.firmenname || "Schneggenburger GmbH",   // 6: Name
-        sMap.adresse    || "Hefenhoferstrasse 7",    // 7: Strasse+Nr
-        "",                                           // 8: Hausnummer (leer bei kombiniert)
-        firmaPlz,                                     // 9: PLZ
-        firmaOrt,                                     // 10: Ort
-        "CH",                                         // 11: Land
-        // Endgültiger Zahlungsempfänger (leer = gleich wie oben)
-        "", "", "", "", "", "",                       // 12-17: leer
-        // Betrag + Währung
-        betragFormatted,                              // 18: Betrag
-        "CHF",                                        // 19: Währung
-        // Zahlungspflichtiger (Kunde) — Typ S
-        empfaenger ? "S" : "",                        // 20: Adresstyp
-        empfaenger  || "",                            // 21: Name
-        empStrasse  || "",                            // 22: Strasse+Nr
-        "",                                           // 23: Hausnummer (leer)
-        empPlz      || "",                            // 24: PLZ
-        empOrtOnly  || "",                            // 25: Ort
-        empfaenger ? "CH" : "",                       // 26: Land
-        // Referenz
-        "NON",                                        // 27: Referenztyp (keine QR-Ref)
-        "",                                           // 28: Referenz (leer)
-        "Rechnung " + (rechnung.nr || rid.substring(0,8)), // 29: Zusatzinfo
-        "EPD",                                        // 30: Trailer
-        "",                                           // 31: AV1 (leer)
-      ].join("\n");
-      let qrCodeDataUrl = "";
-      try {
-        const QRCodeLib = await import("qrcode");
-        qrCodeDataUrl = await QRCodeLib.default.toDataURL(qrData, { errorCorrectionLevel: "M", width: 180, margin: 1 });
-      } catch {}
+      let qrCodeSvg = "";
+      let qrIbanError = "";
+      // IBAN Vorab-Validierung (CH/LI, exakt 21 Zeichen, nur Ziffern nach Ländercode)
+      const ibanValid = /^(CH|LI)[0-9]{19}$/.test(ibanClean);
+      if (!ibanClean) {
+        qrIbanError = "Keine IBAN hinterlegt — bitte in Einstellungen → Bank eintragen.";
+      } else if (!ibanValid) {
+        qrIbanError = `IBAN ungültig (${ibanClean}) — CH-IBAN hat 21 Zeichen, z.B. CH56 0483 5012 3456 7800 9. Bitte in Einstellungen korrigieren.`;
+      }
+      if (!qrIbanError) {
+        try {
+          const { SwissQRCode } = await import("swissqrbill/svg") as any;
+          const qrBillData: any = {
+            currency: "CHF" as const,
+            amount: totalInkl,
+            creditor: {
+              account: ibanClean,
+              name: sMap.firmenname || "Schneggenburger GmbH",
+              address: sMap.adresse || "Hefenhoferstrasse 7",
+              zip: firmaPlz,
+              city: firmaOrt,
+              country: "CH"
+            },
+            message: "Rechnung " + (rechnung.nr || rid.substring(0, 8)),
+          };
+          if (empfaenger && empPlzNum && empOrtOnly) {
+            qrBillData.debtor = {
+              name: empfaenger,
+              address: empStrasse || "",
+              zip: empPlzNum,
+              city: empOrtOnly,
+              country: "CH"
+            };
+          }
+          const qrInstance = new SwissQRCode(qrBillData, 46);
+          qrCodeSvg = qrInstance.toString();
+        } catch (e: any) {
+          qrIbanError = "QR-Code Fehler: " + (e?.message || String(e));
+          console.error("SwissQRCode error:", e);
+        }
+      }
+      const qrCodeDataUrl = ""; // nicht mehr verwendet — SVG direkt eingebettet
 
       // Swiss QR Bill Layout — offizielles Format (links QR + Betrag, rechts Infos)
       const firmaName = sMap.firmenname || "Schneggenburger GmbH";
@@ -1590,16 +1594,16 @@ html: string): Promise<Buffer> {
       const firmaPlzOrt = (sMap.plz_ort || "8580 Sommeri");
       const qrZahlscheinHtml = `
         <div style="page-break-before:always;font-family:Arial,Helvetica,sans-serif;padding:12mm 10mm 0 10mm;">
-          ${ibanMissing ? `<div style="background:#fff3cd;border:1px solid #ffc107;padding:6px 10px;border-radius:4px;margin-bottom:10px;font-size:8pt;color:#856404;">&#9888; Bitte IBAN in Einstellungen hinterlegen.</div>` : ""}
+          ${(ibanMissing || qrIbanError) ? `<div style="background:#fff3cd;border:1px solid #ffc107;padding:6px 10px;border-radius:4px;margin-bottom:10px;font-size:8pt;color:#856404;">&#9888; ${qrIbanError || "Bitte IBAN in Einstellungen hinterlegen."}</div>` : ""}
           <div style="font-size:11pt;font-weight:700;margin-bottom:6mm;">Zahlteil QR-Rechnung</div>
           <div style="display:flex;gap:0;align-items:flex-start;">
             <!-- Links: QR-Code + Währung/Betrag -->
             <div style="width:62mm;flex-shrink:0;">
               <div style="font-size:7pt;color:#666;margin-bottom:1mm;">Unterstützt</div>
               <div style="font-size:9pt;font-weight:700;margin-bottom:4mm;">Überweisung</div>
-              ${qrCodeDataUrl
-                ? `<img src="${qrCodeDataUrl}" style="width:46mm;height:46mm;display:block;margin-bottom:5mm;" />`
-                : `<div style="width:46mm;height:46mm;border:2px solid #000;display:flex;align-items:center;justify-content:center;font-size:8pt;margin-bottom:5mm;">QR-Code fehlt</div>`
+              ${qrCodeSvg
+                ? `<div style="width:46mm;height:46mm;margin-bottom:5mm;">${qrCodeSvg}</div>`
+                : `<div style="width:46mm;height:46mm;border:2px dashed #ccc;display:flex;align-items:center;justify-content:center;font-size:7pt;color:#999;text-align:center;padding:4px;margin-bottom:5mm;">QR-Code nicht verfügbar<br/>IBAN prüfen</div>`
               }
               <div style="display:flex;gap:8mm;align-items:baseline;">
                 <div>
