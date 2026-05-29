@@ -440,6 +440,20 @@ function RechnungenTab({
     onError: (e: Error) => toast({ title: "Fehler", description: e.message, variant: "destructive" }),
   });
 
+  const deleteRechnungMut = useMutation({
+    mutationFn: async (rid: string) => {
+      const r = await apiRequest("DELETE", `/api/rechnungen/${rid}`);
+      if (!r.ok) throw new Error(await r.text());
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auftraege", id, "rechnungen"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/rechnungen"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/auftraege"] });
+      toast({ title: "Rechnung gelöscht" });
+    },
+    onError: (e: Error) => toast({ title: "Fehler", description: e.message, variant: "destructive" }),
+  });
+
   const total = positionen.reduce(
     (s, p) => s + (Number(p.menge) || 0) * (Number(p.einzelpreis) || 0),
     0
@@ -692,6 +706,21 @@ function RechnungenTab({
                       Als bezahlt markieren
                     </Button>
                   )}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs text-red-500 hover:text-red-700 hover:bg-red-50 ml-auto"
+                    data-testid={`button-delete-rechnung-${r.id}`}
+                    disabled={deleteRechnungMut.isPending}
+                    onClick={() => {
+                      if (window.confirm(`Rechnung ${r.nr} wirklich löschen?`)) {
+                        deleteRechnungMut.mutate(r.id);
+                      }
+                    }}
+                  >
+                    <Trash className="h-3 w-3 mr-1" />
+                    Löschen
+                  </Button>
                 </div>
               </div>
             ))}

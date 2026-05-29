@@ -1618,6 +1618,15 @@ html: string): Promise<Buffer> {
     }
   });
 
+  app.delete("/api/rechnungen/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { error } = await supabase.from("rechnungen").delete().eq("id", id);
+      if (error) throw error;
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
   // GET /api/suche?q=... — globale Volltextsuche
   app.get("/api/suche", async (req, res) => {
     try {
@@ -3679,6 +3688,9 @@ html: string): Promise<Buffer> {
       const lgrey = rgb(0.92, 0.92, 0.92);
       const orange = pdfVorlage.footer_color ? hexToRgb(pdfVorlage.footer_color) : rgb(0.91, 0.38, 0.04);
 
+      // currentPage state — mutable so checkPageBreak can swap it
+      let currentPageCtx: ReturnType<typeof addPage> | null = null;
+
       function addPage() {
         const pg = pdfDoc.addPage([W, H]);
         const d = (t: string, x: number, y: number, sz: number, bold: boolean, col: any = black) =>
@@ -3707,7 +3719,7 @@ html: string): Promise<Buffer> {
         d(`Nr. ${auftrag.nr || ""}  ·  ${auftrag.titel || ""}`, logoImg ? mL + 40 : mL, H - 32, 8.5, false, rgb(0.95, 0.87, 0.75));
 
         // Auftragsdaten unterhalb Header
-        let curY = H - 52;
+        let curY = H - 55;
         d(`${auftrag.kunde || "-"}`.trim().replace(/  +/g, " "), mL, curY, 8.5, true, grey);
         curY -= 10;
         d((offSMap.firmenname||"Schneggenburger GmbH")+" | "+(offSMap.adresse||"Hefenhoferstrasse 7")+" | "+(offSMap.plz_ort||"8580 Sommeri"), mL, curY, 7.5, false, rgb(0.6, 0.6, 0.6));
@@ -3715,7 +3727,29 @@ html: string): Promise<Buffer> {
         ln(mL, curY, W - mR, curY, 0.5, grey);
         curY -= 10;
 
-        return { pg, d, ln, rect, curY: () => curY, setY: (y: number) => { curY = y; }, decY: (n: number) => { curY -= n; } };
+        const ctx = { pg, d, ln, rect, curY: () => curY, setY: (ny: number) => { curY = ny; }, decY: (n: number) => { curY -= n; } };
+        currentPageCtx = ctx;
+        return ctx;
+      }
+
+      // checkPageBreak: if y < threshold, flush footer on current page and start new page
+      // returns new y (top of new page content area)
+      function checkPageBreak(y: number, threshold = 80): number {
+        if (y > threshold) return y;
+        // Footer on current page
+        const curPages = pdfDoc.getPages();
+        const lastPg = curPages[curPages.length - 1];
+        lastPg.drawRectangle({ x: 0, y: 0, width: W, height: 22, color: brown });
+        const wh = rgb(1,1,1);
+        const firmaFull = (offSMap.firmenname||"Schneggenburger GmbH")+" · "+(offSMap.adresse||"Hefenhoferstrasse 7")+" · "+(offSMap.plz_ort||"8580 Sommeri");
+        lastPg.drawText(firmaFull, { x: mL, y: 7, size: 6.5, font, color: wh });
+        const pn = curPages.length;
+        const pnStr = `Seite ${pn}`;
+        const pnW = font.widthOfTextAtSize(pnStr, 6.5);
+        lastPg.drawText(pnStr, { x: W - mR - pnW, y: 7, size: 6.5, font, color: wh });
+        // Start new page
+        const np = addPage();
+        return np.curY();
       }
 
       if (isVK) {
@@ -3762,156 +3796,166 @@ html: string): Promise<Buffer> {
         p1.setY(y);
 
         for (const r of (stunden as any[])) {
+          y = checkPageBreak(y);
           const total = Number(r.soll_stunden) * Number(r.stundensatz);
           const totalStr = fmt(total);
           const sw = font.widthOfTextAtSize(totalStr, 8.5);
-          p1.d(r.ort, cOrt, y, 8.5, false);
-          p1.d(r.maschinenpark || "-", cMasch, y, 8.5, false);
-          p1.d(String(r.soll_stunden), cStd, y, 8.5, false);
-          p1.d(fmt(Number(r.stundensatz)), cSatz, y, 8.5, false);
-          p1.d(totalStr, cTotal - sw, y, 8.5, false);
+          currentPageCtx!.d(r.ort, cOrt, y, 8.5, false);
+          currentPageCtx!.d(r.maschinenpark || "-", cMasch, y, 8.5, false);
+          currentPageCtx!.d(String(r.soll_stunden), cStd, y, 8.5, false);
+          currentPageCtx!.d(fmt(Number(r.stundensatz)), cSatz, y, 8.5, false);
+          currentPageCtx!.d(totalStr, cTotal - sw, y, 8.5, false);
           y -= 13;
         }
         const stdStr = fmt(totalStunden);
         const stdSW = fontB.widthOfTextAtSize(stdStr, 9);
-        p1.ln(W - mR - 120, y + 8, W - mR, y + 8, 0.5, grey);
-        p1.d("Total Stunden:", W - mR - 120, y, 8.5, false, grey);
-        p1.d(stdStr, cTotal - stdSW, y, 9, true);
+        currentPageCtx!.ln(W - mR - 120, y + 8, W - mR, y + 8, 0.5, grey);
+        currentPageCtx!.d("Total Stunden:", W - mR - 120, y, 8.5, false, grey);
+        currentPageCtx!.d(stdStr, cTotal - stdSW, y, 9, true);
         y -= 20;
 
         // Section: Material
-        p1.rect(mL, y - 2, pageW, 14, lgrey);
-        p1.d("B – Material / Stückliste", mL + 4, y, 9, true, brown);
+        y = checkPageBreak(y, 120);
+        currentPageCtx!.rect(mL, y - 2, pageW, 14, lgrey);
+        currentPageCtx!.d("B – Material / Stückliste", mL + 4, y, 9, true, brown);
         y -= 14;
         const cPos = mL + 4; const cProfil = mL + 35; const cBem = mL + 140; const cStk = mL + 275; const cPreis = mL + 320; const cMtotal = W - mR;
-        p1.rect(mL, y - 2, pageW, 12, rgb(0.97, 0.97, 0.97));
-        p1.d("Pos", cPos, y, 7.5, true, grey);
-        p1.d("Profil", cProfil, y, 7.5, true, grey);
-        p1.d("Bemerkung", cBem, y, 7.5, true, grey);
-        p1.d("Stk.", cStk, y, 7.5, true, grey);
-        p1.d("Preis", cPreis, y, 7.5, true, grey);
-        p1.d("Total CHF", cMtotal - font.widthOfTextAtSize("Total CHF", 7.5), y, 7.5, true, grey);
-        y -= 4; p1.ln(mL, y, W - mR, y, 0.4, grey); y -= 6;
+        currentPageCtx!.rect(mL, y - 2, pageW, 12, rgb(0.97, 0.97, 0.97));
+        currentPageCtx!.d("Pos", cPos, y, 7.5, true, grey);
+        currentPageCtx!.d("Profil", cProfil, y, 7.5, true, grey);
+        currentPageCtx!.d("Bemerkung", cBem, y, 7.5, true, grey);
+        currentPageCtx!.d("Stk.", cStk, y, 7.5, true, grey);
+        currentPageCtx!.d("Preis", cPreis, y, 7.5, true, grey);
+        currentPageCtx!.d("Total CHF", cMtotal - font.widthOfTextAtSize("Total CHF", 7.5), y, 7.5, true, grey);
+        y -= 4; currentPageCtx!.ln(mL, y, W - mR, y, 0.4, grey); y -= 6;
 
         for (const r of (material as any[])) {
+          y = checkPageBreak(y);
           const tStr = fmt(Number(r.total_chf));
           const tsw = font.widthOfTextAtSize(tStr, 8.5);
-          p1.d(String(r.pos), cPos, y, 8.5, false);
-          p1.d((r.profil || "").slice(0, 18), cProfil, y, 8.5, false);
-          p1.d((r.bemerkung || "").slice(0, 22), cBem, y, 8.5, false);
-          p1.d(String(r.stueck || 1), cStk, y, 8.5, false);
-          p1.d(fmt(Number(r.preis_pro_einheit)), cPreis, y, 8.5, false);
-          p1.d(tStr, cMtotal - tsw, y, 8.5, false);
+          currentPageCtx!.d(String(r.pos), cPos, y, 8.5, false);
+          currentPageCtx!.d((r.profil || "").slice(0, 18), cProfil, y, 8.5, false);
+          currentPageCtx!.d((r.bemerkung || "").slice(0, 22), cBem, y, 8.5, false);
+          currentPageCtx!.d(String(r.stueck || 1), cStk, y, 8.5, false);
+          currentPageCtx!.d(fmt(Number(r.preis_pro_einheit)), cPreis, y, 8.5, false);
+          currentPageCtx!.d(tStr, cMtotal - tsw, y, 8.5, false);
           y -= 13;
         }
         const matStr = fmt(totalMaterial);
         const matSW = fontB.widthOfTextAtSize(matStr, 9);
-        p1.ln(W - mR - 120, y + 8, W - mR, y + 8, 0.5, grey);
-        p1.d("Total Material:", W - mR - 120, y, 8.5, false, grey);
-        p1.d(matStr, cMtotal - matSW, y, 9, true);
+        currentPageCtx!.ln(W - mR - 120, y + 8, W - mR, y + 8, 0.5, grey);
+        currentPageCtx!.d("Total Material:", W - mR - 120, y, 8.5, false, grey);
+        currentPageCtx!.d(matStr, cMtotal - matSW, y, 9, true);
         y -= 20;
 
-        // Section: Hilfsmaterial (Sheet 2)
+        // Section: Hilfsmaterial
         if ((hilfsmaterial as any[]).length > 0) {
-          p1.rect(mL, y - 2, pageW, 14, lgrey);
-          p1.d("B2 – Hilfsmaterial (Sheet 2)", mL + 4, y, 9, true, brown);
+          y = checkPageBreak(y, 120);
+          currentPageCtx!.rect(mL, y - 2, pageW, 14, lgrey);
+          currentPageCtx!.d("B2 – Hilfsmaterial", mL + 4, y, 9, true, brown);
           y -= 14;
           const cHKat = mL + 4; const cHBez = mL + 100; const cHLief = mL + 250; const cHMng = mL + 360; const cHPre = mL + 400; const cHTot = W - mR;
-          p1.rect(mL, y - 2, pageW, 12, rgb(0.97, 0.97, 0.97));
-          p1.d("Kategorie", cHKat, y, 7.5, true, grey);
-          p1.d("Bezeichnung", cHBez, y, 7.5, true, grey);
-          p1.d("Lieferant", cHLief, y, 7.5, true, grey);
-          p1.d("Menge", cHMng, y, 7.5, true, grey);
-          p1.d("Fr./Einh.", cHPre, y, 7.5, true, grey);
-          p1.d("Total CHF", cHTot - font.widthOfTextAtSize("Total CHF", 7.5), y, 7.5, true, grey);
-          y -= 4; p1.ln(mL, y, W - mR, y, 0.4, grey); y -= 6;
+          currentPageCtx!.rect(mL, y - 2, pageW, 12, rgb(0.97, 0.97, 0.97));
+          currentPageCtx!.d("Kategorie", cHKat, y, 7.5, true, grey);
+          currentPageCtx!.d("Bezeichnung", cHBez, y, 7.5, true, grey);
+          currentPageCtx!.d("Lieferant", cHLief, y, 7.5, true, grey);
+          currentPageCtx!.d("Menge", cHMng, y, 7.5, true, grey);
+          currentPageCtx!.d("Fr./Einh.", cHPre, y, 7.5, true, grey);
+          currentPageCtx!.d("Total CHF", cHTot - font.widthOfTextAtSize("Total CHF", 7.5), y, 7.5, true, grey);
+          y -= 4; currentPageCtx!.ln(mL, y, W - mR, y, 0.4, grey); y -= 6;
           for (const r of (hilfsmaterial as any[])) {
+            y = checkPageBreak(y);
             const tStr = fmt(Number(r.total_chf));
             const tsw = font.widthOfTextAtSize(tStr, 8.5);
-            p1.d((r.kategorie || "").slice(0, 15), cHKat, y, 8.5, false);
-            p1.d((r.bezeichnung || "").slice(0, 22), cHBez, y, 8.5, false);
-            p1.d((r.lieferant || "").slice(0, 18), cHLief, y, 8.5, false);
-            p1.d(`${r.stueck || 1} ${r.einheit || "Stk"}`, cHMng, y, 8.5, false);
-            p1.d(fmt(Number(r.preis_pro_einheit)), cHPre, y, 8.5, false);
-            p1.d(tStr, cHTot - tsw, y, 8.5, false);
+            currentPageCtx!.d((r.kategorie || "").slice(0, 15), cHKat, y, 8.5, false);
+            currentPageCtx!.d((r.bezeichnung || "").slice(0, 22), cHBez, y, 8.5, false);
+            currentPageCtx!.d((r.lieferant || "").slice(0, 18), cHLief, y, 8.5, false);
+            currentPageCtx!.d(`${r.stueck || 1} ${r.einheit || "Stk"}`, cHMng, y, 8.5, false);
+            currentPageCtx!.d(fmt(Number(r.preis_pro_einheit)), cHPre, y, 8.5, false);
+            currentPageCtx!.d(tStr, cHTot - tsw, y, 8.5, false);
             y -= 13;
           }
           const hilfsStr = fmt(totalHilfsmat);
           const hilfsSW = fontB.widthOfTextAtSize(hilfsStr, 9);
-          p1.ln(W - mR - 120, y + 8, W - mR, y + 8, 0.5, grey);
-          p1.d("Total Hilfsmaterial:", W - mR - 130, y, 8.5, false, grey);
-          p1.d(hilfsStr, cHTot - hilfsSW, y, 9, true);
+          currentPageCtx!.ln(W - mR - 120, y + 8, W - mR, y + 8, 0.5, grey);
+          currentPageCtx!.d("Total Hilfsmaterial:", W - mR - 130, y, 8.5, false, grey);
+          currentPageCtx!.d(hilfsStr, cHTot - hilfsSW, y, 9, true);
           y -= 20;
         }
 
         // Section: Fremdleistungen
-        p1.rect(mL, y - 2, pageW, 14, lgrey);
-        p1.d("C – Fremdleistungen", mL + 4, y, 9, true, brown);
+        y = checkPageBreak(y, 120);
+        currentPageCtx!.rect(mL, y - 2, pageW, 14, lgrey);
+        currentPageCtx!.d("C – Fremdleistungen", mL + 4, y, 9, true, brown);
         y -= 14;
         const cFBez = mL + 4; const cFAnz = mL + 230; const cFEin = mL + 275; const cFPre = mL + 340; const cFTot = W - mR;
-        p1.rect(mL, y - 2, pageW, 12, rgb(0.97, 0.97, 0.97));
-        p1.d("Bezeichnung", cFBez, y, 7.5, true, grey);
-        p1.d("Anz.", cFAnz, y, 7.5, true, grey);
-        p1.d("Einheit", cFEin, y, 7.5, true, grey);
-        p1.d("Preis", cFPre, y, 7.5, true, grey);
-        p1.d("Total CHF", cFTot - font.widthOfTextAtSize("Total CHF", 7.5), y, 7.5, true, grey);
-        y -= 4; p1.ln(mL, y, W - mR, y, 0.4, grey); y -= 6;
+        currentPageCtx!.rect(mL, y - 2, pageW, 12, rgb(0.97, 0.97, 0.97));
+        currentPageCtx!.d("Bezeichnung", cFBez, y, 7.5, true, grey);
+        currentPageCtx!.d("Anz.", cFAnz, y, 7.5, true, grey);
+        currentPageCtx!.d("Einheit", cFEin, y, 7.5, true, grey);
+        currentPageCtx!.d("Preis", cFPre, y, 7.5, true, grey);
+        currentPageCtx!.d("Total CHF", cFTot - font.widthOfTextAtSize("Total CHF", 7.5), y, 7.5, true, grey);
+        y -= 4; currentPageCtx!.ln(mL, y, W - mR, y, 0.4, grey); y -= 6;
 
         for (const r of (fremd as any[])) {
+          y = checkPageBreak(y);
           const tStr = fmt(Number(r.total_chf));
           const tsw = font.widthOfTextAtSize(tStr, 8.5);
-          p1.d((r.bezeichnung || "").slice(0, 35), cFBez, y, 8.5, false);
-          p1.d(String(r.anzahl), cFAnz, y, 8.5, false);
-          p1.d(r.einheit || "", cFEin, y, 8.5, false);
-          p1.d(fmt(Number(r.preis_pro_einheit)), cFPre, y, 8.5, false);
-          p1.d(tStr, cFTot - tsw, y, 8.5, false);
+          currentPageCtx!.d((r.bezeichnung || "").slice(0, 35), cFBez, y, 8.5, false);
+          currentPageCtx!.d(String(r.anzahl), cFAnz, y, 8.5, false);
+          currentPageCtx!.d(r.einheit || "", cFEin, y, 8.5, false);
+          currentPageCtx!.d(fmt(Number(r.preis_pro_einheit)), cFPre, y, 8.5, false);
+          currentPageCtx!.d(tStr, cFTot - tsw, y, 8.5, false);
           y -= 13;
         }
         const fremdStr = fmt(totalFremd);
         const fremdSW = fontB.widthOfTextAtSize(fremdStr, 9);
-        p1.ln(W - mR - 120, y + 8, W - mR, y + 8, 0.5, grey);
-        p1.d("Total Fremdleistungen:", W - mR - 140, y, 8.5, false, grey);
-        p1.d(fremdStr, cFTot - fremdSW, y, 9, true);
+        currentPageCtx!.ln(W - mR - 120, y + 8, W - mR, y + 8, 0.5, grey);
+        currentPageCtx!.d("Total Fremdleistungen:", W - mR - 140, y, 8.5, false, grey);
+        currentPageCtx!.d(fremdStr, cFTot - fremdSW, y, 9, true);
         y -= 20;
 
         // Section: SOEK
-        p1.rect(mL, y - 2, pageW, 14, lgrey);
-        p1.d("D – Sondereinzelkosten / Spesen (SOEK)", mL + 4, y, 9, true, brown);
+        y = checkPageBreak(y, 120);
+        currentPageCtx!.rect(mL, y - 2, pageW, 14, lgrey);
+        currentPageCtx!.d("D – Sondereinzelkosten / Spesen (SOEK)", mL + 4, y, 9, true, brown);
         y -= 14;
         const cSBez = mL + 4; const cSAnz = mL + 230; const cSEin = mL + 275; const cSPre = mL + 340; const cSTot = W - mR;
-        p1.rect(mL, y - 2, pageW, 12, rgb(0.97, 0.97, 0.97));
-        p1.d("Bezeichnung", cSBez, y, 7.5, true, grey);
-        p1.d("Anz.", cSAnz, y, 7.5, true, grey);
-        p1.d("Einheit", cSEin, y, 7.5, true, grey);
-        p1.d("Preis", cSPre, y, 7.5, true, grey);
-        p1.d("Total CHF", cSTot - font.widthOfTextAtSize("Total CHF", 7.5), y, 7.5, true, grey);
-        y -= 4; p1.ln(mL, y, W - mR, y, 0.4, grey); y -= 6;
+        currentPageCtx!.rect(mL, y - 2, pageW, 12, rgb(0.97, 0.97, 0.97));
+        currentPageCtx!.d("Bezeichnung", cSBez, y, 7.5, true, grey);
+        currentPageCtx!.d("Anz.", cSAnz, y, 7.5, true, grey);
+        currentPageCtx!.d("Einheit", cSEin, y, 7.5, true, grey);
+        currentPageCtx!.d("Preis", cSPre, y, 7.5, true, grey);
+        currentPageCtx!.d("Total CHF", cSTot - font.widthOfTextAtSize("Total CHF", 7.5), y, 7.5, true, grey);
+        y -= 4; currentPageCtx!.ln(mL, y, W - mR, y, 0.4, grey); y -= 6;
 
         for (const r of (soek as any[])) {
+          y = checkPageBreak(y);
           const tStr = fmt(Number(r.total_chf));
           const tsw = font.widthOfTextAtSize(tStr, 8.5);
-          p1.d((r.bezeichnung || "").slice(0, 35), cSBez, y, 8.5, false);
-          p1.d(String(r.anzahl), cSAnz, y, 8.5, false);
-          p1.d(r.einheit || "", cSEin, y, 8.5, false);
-          p1.d(fmt(Number(r.preis_pro_einheit)), cSPre, y, 8.5, false);
-          p1.d(tStr, cSTot - tsw, y, 8.5, false);
+          currentPageCtx!.d((r.bezeichnung || "").slice(0, 35), cSBez, y, 8.5, false);
+          currentPageCtx!.d(String(r.anzahl), cSAnz, y, 8.5, false);
+          currentPageCtx!.d(r.einheit || "", cSEin, y, 8.5, false);
+          currentPageCtx!.d(fmt(Number(r.preis_pro_einheit)), cSPre, y, 8.5, false);
+          currentPageCtx!.d(tStr, cSTot - tsw, y, 8.5, false);
           y -= 13;
         }
         const soekStr = fmt(totalSoek);
         const soekSW = fontB.widthOfTextAtSize(soekStr, 9);
-        p1.ln(W - mR - 120, y + 8, W - mR, y + 8, 0.5, grey);
-        p1.d("Total SOEK:", W - mR - 120, y, 8.5, false, grey);
-        p1.d(soekStr, cSTot - soekSW, y, 9, true);
+        currentPageCtx!.ln(W - mR - 120, y + 8, W - mR, y + 8, 0.5, grey);
+        currentPageCtx!.d("Total SOEK:", W - mR - 120, y, 8.5, false, grey);
+        currentPageCtx!.d(soekStr, cSTot - soekSW, y, 9, true);
         y -= 25;
 
-        // Zusammenfassung
-        p1.ln(mL, y, W - mR, y, 1.0, brown); y -= 14;
-        p1.d("Zusammenfassung Vorkalkulation", mL, y, 10, true, brown); y -= 18;
+        // Zusammenfassung — auf neuer Seite wenn kein Platz
+        y = checkPageBreak(y, 200);
+        currentPageCtx!.ln(mL, y, W - mR, y, 1.0, brown); y -= 14;
+        currentPageCtx!.d("Zusammenfassung Vorkalkulation", mL, y, 10, true, brown); y -= 18;
 
         const summaryRow = (lbl: string, val: string, bold: boolean) => {
-          p1.d(lbl, W - mR - 230, y, 9, false, grey);
+          currentPageCtx!.d(lbl, W - mR - 230, y, 9, false, grey);
           const vw = (bold ? fontB : font).widthOfTextAtSize(val, 9);
-          p1.d(val, W - mR - vw, y, 9, bold);
+          currentPageCtx!.d(val, W - mR - vw, y, 9, bold);
           y -= 13;
         };
 
@@ -3920,28 +3964,28 @@ html: string): Promise<Buffer> {
         if (totalHilfsmat > 0) summaryRow("Hilfsmaterial:", fmt(totalHilfsmat), false);
         summaryRow("Fremdleistungen:", fmt(totalFremd), false);
         summaryRow("SOEK:", fmt(totalSoek), false);
-        p1.ln(W - mR - 230, y + 8, W - mR, y + 8, 0.5, grey); y -= 5;
+        currentPageCtx!.ln(W - mR - 230, y + 8, W - mR, y + 8, 0.5, grey); y -= 5;
         summaryRow("Subtotal:", fmt(subtotal), true);
         summaryRow(`Risiko / Gewinn (${cfg.risiko_gewinn_prozent}%):`, fmt(risikoAmt), false);
         if (Number(cfg.rabatt_prozent) > 0) {
           summaryRow(`Rabatt (${cfg.rabatt_prozent}%):`, `-${fmt(rabattAmt)}`, false);
         }
-        p1.ln(W - mR - 230, y + 8, W - mR, y + 8, 0.5, grey); y -= 5;
+        currentPageCtx!.ln(W - mR - 230, y + 8, W - mR, y + 8, 0.5, grey); y -= 5;
         summaryRow("Netto:", fmt(netto), false);
         summaryRow(`MWST (${cfg.mwst_prozent}%):`, fmt(mwstAmt), false);
-        p1.ln(W - mR - 230, y + 8, W - mR, y + 8, 1.0, brown); y -= 5;
+        currentPageCtx!.ln(W - mR - 230, y + 8, W - mR, y + 8, 1.0, brown); y -= 5;
 
         // Brutto highlight
-        p1.rect(W - mR - 230, y - 6, 230, 20, rgb(0.95, 0.90, 0.85));
+        currentPageCtx!.rect(W - mR - 230, y - 6, 230, 20, rgb(0.95, 0.90, 0.85));
         const bruttoStr = fmt(brutto);
         const bruttoSW = fontB.widthOfTextAtSize(bruttoStr, 11);
-        p1.d("Offertpreis (brutto):", W - mR - 228, y, 9.5, true, brown);
-        p1.d(bruttoStr, W - mR - bruttoSW, y, 11, true, orange);
+        currentPageCtx!.d("Offertpreis (brutto):", W - mR - 228, y, 9.5, true, brown);
+        currentPageCtx!.d(bruttoStr, W - mR - bruttoSW, y, 11, true, orange);
         y -= 25;
 
         if (cfg.notiz) {
-          p1.d("Notiz:", mL, y, 8.5, true, grey); y -= 12;
-          p1.d(cfg.notiz.slice(0, 120), mL, y, 8.5, false, grey);
+          currentPageCtx!.d("Notiz:", mL, y, 8.5, true, grey); y -= 12;
+          currentPageCtx!.d(cfg.notiz.slice(0, 120), mL, y, 8.5, false, grey);
         }
 
         // Footer — farbiger Balken auf allen Seiten
@@ -3950,7 +3994,9 @@ html: string): Promise<Buffer> {
           pg2.drawRectangle({ x: 0, y: 0, width: W, height: 22, color: brown });
           const firmaFull = (offSMap.firmenname||"Schneggenburger GmbH")+" · "+(offSMap.adresse||"Hefenhoferstrasse 7")+" · "+(offSMap.plz_ort||"8580 Sommeri")+" · "+(offSMap.telefon||"071 411 16 87");
           pg2.drawText(firmaFull, { x: mL, y: 7, size: 6.5, font, color: white2 });
-          const erstelltStr = `Erstellt: ${new Date().toLocaleDateString("de-CH")}`;
+          const totalPages = pdfDoc.getPageCount();
+          const pgIdx = pdfDoc.getPages().indexOf(pg2) + 1;
+          const erstelltStr = `Seite ${pgIdx}/${totalPages} | Erstellt: ${new Date().toLocaleDateString("de-CH")}`;
           const erstelltW = font.widthOfTextAtSize(erstelltStr, 6.5);
           pg2.drawText(erstelltStr, { x: W - mR - erstelltW, y: 7, size: 6.5, font, color: white2 });
         }
@@ -4081,9 +4127,10 @@ html: string): Promise<Buffer> {
           p1.ln(mL, y + 4, W - mR, y + 4, 0.3, lgrey); y -= 8;
           p1.d("Ist-Material (erfasst)", mL + 4, y, 8.5, true, brown); y -= 14;
           for (const r of (nakaMaterial as any[])) {
-            p1.d(`${(r.bezeichnung || "").slice(0, 30)} – ${r.lieferant || "-"}`, cLbl, y, 8.5, false);
+            y = checkPageBreak(y);
+            currentPageCtx!.d(`${(r.bezeichnung || "").slice(0, 30)} – ${r.lieferant || "-"}`, cLbl, y, 8.5, false);
             const ms = font.widthOfTextAtSize(fmt(Number(r.betrag_chf)), 8.5);
-            p1.d(fmt(Number(r.betrag_chf)), W - mR - ms, y, 8.5, false);
+            currentPageCtx!.d(fmt(Number(r.betrag_chf)), W - mR - ms, y, 8.5, false);
             y -= 12;
           }
         }
@@ -4092,9 +4139,10 @@ html: string): Promise<Buffer> {
           p1.ln(mL, y + 4, W - mR, y + 4, 0.3, lgrey); y -= 8;
           p1.d("Ist-Fremdleistungen (erfasst)", mL + 4, y, 8.5, true, brown); y -= 14;
           for (const r of (nakaFremd as any[])) {
-            p1.d(`${(r.bezeichnung || "").slice(0, 30)} – ${r.lieferant || "-"}`, cLbl, y, 8.5, false);
+            y = checkPageBreak(y);
+            currentPageCtx!.d(`${(r.bezeichnung || "").slice(0, 30)} – ${r.lieferant || "-"}`, cLbl, y, 8.5, false);
             const fs2 = font.widthOfTextAtSize(fmt(Number(r.betrag_chf)), 8.5);
-            p1.d(fmt(Number(r.betrag_chf)), W - mR - fs2, y, 8.5, false);
+            currentPageCtx!.d(fmt(Number(r.betrag_chf)), W - mR - fs2, y, 8.5, false);
             y -= 12;
           }
         }

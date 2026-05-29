@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Rechnung, Auftrag } from "@shared/schema";
 import { formatCHF, formatDate } from "@/lib/format";
-import { Download, FileSpreadsheet, FileText, AlertCircle, CheckCircle2, Clock, Mail, Banknote, RotateCcw } from "lucide-react";
+import { Download, FileSpreadsheet, FileText, AlertCircle, CheckCircle2, Clock, Mail, Banknote, RotateCcw, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
@@ -69,6 +69,19 @@ export default function Rechnungen() {
   const [pdfDialog, setPdfDialog] = useState<{ open: boolean; rechnung: any; auftragId: string; intern: string; internEmail: string; internTelefon: string; extern: string } | null>(null);
 
   // Bezahlt / Offen markieren
+  const deleteRechnungMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const r = await apiRequest("DELETE", `/api/rechnungen/${id}`);
+      if (!r.ok) throw new Error(await r.text());
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/rechnungen"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/auftraege"] });
+      toast({ title: "Rechnung gelöscht" });
+    },
+    onError: () => toast({ title: "Fehler", description: "Löschen fehlgeschlagen.", variant: "destructive" }),
+  });
+
   const bezahltMutation = useMutation({
     mutationFn: async ({ id, bezahlt }: { id: string; bezahlt: boolean }) => {
       const body = bezahlt
@@ -371,6 +384,21 @@ Schneggenburger GmbH`,
                             })}
                           >
                             <Mail className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0 text-red-400 hover:text-red-600 hover:bg-red-50"
+                            title="Rechnung löschen"
+                            disabled={deleteRechnungMutation.isPending}
+                            data-testid={`button-delete-rechnung-${r.id}`}
+                            onClick={() => {
+                              if (window.confirm(`Rechnung ${r.nr} wirklich löschen?`)) {
+                                deleteRechnungMutation.mutate(r.id);
+                              }
+                            }}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
                           </Button>
                         </div>
                       </td>
