@@ -909,7 +909,7 @@ export async function registerRoutes(
     const wmPos      = v.watermark_pos || "bottom";
     const showTotals = data.showTotals !== false;
     // Couvert-Fenster-Einstellungen nur für Offerte/Rechnung relevant
-    const _useCovert = ["offerte", "rechnung", "mahnung"].includes(docTyp);
+    const _useCovert = ["offerte"].includes(docTyp); // nur Offerte hat Couvert-Fenster
     const absenderPosH  = _useCovert ? (v.absender_pos_h  || "links") : "links";
     const absenderTopMm  = _useCovert ? (Number(v.absender_top_mm) || 55) : 20;
     const absenderLeftMm = _useCovert ? (Number(v.absender_left_mm) || 0) : 0;

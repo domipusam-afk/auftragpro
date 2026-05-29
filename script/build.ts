@@ -29,6 +29,7 @@ const allowlist = [
   "xlsx",
   "zod",
   "zod-validation-error",
+  "swissqrbill",
 ];
 
 async function buildAll() {
