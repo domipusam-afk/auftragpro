@@ -242,492 +242,380 @@ function getSampleTableHeader(docTyp: string): string {
 }
 
 function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
-  const { design, header_color, footer_color, logo_pos, logo_data_url, logo_scale,
+  const {
+    design, header_color: hc, footer_color: fc,
+    logo_pos, logo_data_url, logo_scale,
     watermark_data_url, watermark_opacity, watermark_size, watermark_pos,
-    show_contact, show_page_num, slogan, einleitung, schluss, zahlungsfrist, mahngebuehr,
-    absender_pos_h = "links", absender_top_mm = 55, absender_left_mm = 0 } = vorlage;
+    show_contact, show_page_num, slogan,
+    einleitung, schluss, zahlungsfrist, mahngebuehr,
+    absender_pos_h = "links", absender_top_mm = 55, absender_left_mm = 0,
+    ansprechperson_aktiv, ansprechperson_label,
+    positionstexte,
+  } = vorlage;
+
+  const lw = Math.round(70 * (logo_scale/100));
+  const lh = Math.round(45 * (logo_scale/100));
+  // Scale for mini-preview: actual PDF is ~794px wide, preview is ~340px → factor ~0.43
+  const S = 0.38;
+  const lws = Math.round(lw * S);
+  const lhs = Math.round(lh * S);
 
   const logoHtml = logo_data_url
-    ? `<img src="${logo_data_url}" style="height:${Math.round(logo_scale * 0.28)}px;max-width:${Math.round(logo_scale * 0.6)}px;object-fit:contain;" alt="Logo"/>`
-    : `<div style="width:${Math.round(logo_scale * 0.28)}px;height:${Math.round(logo_scale * 0.28)}px;background:${header_color};border-radius:3px;display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:${Math.round(logo_scale * 0.1)}px;">SG</div>`;
+    ? `<img src="${logo_data_url}" style="max-width:${lws}px;max-height:${lhs}px;object-fit:contain;display:block;" alt="Logo"/>`
+    : `<span style="font-size:${Math.round(14*S)}pt;font-weight:700;color:${hc};">SG</span>`;
 
   const docTitle = getDocTitle(docTyp);
 
-  const watermarkHtml = watermark_data_url
-    ? `<img src="${watermark_data_url}" style="${getWatermarkStyle(watermark_pos, watermark_size, watermark_opacity)}" alt="Wasserzeichen"/>`
+  // Wasserzeichen
+  const wmPosMap: Record<string,string> = {
+    "bottom":      `bottom:0;left:50%;transform:translateX(-50%)`,
+    "bottom-left": `bottom:0;left:0`,
+    "bottom-right":`bottom:0;right:0`,
+    "center":      `top:50%;left:50%;transform:translate(-50%,-50%)`,
+    "top":         `top:0;left:50%;transform:translateX(-50%)`,
+    "full":        `top:0;left:0;width:100%;height:100%`,
+  };
+  const wmStyle = wmPosMap[watermark_pos || "bottom"] || wmPosMap["bottom"];
+  const wmOp = ((watermark_opacity || 15)/100).toFixed(2);
+  const wmSz = watermark_size || 60;
+  const wmHtml = watermark_data_url
+    ? `<div style="position:absolute;${wmStyle};z-index:0;pointer-events:none;">
+        <img src="${watermark_data_url}" style="opacity:${wmOp};${watermark_pos==='full'?`width:100%;height:100%;object-fit:cover`:`max-width:${wmSz}%;max-height:${wmSz}%;object-fit:contain`};display:block;"/></div>`
     : "";
 
-  const contactHtml = show_contact
-    ? `<span>Schneggenburger GmbH | Musterstrasse 1 | 8000 Zürich | info@schneggenburger.ch | +41 44 123 45 67</span>`
-    : `<span>Schneggenburger GmbH</span>`;
-
-  const pageNumHtml = show_page_num ? `<span>Seite 1 von 1</span>` : "";
-
-  const tableHeader = getSampleTableHeader(docTyp);
-  const tableRows = getSampleRows(docTyp);
-
-  const totalsHtml = docTyp !== "lieferschein"
-    ? `<div style="margin-top:6px;display:flex;justify-content:flex-end;">
-        <table style="font-size:8px;min-width:140px;">
-          <tr><td style="padding:1px 4px;">Subtotal</td><td style="padding:1px 4px;text-align:right;">CHF 1'380.00</td></tr>
-          <tr><td style="padding:1px 4px;">MwSt. 7.7%</td><td style="padding:1px 4px;text-align:right;">CHF 106.26</td></tr>
-          ${docTyp === "mahnung" ? `<tr><td style="padding:1px 4px;">Mahngebühr</td><td style="padding:1px 4px;text-align:right;">CHF ${mahngebuehr}</td></tr>` : ""}
-          <tr style="font-weight:700;border-top:1px solid #333;">
-            <td style="padding:2px 4px;">Total CHF</td>
-            <td style="padding:2px 4px;text-align:right;">${docTyp === "mahnung" ? "1'986.26" : "1'486.26"}</td>
-          </tr>
-        </table>
-      </div>`
-    : "";
-
-  const sampleInfo = docTyp === "mahnung"
-    ? `<div style="background:#fff3cd;border:1px solid #f0ad4e;padding:4px 6px;border-radius:3px;margin-bottom:6px;font-size:7.5px;">
-        <strong>1. Mahnung</strong> — Zahlungsfrist: ${zahlungsfrist} Tage ab Datum<br/>
-        Bitte begleichen Sie den ausstehenden Betrag bis zum <strong>01.05.2024</strong>.
-      </div>`
-    : "";
-
-  const footerHtml = `
-    <div style="position:absolute;bottom:0;left:0;right:0;background:${footer_color};color:white;padding:4px 10px;display:flex;justify-content:space-between;align-items:center;font-size:7px;z-index:2;">
-      ${contactHtml}
-      ${pageNumHtml}
+  // Empfänger-Block (linksbündig, kein Label)
+  const absTop = `${Math.max(0,(absender_top_mm||55)-20)*S*3.78}px`;
+  const absLeft = `${(absender_left_mm||0)*S*3.78}px`;
+  const absAlign = absender_pos_h === "rechts" ? "text-align:right;" : absender_pos_h === "mitte" ? "text-align:center;" : "";
+  const empfaengerBlock = `
+    <div style="margin-top:${absTop};${absLeft ? `margin-left:${absLeft};` : ""}${absAlign}font-size:${Math.round(10*S)}pt;color:#333;line-height:1.55;margin-bottom:${Math.round(6*S)}mm;">
+      <div style="font-weight:600;">Musterfirma AG</div>
+      <div>Musterstrasse 42</div>
+      <div>8001 Z&uuml;rich</div>
     </div>`;
 
-  // ─── Design A: Klassisch ─────────────────────────────
-  if (design === "A") {
-    const logoLeft = logo_pos === "links";
-    return `
-      <div style="font-family:Arial,sans-serif;font-size:9px;color:#222;height:100%;position:relative;padding-bottom:22px;box-sizing:border-box;">
-        ${watermarkHtml}
-        <div style="padding:12px 14px 0 14px;position:relative;z-index:2;">
-          <div style="display:flex;justify-content:${logoLeft ? "space-between" : "space-between"};align-items:flex-start;flex-direction:${logoLeft ? "row" : "row-reverse"};">
-            <div>${logoHtml}${slogan ? `<div style="color:#888;font-size:7px;margin-top:2px;">${slogan}</div>` : ""}</div>
-            <div style="text-align:right;font-size:7.5px;color:#555;line-height:1.5;">
-              <div style="font-weight:700;font-size:11px;color:#222;">${docTitle}</div>
-              <div>Nr: ${docTyp.substring(0,2).toUpperCase()}-2024-001</div>
-              <div>Datum: 15.04.2024</div>
-              ${docTyp === "offerte" || docTyp === "rechnung" ? `<div>Fällig: ${zahlungsfrist} Tage</div>` : ""}
-            </div>
-          </div>
-          <div style="border-bottom:2px solid ${header_color};margin:8px 0 6px 0;"></div>
-          <div style="margin-top:${Math.max(0,(absender_top_mm||55)-20)*2.286}px;margin-left:${(absender_left_mm||0)*2.286}px;font-size:7.5px;color:#555;margin-bottom:6px;${absender_pos_h==='rechts'?'text-align:right;':''}${absender_pos_h==='mitte'?'text-align:center;':''}">
-            <div style="font-weight:600;color:#222;">Empfänger</div>
-            <div>Musterfirma AG</div>
-            <div>Musterstrasse 42</div>
-            <div>8001 Zürich</div>
-          </div>
-          ${sampleInfo}
-        ${vorlage.ansprechperson_aktiv 
-          ? `<div style="font-size:7.5px;color:#444;margin-bottom:4px;">
-              <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> [wird beim PDF-Erstellen gesetzt]
-            </div>` 
-          : ""}
-        <div style="font-size:7.5px;margin-bottom:6px;color:#444;">${einleitung.replace(/\n/g, "<br/>")}</div>
-          <table style="width:100%;border-collapse:collapse;font-size:7.5px;margin-bottom:4px;">
-            <thead>${tableHeader}</thead>
-            <tbody>${tableRows}</tbody>
-          </table>
-          ${totalsHtml}
-          <div style="font-size:7.5px;margin-top:6px;color:#444;">${schluss.replace(/\n/g, "<br/>")}</div>
-        </div>
-        ${footerHtml}
-      </div>`;
-  }
+  // Ansprechperson
+  const apBlock = ansprechperson_aktiv
+    ? `<div style="font-size:${Math.round(9*S)}pt;color:#444;margin-bottom:${Math.round(8*S)}px;"><strong>${ansprechperson_label || "Ansprechperson"}:</strong> [beim PDF-Erstellen gesetzt]</div>`
+    : "";
 
-  // ─── Design B: Modern ────────────────────────────────
-  if (design === "B") {
-    const logoLeft = logo_pos === "links";
-    return `
-      <div style="font-family:Arial,sans-serif;font-size:9px;color:#222;height:100%;position:relative;padding-bottom:22px;box-sizing:border-box;">
-        ${watermarkHtml}
-        <div style="background:${header_color};color:white;padding:10px 14px;display:flex;justify-content:${logoLeft ? "space-between" : "space-between"};align-items:center;flex-direction:${logoLeft ? "row" : "row-reverse"};position:relative;z-index:2;">
-          <div>
-            ${logo_data_url
-              ? `<img src="${logo_data_url}" style="height:${Math.round(logo_scale * 0.22)}px;max-width:${Math.round(logo_scale * 0.5)}px;object-fit:contain;filter:brightness(0) invert(1);" alt="Logo"/>`
-              : `<div style="font-weight:700;font-size:${Math.round(logo_scale * 0.1) + 2}px;letter-spacing:1px;">SG</div>`
-            }
-            ${slogan ? `<div style="font-size:7px;opacity:0.8;margin-top:2px;">${slogan}</div>` : ""}
-          </div>
-          <div style="text-align:right;font-size:7.5px;opacity:0.9;line-height:1.5;">
-            <div style="font-weight:700;font-size:13px;letter-spacing:0.5px;">${docTitle}</div>
-            <div>Nr: ${docTyp.substring(0,2).toUpperCase()}-2024-001</div>
-            <div>15.04.2024</div>
-          </div>
-        </div>
-        <div style="padding:8px 14px 0 14px;position:relative;z-index:2;">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
-            <div style="font-size:7.5px;color:#555;margin-left:${(absender_left_mm||0)*2.286}px;">
-              <div style="font-weight:600;color:#222;">Empfänger</div>
-              <div>Musterfirma AG</div>
-              <div>Musterstrasse 42</div>
-              <div>8001 Zürich</div>
-            </div>
-            ${docTyp === "offerte" || docTyp === "rechnung" ? `<div style="font-size:7.5px;color:#555;text-align:right;"><div>Zahlungsfrist: ${zahlungsfrist} Tage</div><div>Fällig: 15.05.2024</div></div>` : ""}
-          </div>
-          ${sampleInfo}
-        ${vorlage.ansprechperson_aktiv 
-          ? `<div style="font-size:7.5px;color:#444;margin-bottom:4px;">
-              <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> [wird beim PDF-Erstellen gesetzt]
-            </div>` 
-          : ""}
-        <div style="font-size:7.5px;margin-bottom:6px;color:#444;">${einleitung.replace(/\n/g, "<br/>")}</div>
-          <table style="width:100%;border-collapse:collapse;font-size:7.5px;margin-bottom:4px;">
-            <thead>${tableHeader}</thead>
-            <tbody>${tableRows}</tbody>
-          </table>
-          ${totalsHtml}
-          <div style="font-size:7.5px;margin-top:6px;color:#444;">${schluss.replace(/\n/g, "<br/>")}</div>
-        </div>
-        ${footerHtml}
-      </div>`;
-  }
+  // Positions-Texte
+  const pt = (typeof positionstexte === "object" && positionstexte) ? positionstexte as any : {};
+  const ptPos    = pt.pos          || "Pos.";
+  const ptBeschr = pt.beschreibung || "Beschreibung";
+  const ptMenge  = pt.menge        || "Menge";
+  const ptPreis  = pt.preis        || "Preis";
+  const ptTotal  = pt.total        || "Total";
 
-  // ─── Design D: Zweifarbig (Linke Farbspalte) ───────────
-  if (design === "D") {
-    return `
-      <div style="font-family:Arial,sans-serif;font-size:9px;color:#222;height:100%;position:relative;box-sizing:border-box;display:flex;">
-        ${watermarkHtml}
-        <div style="width:18px;background:${header_color};flex-shrink:0;display:flex;flex-direction:column;align-items:center;padding-top:14px;z-index:2;">
-          ${logo_data_url
-            ? `<img src="${logo_data_url}" style="width:14px;object-fit:contain;filter:brightness(0) invert(1);opacity:0.9;" alt="Logo"/>`
-            : `<div style="color:white;font-weight:700;font-size:7px;writing-mode:vertical-rl;transform:rotate(180deg);opacity:0.9;">${docTitle.substring(0,3)}</div>`
-          }
-        </div>
-        <div style="flex:1;padding:10px 12px 22px;position:relative;z-index:2;">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
-            <div>
-              <div style="font-size:12px;font-weight:700;color:${header_color};">${docTitle}</div>
-              <div style="font-size:7.5px;color:#888;">Nr: ${docTyp.substring(0,2).toUpperCase()}-2024-001 &nbsp;|&nbsp; 15.04.2024</div>
-            </div>
-            <div style="font-size:7px;color:#555;text-align:right;line-height:1.6;">
-              <div style="font-weight:600;">Schneggenburger GmbH</div>
-              <div>Musterstrasse 1</div>
-              <div>8000 Zürich</div>
-            </div>
-          </div>
-          <div style="border-top:2px solid ${header_color};margin-bottom:6px;"></div>
-          <div style="font-size:7.5px;color:#555;margin-bottom:6px;margin-left:${(absender_left_mm||0)*2.286}px;">
-            <div style="font-weight:600;color:#222;">Empfänger</div>
-            <div>Musterfirma AG</div><div>Musterstrasse 42</div><div>8001 Zürich</div>
-          </div>
-          ${sampleInfo}
-          ${vorlage.ansprechperson_aktiv 
-            ? `<div style="font-size:7.5px;color:#444;margin-bottom:4px;">
-                <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> [wird beim PDF-Erstellen gesetzt]
-              </div>` 
-            : ""}
-          <div style="font-size:7.5px;margin-bottom:5px;color:#444;">${einleitung.replace(/\n/g, "<br/>")}</div>
-          <table style="width:100%;border-collapse:collapse;font-size:7.5px;margin-bottom:4px;">
-            <thead>${tableHeader}</thead>
-            <tbody>${tableRows}</tbody>
-          </table>
-          ${totalsHtml}
-          <div style="font-size:7.5px;margin-top:5px;color:#444;">${schluss.replace(/\n/g, "<br/>")}</div>
-        </div>
-        ${footerHtml}
-      </div>`;
-  }
+  // Tabelle
+  const fs = Math.round(8.5*S);
+  const tableHtml = `
+    <table style="width:100%;border-collapse:collapse;font-size:${fs}pt;margin-bottom:${Math.round(4*S)}px;">
+      <thead>
+        <tr style="background:${hc};color:white;">
+          <th style="padding:${Math.round(8*S)}px ${Math.round(4*S)}px;text-align:left;width:${Math.round(28*S)}px;">${ptPos}</th>
+          <th style="padding:${Math.round(8*S)}px ${Math.round(4*S)}px;text-align:left;">${ptBeschr}</th>
+          <th style="padding:${Math.round(8*S)}px ${Math.round(4*S)}px;text-align:right;width:${Math.round(65*S)}px;">${ptMenge}</th>
+          <th style="padding:${Math.round(8*S)}px ${Math.round(4*S)}px;text-align:right;width:${Math.round(90*S)}px;">${ptPreis}</th>
+          <th style="padding:${Math.round(8*S)}px ${Math.round(4*S)}px;text-align:right;width:${Math.round(90*S)}px;">${ptTotal}</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="border-bottom:1px solid #f0ebde;">
+          <td style="padding:${Math.round(7*S)}px ${Math.round(4*S)}px;color:#999;vertical-align:top;">1</td>
+          <td style="padding:${Math.round(7*S)}px ${Math.round(4*S)}px;line-height:1.5;">
+            <span style="font-weight:600;color:#1a1a1a;">Tischlerarbeit Eiche massiv</span><br/>
+            <span style="font-size:${Math.round(8.5*S)}pt;color:#555;padding-left:${Math.round(8*S)}px;">&ndash; Massivholz Eiche, geölt</span>
+          </td>
+          <td style="padding:${Math.round(7*S)}px ${Math.round(4*S)}px;text-align:right;color:#555;vertical-align:top;">8 h</td>
+          <td style="padding:${Math.round(7*S)}px ${Math.round(4*S)}px;text-align:right;color:#555;vertical-align:top;">CHF 120.00</td>
+          <td style="padding:${Math.round(7*S)}px ${Math.round(4*S)}px;text-align:right;font-weight:600;vertical-align:top;">CHF 960.00</td>
+        </tr>
+        <tr style="border-bottom:1px solid #f0ebde;">
+          <td style="padding:${Math.round(7*S)}px ${Math.round(4*S)}px;color:#999;vertical-align:top;">2</td>
+          <td style="padding:${Math.round(7*S)}px ${Math.round(4*S)}px;"><span style="font-weight:600;color:#1a1a1a;">Material Holz &amp; Beschl&auml;ge</span></td>
+          <td style="padding:${Math.round(7*S)}px ${Math.round(4*S)}px;text-align:right;color:#555;">1 Psch.</td>
+          <td style="padding:${Math.round(7*S)}px ${Math.round(4*S)}px;text-align:right;color:#555;">CHF 340.00</td>
+          <td style="padding:${Math.round(7*S)}px ${Math.round(4*S)}px;text-align:right;font-weight:600;">CHF 340.00</td>
+        </tr>
+        <tr style="border-bottom:1px solid #f0ebde;">
+          <td style="padding:${Math.round(7*S)}px ${Math.round(4*S)}px;color:#999;vertical-align:top;">3</td>
+          <td style="padding:${Math.round(7*S)}px ${Math.round(4*S)}px;"><span style="font-weight:600;color:#1a1a1a;">Lieferung &amp; Montage</span></td>
+          <td style="padding:${Math.round(7*S)}px ${Math.round(4*S)}px;text-align:right;color:#555;">1 Psch.</td>
+          <td style="padding:${Math.round(7*S)}px ${Math.round(4*S)}px;text-align:right;color:#555;">CHF 80.00</td>
+          <td style="padding:${Math.round(7*S)}px ${Math.round(4*S)}px;text-align:right;font-weight:600;">CHF 80.00</td>
+        </tr>
+      </tbody>
+    </table>`;
 
-  // ─── Design E: Elegant (Gradient-Linie) ──────────────
-  if (design === "E") {
-    return `
-      <div style="font-family:Georgia,serif;font-size:9px;color:#222;height:100%;position:relative;padding-bottom:22px;box-sizing:border-box;">
-        ${watermarkHtml}
-        <div style="padding:14px 16px 0 16px;position:relative;z-index:2;">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-            <div>
-              ${logo_data_url
-                ? `<img src="${logo_data_url}" style="height:${Math.round(logo_scale * 0.18)}px;max-width:${Math.round(logo_scale * 0.4)}px;object-fit:contain;" alt="Logo"/>`
-                : `<div style="font-size:${Math.round(logo_scale * 0.1) + 4}px;font-weight:800;color:${header_color};letter-spacing:2px;">SG</div>`
-              }
-              ${slogan ? `<div style="font-size:6.5px;color:#aaa;letter-spacing:1px;margin-top:1px;">${slogan.toUpperCase()}</div>` : ""}
-            </div>
-            <div style="text-align:right;font-size:7.5px;color:#666;line-height:1.6;">
-              <div style="font-size:11px;font-weight:700;color:${header_color};">${docTitle}</div>
-              <div>Nr: ${docTyp.substring(0,2).toUpperCase()}-2024-001</div>
-              <div>15.04.2024</div>
-            </div>
-          </div>
-          <div style="height:2.5px;background:linear-gradient(90deg,${header_color},${footer_color});margin:5px 0;border-radius:2px;"></div>
-          <div style="font-size:7.5px;color:#555;margin-bottom:6px;margin-left:${(absender_left_mm||0)*2.286}px;">
-            <div style="font-weight:600;color:#222;font-style:italic;">Empfänger</div>
-            <div>Musterfirma AG</div><div>Musterstrasse 42</div><div>8001 Zürich</div>
-          </div>
-          ${sampleInfo}
-          ${vorlage.ansprechperson_aktiv 
-            ? `<div style="font-size:7.5px;color:#444;margin-bottom:4px;">
-                <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> [wird beim PDF-Erstellen gesetzt]
-              </div>` 
-            : ""}
-          <div style="font-size:7.5px;margin-bottom:5px;color:#444;">${einleitung.replace(/\n/g, "<br/>")}</div>
-          <table style="width:100%;border-collapse:collapse;font-size:7.5px;margin-bottom:4px;">
-            <thead>${tableHeader}</thead>
-            <tbody>${tableRows}</tbody>
-          </table>
-          ${totalsHtml}
-          <div style="font-size:7.5px;margin-top:5px;color:#444;">${schluss.replace(/\n/g, "<br/>")}</div>
+  // Totals
+  const totalsHtml = docTyp !== "lieferschein" ? `
+    <div style="display:flex;justify-content:flex-end;margin-top:${Math.round(16*S)}px;">
+      <div style="width:44%;font-size:${Math.round(9*S)}pt;">
+        <div style="display:flex;justify-content:space-between;padding:${Math.round(3*S)}px 0;"><span>Subtotal</span><span>CHF 1'380.00</span></div>
+        <div style="display:flex;justify-content:space-between;padding:${Math.round(3*S)}px 0;"><span>MWST 8.1%</span><span>CHF 111.78</span></div>
+        ${docTyp === "mahnung" ? `<div style="display:flex;justify-content:space-between;padding:${Math.round(3*S)}px 0;"><span>Mahngebühr</span><span>CHF ${mahngebuehr}</span></div>` : ""}
+        <div style="display:flex;justify-content:space-between;padding:${Math.round(5*S)}px 0;border-top:1.5px solid ${fc};margin-top:${Math.round(3*S)}px;font-weight:700;font-size:${Math.round(11*S)}pt;color:${fc};">
+          <span>Total</span><span>CHF ${docTyp === "mahnung" ? "1'521.78" : "1'491.78"}</span>
         </div>
-        <div style="position:absolute;bottom:0;left:0;right:0;z-index:2;">
-          <div style="height:2px;background:linear-gradient(90deg,${footer_color},${header_color});"></div>
-          <div style="background:white;padding:4px 16px;display:flex;justify-content:space-between;font-size:6.5px;color:#999;font-style:italic;">
-            ${show_contact ? `<span>Schneggenburger GmbH | Musterstrasse 1 | 8000 Zürich | info@schneggenburger.ch</span>` : `<span></span>`}
-            ${show_page_num ? `<span>Seite 1 von 1</span>` : ""}
-          </div>
-        </div>
-      </div>`;
-  }
-
-  // ─── Design F: Box-Header (voller Farbblock) ─────────
-  if (design === "F") {
-    const logoLeft = logo_pos === "links";
-    return `
-      <div style="font-family:Arial,sans-serif;font-size:9px;color:#222;height:100%;position:relative;padding-bottom:22px;box-sizing:border-box;">
-        ${watermarkHtml}
-        <div style="background:${header_color};padding:14px 16px 12px;position:relative;z-index:2;">
-          <div style="display:flex;justify-content:space-between;align-items:flex-end;flex-direction:${logoLeft ? "row" : "row-reverse"};">
-            <div>
-              ${logo_data_url
-                ? `<img src="${logo_data_url}" style="height:${Math.round(logo_scale * 0.2)}px;max-width:${Math.round(logo_scale * 0.45)}px;object-fit:contain;filter:brightness(0) invert(1);" alt="Logo"/>`
-                : `<div style="font-size:${Math.round(logo_scale * 0.1) + 6}px;font-weight:900;color:white;letter-spacing:2px;">SG</div>`
-              }
-              ${slogan ? `<div style="font-size:6.5px;color:rgba(255,255,255,0.75);margin-top:2px;">${slogan}</div>` : ""}
-            </div>
-            <div style="text-align:right;">
-              <div style="font-size:14px;font-weight:800;color:white;letter-spacing:1px;">${docTitle}</div>
-              <div style="font-size:7px;color:rgba(255,255,255,0.8);margin-top:1px;">Nr: ${docTyp.substring(0,2).toUpperCase()}-2024-001 &nbsp;|&nbsp; 15.04.2024</div>
-              ${docTyp === "offerte" || docTyp === "rechnung" ? `<div style="font-size:7px;color:rgba(255,255,255,0.8);">Fällig in ${zahlungsfrist} Tagen</div>` : ""}
-            </div>
-          </div>
-        </div>
-        <div style="padding:10px 16px 0;position:relative;z-index:2;">
-          <div style="font-size:7.5px;color:#555;margin-bottom:6px;margin-left:${(absender_left_mm||0)*2.286}px;">
-            <div style="font-weight:600;color:#222;">Empfänger</div>
-            <div>Musterfirma AG</div><div>Musterstrasse 42</div><div>8001 Zürich</div>
-          </div>
-          ${sampleInfo}
-          ${vorlage.ansprechperson_aktiv 
-            ? `<div style="font-size:7.5px;color:#444;margin-bottom:4px;">
-                <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> [wird beim PDF-Erstellen gesetzt]
-              </div>` 
-            : ""}
-          <div style="font-size:7.5px;margin-bottom:5px;color:#444;">${einleitung.replace(/\n/g, "<br/>")}</div>
-          <table style="width:100%;border-collapse:collapse;font-size:7.5px;margin-bottom:4px;">
-            <thead>${tableHeader}</thead>
-            <tbody>${tableRows}</tbody>
-          </table>
-          ${totalsHtml}
-          <div style="font-size:7.5px;margin-top:5px;color:#444;">${schluss.replace(/\n/g, "<br/>")}</div>
-        </div>
-        ${footerHtml}
-      </div>`;
-  }
-
-  // ─── Design G: Swiss Classic ─────────────────────────
-  if (design === "G") {
-    const logoLeft = logo_pos === "links";
-    return `
-      <div style="font-family:Arial,Helvetica,sans-serif;font-size:9px;color:#222;height:100%;position:relative;padding-bottom:22px;box-sizing:border-box;">
-        ${watermarkHtml}
-        <div style="padding:12px 16px 0 16px;position:relative;z-index:2;">
-          <div style="border-top:2px solid ${header_color};padding-top:8px;display:flex;justify-content:${logoLeft ? "space-between" : "space-between"};align-items:flex-start;flex-direction:${logoLeft ? "row" : "row-reverse"};">
-            <div>
-              ${logoHtml}
-              ${slogan ? `<div style="color:#888;font-size:7px;margin-top:2px;">${slogan}</div>` : ""}
-            </div>
-            <div style="text-align:right;font-size:7px;color:#555;line-height:1.6;">
-              <div style="font-weight:600;color:#333;">Schneggenburger GmbH</div>
-              <div>Hefenhoferstrasse 7</div>
-              <div>8580 Sommeri</div>
-              <div>Tel. 071 411 16 87</div>
-            </div>
-          </div>
-          <div style="border-bottom:0.5px solid #ccc;margin:8px 0;"></div>
-          <div style="margin-top:${Math.max(0,(absender_top_mm||55)-20)*2.286}px;margin-left:${(absender_left_mm||0)*2.286}px;font-size:7px;color:#888;margin-bottom:8px;">
-            <div>Schneggenburger GmbH &middot; Hefenhoferstrasse 7 &middot; 8580 Sommeri</div>
-          </div>
-          <div style="font-size:7.5px;color:#444;margin-bottom:10px;line-height:1.6;margin-left:${(absender_left_mm||0)*2.286}px;${absender_pos_h==='rechts'?'text-align:right;':''}${absender_pos_h==='mitte'?'text-align:center;':''}">
-            <div style="font-weight:600;color:#222;">Musterfirma AG</div>
-            <div>Musterstrasse 42</div>
-            <div>8001 Z&uuml;rich</div>
-          </div>
-          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;">
-            <div style="font-size:13px;font-weight:700;color:#111;letter-spacing:0.5px;">${docTitle}</div>
-            <div style="font-size:7.5px;color:#555;text-align:right;line-height:1.6;">
-              <div>Nr: ${docTyp.substring(0,2).toUpperCase()}-2024-001</div>
-              <div>Datum: 15.04.2024</div>
-              ${docTyp === "offerte" || docTyp === "rechnung" ? `<div>F&auml;llig: ${zahlungsfrist} Tage</div>` : ""}
-            </div>
-          </div>
-          ${sampleInfo}
-        ${vorlage.ansprechperson_aktiv 
-          ? `<div style="font-size:7.5px;color:#444;margin-bottom:4px;">
-              <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> [wird beim PDF-Erstellen gesetzt]
-            </div>` 
-          : ""}
-        <div style="font-size:7.5px;margin-bottom:6px;color:#444;">${einleitung.replace(/\n/g, "<br/>")}</div>
-          <table style="width:100%;border-collapse:collapse;font-size:7.5px;margin-bottom:4px;">
-            <thead>${tableHeader}</thead>
-            <tbody>${tableRows}</tbody>
-          </table>
-          ${totalsHtml}
-          <div style="font-size:7.5px;margin-top:6px;color:#444;">${schluss.replace(/\n/g, "<br/>")}</div>
-        </div>
-        ${footerHtml}
-      </div>`;
-  }
-
-  // ─── Design H: Helvetica Pro ─────────────────────────
-  if (design === "H") {
-    const logoLeft = logo_pos === "links";
-    return `
-      <div style="font-family:Arial,Helvetica,sans-serif;font-size:9px;color:#222;height:100%;position:relative;padding-bottom:22px;box-sizing:border-box;">
-        ${watermarkHtml}
-        <div style="padding:14px 16px 0 16px;position:relative;z-index:2;">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-direction:${logoLeft ? "row" : "row-reverse"};margin-bottom:6px;">
-            <div>
-              ${logoHtml}
-              ${slogan ? `<div style="color:#aaa;font-size:6.5px;margin-top:2px;letter-spacing:1px;text-transform:uppercase;">${slogan}</div>` : ""}
-            </div>
-            <div style="text-align:right;font-size:7px;color:#666;line-height:1.5;">
-              <div style="font-weight:700;color:#222;">Schneggenburger GmbH</div>
-              <div>Hefenhoferstrasse 7, 8580 Sommeri</div>
-              <div>Tel. 071 411 16 87</div>
-            </div>
-          </div>
-          <div style="height:1.5px;background:#222;margin-bottom:1px;"></div>
-          <div style="height:0.5px;background:#bbb;margin-bottom:10px;"></div>
-          <div style="font-size:7.5px;color:#444;margin-bottom:10px;line-height:1.6;margin-left:${(absender_left_mm||0)*2.286}px;">
-            <div style="font-weight:600;color:#222;">Musterfirma AG</div>
-            <div>Musterstrasse 42</div>
-            <div>8001 Z&uuml;rich</div>
-          </div>
-          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;">
-            <div style="font-size:14px;font-weight:700;color:#111;text-transform:uppercase;letter-spacing:1.5px;">${docTitle}</div>
-            <div style="font-size:7px;color:#777;text-align:right;line-height:1.6;">
-              <div>Nr: ${docTyp.substring(0,2).toUpperCase()}-2024-001</div>
-              <div>15.04.2024</div>
-              ${docTyp === "offerte" || docTyp === "rechnung" ? `<div>F&auml;llig: ${zahlungsfrist} Tage</div>` : ""}
-            </div>
-          </div>
-          ${sampleInfo}
-        ${vorlage.ansprechperson_aktiv 
-          ? `<div style="font-size:7.5px;color:#444;margin-bottom:4px;">
-              <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> [wird beim PDF-Erstellen gesetzt]
-            </div>` 
-          : ""}
-        <div style="font-size:7.5px;margin-bottom:6px;color:#444;">${einleitung.replace(/\n/g, "<br/>")}</div>
-          <table style="width:100%;border-collapse:collapse;font-size:7.5px;margin-bottom:4px;">
-            <thead>${tableHeader}</thead>
-            <tbody>${tableRows}</tbody>
-          </table>
-          ${totalsHtml}
-          <div style="font-size:7.5px;margin-top:6px;color:#444;">${schluss.replace(/\n/g, "<br/>")}</div>
-        </div>
-        <div style="position:absolute;bottom:0;left:0;right:0;z-index:2;">
-          <div style="height:1.5px;background:#222;"></div>
-          <div style="height:0.5px;background:#bbb;margin-bottom:1px;"></div>
-          <div style="background:white;padding:4px 16px;display:flex;justify-content:space-between;font-size:6.5px;color:#888;">
-            ${show_contact ? `<span>Schneggenburger GmbH &middot; Hefenhoferstrasse 7 &middot; 8580 Sommeri &middot; Tel. 071 411 16 87</span>` : `<span></span>`}
-            ${show_page_num ? `<span>Seite 1 von 1</span>` : ""}
-          </div>
-        </div>
-      </div>`;
-  }
-
-  // ─── Design I: Corporate Slim ─────────────────────────
-  if (design === "I") {
-    const logoLeft = logo_pos === "links";
-    return `
-      <div style="font-family:Arial,Helvetica,sans-serif;font-size:9px;color:#222;height:100%;position:relative;box-sizing:border-box;display:flex;">
-        ${watermarkHtml}
-        <div style="width:4px;background:${header_color};flex-shrink:0;z-index:2;"></div>
-        <div style="flex:1;padding:12px 14px 22px 12px;position:relative;z-index:2;">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-direction:${logoLeft ? "row" : "row-reverse"};margin-bottom:6px;">
-            <div>
-              ${logoHtml}
-              ${slogan ? `<div style="color:#999;font-size:6.5px;margin-top:2px;">${slogan}</div>` : ""}
-            </div>
-            <div style="text-align:right;font-size:7px;color:#666;line-height:1.6;">
-              <div style="font-weight:700;color:#222;">Schneggenburger GmbH</div>
-              <div>Hefenhoferstrasse 7</div>
-              <div>8580 Sommeri</div>
-            </div>
-          </div>
-          <div style="border-bottom:0.5px solid #ccc;margin-bottom:10px;"></div>
-          <div style="font-size:7.5px;color:#444;margin-bottom:10px;line-height:1.6;margin-left:${(absender_left_mm||0)*2.286}px;">
-            <div style="font-weight:600;color:#222;">Musterfirma AG</div>
-            <div>Musterstrasse 42</div>
-            <div>8001 Z&uuml;rich</div>
-          </div>
-          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;">
-            <div style="font-size:13px;font-weight:700;color:#111;">${docTitle}</div>
-            <div style="font-size:7px;color:#777;text-align:right;line-height:1.6;">
-              <div>Nr: ${docTyp.substring(0,2).toUpperCase()}-2024-001</div>
-              <div>15.04.2024</div>
-              ${docTyp === "offerte" || docTyp === "rechnung" ? `<div>F&auml;llig: ${zahlungsfrist} Tage</div>` : ""}
-            </div>
-          </div>
-          ${sampleInfo}
-        ${vorlage.ansprechperson_aktiv 
-          ? `<div style="font-size:7.5px;color:#444;margin-bottom:4px;">
-              <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> [wird beim PDF-Erstellen gesetzt]
-            </div>` 
-          : ""}
-        <div style="font-size:7.5px;margin-bottom:6px;color:#444;">${einleitung.replace(/\n/g, "<br/>")}</div>
-          <table style="width:100%;border-collapse:collapse;font-size:7.5px;margin-bottom:4px;">
-            <thead>${tableHeader}</thead>
-            <tbody>${tableRows}</tbody>
-          </table>
-          ${totalsHtml}
-          <div style="font-size:7.5px;margin-top:5px;color:#444;">${schluss.replace(/\n/g, "<br/>")}</div>
-        </div>
-        ${footerHtml}
-      </div>`;
-  }
-
-  // ─── Design C: Minimal ───────────────────────────────
-  return `
-    <div style="font-family:Arial,sans-serif;font-size:9px;color:#222;height:100%;position:relative;padding-bottom:22px;box-sizing:border-box;">
-      ${watermarkHtml}
-      <div style="padding:10px 14px 0 14px;position:relative;z-index:2;">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;">
-          <div>
-            ${logo_data_url
-              ? `<img src="${logo_data_url}" style="height:${Math.round(logo_scale * 0.16)}px;max-width:${Math.round(logo_scale * 0.36)}px;object-fit:contain;" alt="Logo"/>`
-              : `<div style="font-size:${Math.round(logo_scale * 0.09)}px;font-weight:700;color:${header_color};letter-spacing:1px;">SG</div>`
-            }
-          </div>
-          <div style="font-size:7.5px;color:#888;text-align:right;line-height:1.5;">
-            <div>Schneggenburger GmbH</div>
-            <div>Musterstrasse 1, 8000 Zürich</div>
-          </div>
-        </div>
-        <div style="border-top:1px solid #ddd;padding-top:6px;margin-bottom:6px;">
-          <div style="font-size:12px;font-weight:300;color:#333;letter-spacing:0.5px;">${docTitle}</div>
-          <div style="font-size:7.5px;color:#888;">Nr: ${docTyp.substring(0,2).toUpperCase()}-2024-001 &nbsp;|&nbsp; 15.04.2024</div>
-        </div>
-        <div style="font-size:7.5px;color:#555;margin-bottom:6px;margin-left:${(absender_left_mm||0)*2.286}px;">
-          <div style="font-weight:600;color:#222;">Empfänger</div>
-          <div>Musterfirma AG</div>
-          <div>Musterstrasse 42</div>
-          <div>8001 Zürich</div>
-        </div>
-        ${sampleInfo}
-        ${vorlage.ansprechperson_aktiv 
-          ? `<div style="font-size:7.5px;color:#444;margin-bottom:4px;">
-              <strong>${vorlage.ansprechperson_label || 'Ansprechperson'}:</strong> [wird beim PDF-Erstellen gesetzt]
-            </div>` 
-          : ""}
-        <div style="font-size:7.5px;margin-bottom:6px;color:#444;">${einleitung.replace(/\n/g, "<br/>")}</div>
-        <table style="width:100%;border-collapse:collapse;font-size:7.5px;margin-bottom:4px;">
-          <thead>${tableHeader}</thead>
-          <tbody>${tableRows}</tbody>
-        </table>
-        ${totalsHtml}
-        <div style="font-size:7.5px;margin-top:6px;color:#444;">${schluss.replace(/\n/g, "<br/>")}</div>
       </div>
-      ${footerHtml}
+    </div>` : "";
+
+  // Einleitung + Schluss
+  const einlHtml = einleitung ? `<div style="font-size:${Math.round(9*S)}pt;color:#444;white-space:pre-line;margin-bottom:${Math.round(12*S)}px;">${einleitung}</div>` : "";
+  const schlHtml = schluss ? `<div style="font-size:${Math.round(9*S)}pt;color:#444;white-space:pre-line;margin-top:${Math.round(14*S)}px;">${schluss}</div>` : "";
+
+  // Dokument-Info rechts oben (Datum, Nr, Fällig/Gültig)
+  const docInfoHtml = `
+    <div style="text-align:right;font-size:${Math.round(8.5*S)}pt;color:#555;line-height:1.6;">
+      <div>Nr: ${docTyp.substring(0,2).toUpperCase()}-2024-001</div>
+      <div>Datum: 15.04.2024</div>
+      ${(docTyp === "offerte" || docTyp === "rechnung") ? `<div>F&auml;llig: ${zahlungsfrist} Tage</div>` : ""}
     </div>`;
+
+  // Footer
+  const footerContact = show_contact ? `Schneggenburger GmbH &middot; Hefenhoferstrasse 7 &middot; 8580 Sommeri &middot; 071 411 16 87` : "";
+  const footerPage = show_page_num ? "Seite 1 / 1" : "";
+
+  // ═══════════════════════════════════════════════════════
+  // EINHEITLICHER INHALTS-BLOCK — gleich für alle Designs
+  // ═══════════════════════════════════════════════════════
+  const contentBlock = `
+    ${empfaengerBlock}
+    ${apBlock}
+    ${einlHtml}
+    ${tableHtml}
+    ${totalsHtml}
+    ${schlHtml}`;
+
+  // ── Design A: Klassisch ──────────────────────────────────────────────────────
+  if (design === "A") {
+    const logoLeft = logo_pos !== "rechts";
+    return `<div style="font-family:Arial,sans-serif;font-size:${Math.round(10*S)}pt;color:#222;min-height:100%;display:flex;flex-direction:column;position:relative;padding-bottom:${Math.round(24*S)}px;box-sizing:border-box;">
+      ${wmHtml}
+      <div style="padding:${Math.round(20*S)}px ${Math.round(40*S)}px ${Math.round(14*S)}px;display:flex;align-items:flex-start;justify-content:space-between;gap:${Math.round(16*S)}px;flex-direction:${logoLeft?"row":"row-reverse"};position:relative;z-index:1;">
+        <div style="flex-shrink:0;">${logoHtml}${slogan ? `<div style="font-size:${Math.round(8*S)}pt;color:#888;margin-top:${Math.round(3*S)}px;">${slogan}</div>` : ""}</div>
+        <div style="font-size:${Math.round(14*S)}pt;font-weight:700;color:#222;text-align:right;">
+          ${docTitle}
+          ${docInfoHtml.replace(`font-size:${Math.round(8.5*S)}pt`, `font-size:${Math.round(8*S)}pt`)}
+        </div>
+      </div>
+      <div style="height:2px;background:${hc};margin:0 ${Math.round(40*S)}px;"></div>
+      <div style="padding:${Math.round(14*S)}px ${Math.round(40*S)}px;flex:1;position:relative;z-index:1;">
+        ${contentBlock}
+      </div>
+      <div style="background:${fc};color:white;padding:${Math.round(6*S)}px ${Math.round(40*S)}px;font-size:${Math.round(8*S)}pt;display:flex;justify-content:space-between;align-items:center;">
+        <span>${footerContact}</span><span>${footerPage}</span>
+      </div>
+    </div>`;
+  }
+
+  // ── Design B: Modern ─────────────────────────────────────────────────────────
+  if (design === "B") {
+    const logoLeft = logo_pos !== "rechts";
+    return `<div style="font-family:Arial,sans-serif;font-size:${Math.round(10*S)}pt;color:#222;min-height:100%;display:flex;flex-direction:column;position:relative;padding-bottom:${Math.round(24*S)}px;box-sizing:border-box;">
+      ${wmHtml}
+      <div style="background:${hc};color:white;padding:${Math.round(22*S)}px ${Math.round(40*S)}px ${Math.round(18*S)}px;display:flex;align-items:center;gap:${Math.round(16*S)}px;flex-direction:${logoLeft?"row":"row-reverse"};position:relative;z-index:1;">
+        <div style="flex-shrink:0;">${logo_data_url ? `<img src="${logo_data_url}" style="max-width:${lws}px;max-height:${lhs}px;object-fit:contain;filter:brightness(0) invert(1);" alt="Logo"/>` : `<span style="font-size:${Math.round(14*S)}pt;font-weight:700;color:white;">SG</span>`}${slogan ? `<div style="font-size:${Math.round(7*S)}pt;opacity:0.8;margin-top:${Math.round(2*S)}px;">${slogan}</div>` : ""}</div>
+        <div style="flex:1;font-size:${Math.round(15*S)}pt;font-weight:700;">${docTitle}</div>
+        ${docInfoHtml.replace(`color:#555`, "color:rgba(255,255,255,0.85)")}
+      </div>
+      <div style="padding:${Math.round(10*S)}px ${Math.round(40*S)}px;flex:1;position:relative;z-index:1;">
+        ${contentBlock}
+      </div>
+      <div style="background:${fc};color:white;padding:${Math.round(6*S)}px ${Math.round(40*S)}px;font-size:${Math.round(8*S)}pt;display:flex;justify-content:space-between;align-items:center;">
+        <span>${footerContact}</span><span>${footerPage}</span>
+      </div>
+    </div>`;
+  }
+
+  // ── Design C: Minimal ────────────────────────────────────────────────────────
+  if (design === "C") {
+    return `<div style="font-family:Arial,sans-serif;font-size:${Math.round(10*S)}pt;color:#222;min-height:100%;display:flex;flex-direction:column;position:relative;padding-bottom:${Math.round(24*S)}px;box-sizing:border-box;">
+      ${wmHtml}
+      <div style="padding:${Math.round(16*S)}px ${Math.round(40*S)}px ${Math.round(6*S)}px;position:relative;z-index:1;">
+        ${logoHtml}
+      </div>
+      <div style="padding:${Math.round(4*S)}px ${Math.round(40*S)}px;flex:1;position:relative;z-index:1;">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:${Math.round(8*S)}px;">
+          <div style="font-size:${Math.round(15*S)}pt;font-weight:700;color:#111;">${docTitle}</div>
+          ${docInfoHtml}
+        </div>
+        <div style="height:1px;background:#ddd;margin-bottom:${Math.round(10*S)}px;"></div>
+        ${contentBlock}
+      </div>
+      <div style="background:${fc};color:white;padding:${Math.round(6*S)}px ${Math.round(40*S)}px;font-size:${Math.round(8*S)}pt;display:flex;justify-content:space-between;align-items:center;">
+        <span>${footerContact}</span><span>${footerPage}</span>
+      </div>
+    </div>`;
+  }
+
+  // ── Design D: Zweifarbig ─────────────────────────────────────────────────────
+  if (design === "D") {
+    return `<div style="font-family:Arial,sans-serif;font-size:${Math.round(10*S)}pt;color:#222;min-height:100%;display:flex;position:relative;padding-bottom:${Math.round(24*S)}px;box-sizing:border-box;">
+      ${wmHtml}
+      <div style="width:${Math.round(22*S)}px;background:${hc};flex-shrink:0;display:flex;flex-direction:column;align-items:center;padding-top:${Math.round(20*S)}px;z-index:1;">
+        ${logo_data_url ? `<img src="${logo_data_url}" style="width:${Math.round(16*S)}px;object-fit:contain;filter:brightness(0) invert(1);opacity:0.9;" alt="Logo"/>` : `<span style="color:white;font-weight:700;font-size:${Math.round(7*S)}pt;writing-mode:vertical-rl;transform:rotate(180deg);">SG</span>`}
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;position:relative;z-index:1;">
+        <div style="padding:${Math.round(18*S)}px ${Math.round(36*S)}px ${Math.round(10*S)}px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:${Math.round(6*S)}px;">
+            <div style="font-size:${Math.round(14*S)}pt;font-weight:700;color:${hc};">${docTitle}</div>
+            ${docInfoHtml}
+          </div>
+          <div style="height:2px;background:${hc};margin-bottom:${Math.round(12*S)}px;border-radius:1px;"></div>
+        </div>
+        <div style="padding:0 ${Math.round(36*S)}px;flex:1;">
+          ${contentBlock}
+        </div>
+        <div style="background:${fc};color:white;padding:${Math.round(6*S)}px ${Math.round(36*S)}px;font-size:${Math.round(8*S)}pt;display:flex;justify-content:space-between;align-items:center;">
+          <span>${footerContact}</span><span>${footerPage}</span>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // ── Design E: Elegant ────────────────────────────────────────────────────────
+  if (design === "E") {
+    return `<div style="font-family:Georgia,serif;font-size:${Math.round(10*S)}pt;color:#222;min-height:100%;display:flex;flex-direction:column;position:relative;padding-bottom:${Math.round(24*S)}px;box-sizing:border-box;">
+      ${wmHtml}
+      <div style="padding:${Math.round(20*S)}px ${Math.round(40*S)}px ${Math.round(10*S)}px;display:flex;align-items:center;justify-content:space-between;gap:${Math.round(16*S)}px;position:relative;z-index:1;">
+        <div style="flex-shrink:0;">${logoHtml}${slogan ? `<div style="font-size:${Math.round(7*S)}pt;color:#aaa;letter-spacing:0.1em;margin-top:${Math.round(3*S)}px;">${slogan.toUpperCase()}</div>` : ""}</div>
+        <div style="text-align:right;">
+          <div style="font-size:${Math.round(13*S)}pt;font-weight:700;color:${hc};">${docTitle}</div>
+          ${docInfoHtml}
+        </div>
+      </div>
+      <div style="height:3px;background:linear-gradient(90deg,${hc},${fc});margin:0 ${Math.round(40*S)}px;border-radius:2px;"></div>
+      <div style="padding:${Math.round(12*S)}px ${Math.round(40*S)}px;flex:1;position:relative;z-index:1;">
+        ${contentBlock}
+      </div>
+      <div style="position:relative;z-index:1;">
+        <div style="height:2px;background:linear-gradient(90deg,${fc},${hc});margin:0 ${Math.round(40*S)}px;border-radius:2px;"></div>
+        <div style="padding:${Math.round(6*S)}px ${Math.round(40*S)}px;font-size:${Math.round(8*S)}pt;color:#999;font-style:italic;display:flex;justify-content:space-between;">
+          <span>${footerContact}</span><span>${footerPage}</span>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // ── Design F: Box-Header ─────────────────────────────────────────────────────
+  if (design === "F") {
+    const logoLeft = logo_pos !== "rechts";
+    return `<div style="font-family:Arial,sans-serif;font-size:${Math.round(10*S)}pt;color:#222;min-height:100%;display:flex;flex-direction:column;position:relative;padding-bottom:${Math.round(24*S)}px;box-sizing:border-box;">
+      ${wmHtml}
+      <div style="background:${hc};color:white;padding:${Math.round(22*S)}px ${Math.round(40*S)}px ${Math.round(18*S)}px;display:flex;align-items:flex-end;justify-content:space-between;gap:${Math.round(16*S)}px;flex-direction:${logoLeft?"row":"row-reverse"};position:relative;z-index:1;">
+        <div style="flex-shrink:0;">${logo_data_url ? `<img src="${logo_data_url}" style="max-width:${lws}px;max-height:${lhs}px;object-fit:contain;filter:brightness(0) invert(1);" alt="Logo"/>` : `<span style="font-size:${Math.round(16*S)}pt;font-weight:900;color:white;letter-spacing:2px;">SG</span>`}${slogan ? `<div style="font-size:${Math.round(7*S)}pt;opacity:0.75;margin-top:${Math.round(4*S)}px;">${slogan}</div>` : ""}</div>
+        <div style="text-align:right;">
+          <div style="font-size:${Math.round(14*S)}pt;font-weight:800;letter-spacing:1px;">${docTitle}</div>
+          ${docInfoHtml.replace("color:#555", "color:rgba(255,255,255,0.8)")}
+        </div>
+      </div>
+      <div style="padding:${Math.round(12*S)}px ${Math.round(40*S)}px;flex:1;position:relative;z-index:1;">
+        ${contentBlock}
+      </div>
+      <div style="background:${fc};color:white;padding:${Math.round(6*S)}px ${Math.round(40*S)}px;font-size:${Math.round(8*S)}pt;display:flex;justify-content:space-between;align-items:center;">
+        <span>${footerContact}</span><span>${footerPage}</span>
+      </div>
+    </div>`;
+  }
+
+  // ── Design G: Swiss Classic ──────────────────────────────────────────────────
+  if (design === "G") {
+    const logoLeft = logo_pos !== "rechts";
+    return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:${Math.round(10*S)}pt;color:#222;min-height:100%;display:flex;flex-direction:column;position:relative;padding-bottom:${Math.round(24*S)}px;box-sizing:border-box;">
+      ${wmHtml}
+      <div style="padding:${Math.round(28*S)}px ${Math.round(40*S)}px 0;border-top:2px solid ${hc};position:relative;z-index:1;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-direction:${logoLeft?"row":"row-reverse"};">
+          <div style="flex-shrink:0;">${logoHtml}${slogan ? `<div style="font-size:${Math.round(8*S)}pt;color:#888;margin-top:${Math.round(3*S)}px;">${slogan}</div>` : ""}</div>
+          <div style="text-align:right;font-size:${Math.round(8.5*S)}pt;color:#555;line-height:1.6;">
+            <div style="font-weight:700;color:#222;">Schneggenburger GmbH</div>
+            <div>Hefenhoferstrasse 7</div>
+            <div>8580 Sommeri &middot; Tel 071 411 16 87</div>
+          </div>
+        </div>
+        <div style="height:0.5px;background:#ccc;margin:${Math.round(12*S)}px 0;"></div>
+        <div style="font-size:${Math.round(8*S)}pt;color:#aaa;margin-bottom:${Math.round(4*S)}px;">Schneggenburger GmbH &middot; Hefenhoferstrasse 7 &middot; 8580 Sommeri</div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:${Math.round(10*S)}px;">
+          <div style="font-size:${Math.round(15*S)}pt;font-weight:700;color:#111;">${docTitle}</div>
+          ${docInfoHtml}
+        </div>
+      </div>
+      <div style="padding:0 ${Math.round(40*S)}px;flex:1;position:relative;z-index:1;">
+        ${contentBlock}
+      </div>
+      <div style="background:${fc};color:white;padding:${Math.round(6*S)}px ${Math.round(40*S)}px;font-size:${Math.round(8*S)}pt;display:flex;justify-content:space-between;align-items:center;">
+        <span>${footerContact}</span><span>${footerPage}</span>
+      </div>
+    </div>`;
+  }
+
+  // ── Design H: Helvetica Pro ──────────────────────────────────────────────────
+  if (design === "H") {
+    const logoLeft = logo_pos !== "rechts";
+    return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:${Math.round(10*S)}pt;color:#222;min-height:100%;display:flex;flex-direction:column;position:relative;padding-bottom:${Math.round(24*S)}px;box-sizing:border-box;">
+      ${wmHtml}
+      <div style="padding:${Math.round(22*S)}px ${Math.round(40*S)}px 0;position:relative;z-index:1;flex-direction:${logoLeft?"row":"row-reverse"};">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:${Math.round(6*S)}px;">
+          <div style="flex-shrink:0;">${logoHtml}${slogan ? `<div style="font-size:${Math.round(8*S)}pt;color:#aaa;margin-top:${Math.round(3*S)}px;letter-spacing:1px;">${slogan}</div>` : ""}</div>
+          <div style="text-align:right;font-size:${Math.round(8*S)}pt;color:#aaa;line-height:1.6;">
+            <div style="font-weight:700;color:#333;">Schneggenburger GmbH</div>
+            <div>Hefenhoferstrasse 7 &middot; 8580 Sommeri</div>
+          </div>
+        </div>
+        <div style="height:1.5px;background:#222;margin-bottom:1px;"></div>
+        <div style="height:0.5px;background:#bbb;margin-bottom:${Math.round(10*S)}px;"></div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:${Math.round(8*S)}px;">
+          <div style="font-size:${Math.round(14*S)}pt;font-weight:700;color:#111;text-transform:uppercase;letter-spacing:1px;">${docTitle}</div>
+          ${docInfoHtml}
+        </div>
+      </div>
+      <div style="padding:0 ${Math.round(40*S)}px;flex:1;position:relative;z-index:1;">
+        ${contentBlock}
+      </div>
+      <div style="position:relative;z-index:1;">
+        <div style="height:1.5px;background:#222;"></div>
+        <div style="height:0.5px;background:#bbb;margin-bottom:1px;"></div>
+        <div style="padding:${Math.round(4*S)}px ${Math.round(40*S)}px;font-size:${Math.round(8*S)}pt;color:#888;display:flex;justify-content:space-between;">
+          <span>${footerContact}</span><span>${footerPage}</span>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // ── Design I: Corporate Slim ─────────────────────────────────────────────────
+  if (design === "I") {
+    const logoLeft = logo_pos !== "rechts";
+    return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:${Math.round(10*S)}pt;color:#222;min-height:100%;display:flex;position:relative;padding-bottom:${Math.round(24*S)}px;box-sizing:border-box;">
+      ${wmHtml}
+      <div style="width:${Math.round(5*S)}px;background:${hc};flex-shrink:0;z-index:1;"></div>
+      <div style="flex:1;display:flex;flex-direction:column;position:relative;z-index:1;">
+        <div style="padding:${Math.round(22*S)}px ${Math.round(36*S)}px 0;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-direction:${logoLeft?"row":"row-reverse"};margin-bottom:${Math.round(6*S)}px;">
+            <div style="flex-shrink:0;">${logoHtml}${slogan ? `<div style="font-size:${Math.round(8*S)}pt;color:#999;margin-top:${Math.round(3*S)}px;">${slogan}</div>` : ""}</div>
+            <div style="text-align:right;font-size:${Math.round(8*S)}pt;color:#777;line-height:1.6;">
+              <div style="font-weight:700;color:#333;">Schneggenburger GmbH</div>
+              <div>Hefenhoferstrasse 7 &middot; 8580 Sommeri</div>
+            </div>
+          </div>
+          <div style="height:0.5px;background:#ccc;margin-bottom:${Math.round(10*S)}px;"></div>
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:${Math.round(8*S)}px;">
+            <div style="font-size:${Math.round(14*S)}pt;font-weight:700;color:${hc};">${docTitle}</div>
+            ${docInfoHtml}
+          </div>
+        </div>
+        <div style="padding:0 ${Math.round(36*S)}px;flex:1;">
+          ${contentBlock}
+        </div>
+        <div style="background:${fc};color:white;padding:${Math.round(6*S)}px ${Math.round(36*S)}px;font-size:${Math.round(8*S)}pt;display:flex;justify-content:space-between;align-items:center;">
+          <span>${footerContact}</span><span>${footerPage}</span>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // Fallback: Design A
+  return renderA4Preview({ ...vorlage, design: "A" }, docTyp);
 }
 
 // ─── Slider Component ────────────────────────────────────────────────────────

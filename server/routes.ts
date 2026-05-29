@@ -1495,7 +1495,7 @@ html: string): Promise<Buffer> {
         positionen,
         subtotal, mwstPct, mwstBetrag, total: totalInkl,
         showTotals: true,
-        extraHtml: "",
+        extraHtml: rechnung.notiz ? `<div style="margin-top:12px;padding:8px 12px;background:#f9f6f0;border-left:3px solid #6b4c2a;font-size:8.5pt;color:#444;white-space:pre-line;">${rechnung.notiz}</div>` : "",
         ansprechpersonIntern: (req.body as any)?.ansprechpersonIntern || rechnung.ansprechperson_intern || auftrag?.verantwortlicher || "",
         ansprechpersonExtern: (req.body as any)?.ansprechpersonExtern || rechnung.ansprechperson_extern || auftrag?.ansprechperson || "",
       });
@@ -2418,8 +2418,13 @@ html: string): Promise<Buffer> {
         nummer: mahnung.nr || rechnung?.nr || id.substring(0, 8).toUpperCase(),
         datum: datumStr,
         empfaenger,
-        empfaengerStrasse: mahnung.empfaenger_strasse || rechnung?.empfaenger_strasse || "",
-        empfaengerPlzOrt: mahnung.empfaenger_plz_ort || rechnung?.empfaenger_plz_ort || "",
+        ...(() => {
+          const rawStrasse = mahnung.empfaenger_strasse || rechnung?.empfaenger_strasse || "";
+          const rawPlzOrt  = mahnung.empfaenger_plz_ort  || rechnung?.empfaenger_plz_ort  || "";
+          if (rawPlzOrt) return { empfaengerStrasse: rawStrasse, empfaengerPlzOrt: rawPlzOrt };
+          const sp = splitAdresse(rawStrasse);
+          return { empfaengerStrasse: sp.strasse, empfaengerPlzOrt: sp.plzOrt };
+        })(),
         firma:        sMap.firmenname || "Schneggenburger GmbH",
         firmaAdresse: sMap.adresse    || "Hefenhoferstrasse 7",
         firmaPlzOrt:  sMap.plz_ort   || "8580 Sommeri",
@@ -2430,6 +2435,7 @@ html: string): Promise<Buffer> {
         mahngebuehr: mahngebuehr > 0 ? mahngebuehr : undefined,
         total: totalInkl,
         showTotals: true,
+        extraHtml: mahnung.notiz ? `<div style="margin-top:12px;padding:8px 12px;background:#fff3cd;border-left:3px solid #f0ad4e;font-size:8.5pt;color:#444;white-space:pre-line;">${mahnung.notiz}</div>` : "",
       });
 
       const pdfBuf = await renderPdfFromHtml(html);
@@ -4710,6 +4716,14 @@ html: string): Promise<Buffer> {
           watermark_opacity: 15,
           watermark_size: 60,
           watermark_pos: "bottom",
+          absender_pos_h: "links",
+          absender_top_mm: 55,
+          absender_left_mm: 0,
+          block_positions: {},
+          ansprechperson_aktiv: true,
+          ansprechperson_label: "Ansprechperson",
+          ansprechperson_quelle: "manuell",
+          positionstexte: { pos: "Pos.", beschreibung: "Beschreibung", menge: "Menge", einheit: "Einheit", preis: "Preis", total: "Total" },
         }));
         return res.json(defaults);
       }
