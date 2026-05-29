@@ -1401,14 +1401,18 @@ export async function registerRoutes(
   // Kundennummer aus der kunden-Tabelle anhand des Namens suchen
   async function getKundenNr(name: string): Promise<string> {
     if (!name) return "";
-    const nameLower = name.trim().toLowerCase().replace(/\s+/g, " ");
+    // Normalisieren: mehrfache Leerzeichen entfernen, lowercase
+    const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+    const nameLower = norm(name);
     const knResult = await supabase.from("kunden").select("nr,vorname,nachname,firma");
     const knRows = knResult.data || [];
     const found = knRows.find((k: any) => {
-      const fullName = [k.vorname, k.nachname].filter(Boolean).join(" ").trim().toLowerCase().replace(/\s+/g, " ");
-      const firma = (k.firma || "").trim().toLowerCase();
+      const fullName = norm([k.vorname, k.nachname].filter(Boolean).join(" "));
+      const firma = norm(k.firma || "");
       return fullName === nameLower || firma === nameLower ||
-             nameLower.includes(fullName) || fullName.includes(nameLower);
+             nameLower.includes(fullName) || fullName.includes(nameLower) ||
+             // Auch Teilübereinstimmung bei Wörtern (z.B. "Quierin Klaus" ↔ "Quierin  Klaus")
+             fullName.split(" ").filter(Boolean).every((w: string) => nameLower.includes(w));
     });
     return found?.nr || "";
   }
