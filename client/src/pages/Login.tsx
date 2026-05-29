@@ -11,10 +11,12 @@ type Step = "credentials" | "totp";
 export default function Login() {
   const { login, verify2fa } = useAuth();
 
-  // Load background image from settings
+  // Load background image from settings — always fresh, no caching
   const { data: einstellungenList = [] } = useQuery<{ schluessel: string; wert: string }[]>({
     queryKey: ["/api/einstellungen"],
     queryFn: () => apiRequest("GET", "/api/einstellungen").then((r) => r.json()),
+    staleTime: 0,
+    gcTime: 0,
   });
   const loginBg = einstellungenList.find((e) => e.schluessel === "login_hintergrund")?.wert || "";
   const [step, setStep] = useState<Step>("credentials");

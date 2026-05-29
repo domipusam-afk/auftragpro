@@ -424,7 +424,8 @@ export default function Layout({ children }: { children: ReactNode }) {
   const { data: einstellungenList = [] } = useQuery<{ schluessel: string; wert: string }[]>({
     queryKey: ["/api/einstellungen"],
     queryFn: () => apiRequest("GET", "/api/einstellungen").then((r) => r.json()),
-    staleTime: 60000,
+    staleTime: 0,
+    gcTime: 0,
   });
   const appBg = einstellungenList.find((e) => e.schluessel === "app_hintergrund")?.wert || "";
 

@@ -2315,6 +2315,8 @@ html: string): Promise<Buffer> {
   // ─── Einstellungen (Key/Value Store) ─────────────────────────────────────────
   app.get("/api/einstellungen", async (_req, res) => {
     try {
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+      res.setHeader("Pragma", "no-cache");
       const { data, error } = await supabase.from("einstellungen").select("schluessel,wert");
       if (error) throw error;
       res.json(data || []);
