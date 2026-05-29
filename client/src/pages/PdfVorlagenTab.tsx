@@ -280,7 +280,7 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
   const wmSz = watermark_size || 60;
   const wmHtml = watermark_data_url
     ? `<div style="position:absolute;${wmStyle};z-index:0;pointer-events:none;">
-        <img src="${watermark_data_url}" style="opacity:${wmOp};${watermark_pos==='full'?`width:100%;height:100%;object-fit:cover`:`max-width:${wmSz}%;max-height:${wmSz}%;object-fit:contain`};display:block;"/></div>`
+        <img src="${watermark_data_url}" style="opacity:${wmOp};${watermark_pos==='full'?`width:100%;height:100%;object-fit:cover`:`width:${wmSz}%;max-width:none;object-fit:contain`};display:block;"/></div>`
     : "";
 
   // Empfänger-Block (linksbündig, kein Label)
@@ -1233,8 +1233,9 @@ export default function PdfVorlagenTab() {
                 <StyledSlider
                   label="Grösse"
                   value={vorlage.watermark_size}
-                  min={20}
-                  max={100}
+                  min={10}
+                  max={300}
+                  unit="%"
                   onChange={(v) => updateVorlage({ watermark_size: v })}
                 />
                 <div className="space-y-1.5">

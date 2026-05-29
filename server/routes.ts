@@ -909,7 +909,7 @@ export async function registerRoutes(
     };
     const wmStyle = wmPosMap[wmPos] || wmPosMap["bottom"];
     const wmHtml = wmUrl ? `<div style="position:absolute;${wmStyle};z-index:0;pointer-events:none;">
-      <img src="${wmUrl}" style="opacity:${wmOpacity};${wmPos==="full"?`width:100%;height:100%;object-fit:cover`:`max-width:${wmSize}%;max-height:${wmSize}%;object-fit:contain`};display:block;" /></div>` : "";
+      <img src="${wmUrl}" style="opacity:${wmOpacity};${wmPos==="full"?`width:100%;height:100%;object-fit:cover`:`width:${wmSize}%;max-width:none;object-fit:contain`};display:block;" /></div>` : "";
 
     // Header
     let headerHtml = "";
