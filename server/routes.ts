@@ -4055,31 +4055,38 @@ html: string): Promise<Buffer> {
         const p1 = addPage();
         let y = p1.curY();
 
-        // Soll-Ist Vergleich header row
-        const cLbl = mL + 4; const cSoll = mL + 230; const cIst = mL + 360; const cAbw = W - mR - 5;
+        // Soll-Ist Vergleich — Spalten neu verteilt (keine Überlappung)
+        // cLbl=54, cSoll=220, cSollR=330, cIst=360, cIstR=470, cAbw=495
+        const cLbl = mL + 4;    // 54  — Positionsspalte (Label)
+        const cSoll = mL + 170; // 220 — Soll-Spalte Start
+        const cSollR = mL + 280; // 330 — Soll rechtsbundig-Anker
+        const cIst = mL + 300;  // 350 — Ist-Spalte Start
+        const cIstR = mL + 410; // 460 — Ist rechtsbundig-Anker
+        const cAbwR = W - mR;   // 545 — Abweichung rechtsbundig-Anker
 
-        p1.rect(mL, y - 2, pageW, 14, lgrey);
-        p1.d("Position", cLbl, y, 8, true, grey);
-        p1.d("Soll (VK)", cSoll, y, 8, true, grey);
-        p1.d("Ist (NAKA)", cIst, y, 8, true, grey);
-        p1.d("Abweichung", cAbw - fontB.widthOfTextAtSize("Abweichung", 8), y, 8, true, grey);
-        y -= 4; p1.ln(mL, y, W - mR, y, 0.4, grey); y -= 3;
-        p1.setY(y);
+        currentPageCtx!.rect(mL, y - 2, pageW, 14, lgrey);
+        currentPageCtx!.d("Position", cLbl, y, 8, true, grey);
+        currentPageCtx!.d("Soll (VK)", cSoll, y, 8, true, grey);
+        currentPageCtx!.d("Ist (NAKA)", cIst, y, 8, true, grey);
+        const abwHdrW = fontB.widthOfTextAtSize("Abweichung", 8);
+        currentPageCtx!.d("Abweichung", cAbwR - abwHdrW, y, 8, true, grey);
+        y -= 4; currentPageCtx!.ln(mL, y, W - mR, y, 0.4, grey); y -= 3;
 
         function siRow(lbl: string, soll: number, ist: number, isCHF: boolean, bold: boolean) {
+          y = checkPageBreak(y);
           const abw = ist - soll;
           const sollStr = isCHF ? fmt(soll) : fmtH(soll * 60);
           const istStr = isCHF ? fmt(ist) : fmtH(ist * 60);
           const abwStr = (abw >= 0 ? "+" : "") + (isCHF ? fmt(abw) : fmtH(abw * 60));
           const col = abw > 0 ? rgb(0.75, 0.10, 0.10) : abw < 0 ? rgb(0.10, 0.55, 0.10) : black;
           const f = bold ? fontB : font;
-          p1.d(lbl, cLbl, y, 9, bold);
+          currentPageCtx!.d(lbl, cLbl, y, 9, bold);
           const sw1 = f.widthOfTextAtSize(sollStr, 9);
           const sw2 = f.widthOfTextAtSize(istStr, 9);
           const sw3 = font.widthOfTextAtSize(abwStr, 9);
-          p1.d(sollStr, cSoll + 95 - sw1, y, 9, bold);
-          p1.d(istStr, cIst + 95 - sw2, y, 9, bold);
-          p1.d(abwStr, cAbw - sw3, y, 9, false, col);
+          currentPageCtx!.d(sollStr, cSollR - sw1, y, 9, bold);
+          currentPageCtx!.d(istStr, cIstR - sw2, y, 9, bold);
+          currentPageCtx!.d(abwStr, cAbwR - sw3, y, 9, false, col);
           y -= 14;
         }
 
@@ -4088,47 +4095,52 @@ html: string): Promise<Buffer> {
         const istStunden = istTotalMinuten / 60;
         siRow("Stunden (CHF)", vkStundenCHF, istStundenCHF, true, false);
         siRow("Stunden (h)", vkSollStunden, istStunden, false, false);
-        y -= 4; p1.ln(mL, y + 8, W - mR, y + 8, 0.3, lgrey); y -= 4;
+        y -= 4; currentPageCtx!.ln(mL, y + 8, W - mR, y + 8, 0.3, lgrey); y -= 4;
         siRow("Material (CHF)", vkMaterialCHF, istMaterialCHF, true, false);
         siRow("Fremdleistungen (CHF)", vkFremdCHF, istFremdCHF, true, false);
         siRow("SOEK (CHF)", vkSoekCHF, istSoekCHF, true, false);
-        y -= 4; p1.ln(mL, y + 8, W - mR, y + 8, 0.6, grey); y -= 4;
+        y -= 4; currentPageCtx!.ln(mL, y + 8, W - mR, y + 8, 0.6, grey); y -= 4;
         siRow("Subtotal", vkSubtotal, istSubtotal, true, true);
         y -= 6;
 
-        // Individual ort stunden breakdown
-        p1.ln(mL, y + 8, W - mR, y + 8, 0.3, lgrey); y -= 4;
-        p1.d("Stundendetail nach Ort", mL + 4, y, 8.5, true, brown); y -= 14;
+        // Stundendetail nach Ort
+        y = checkPageBreak(y, 100);
+        currentPageCtx!.ln(mL, y + 8, W - mR, y + 8, 0.3, lgrey); y -= 4;
+        currentPageCtx!.d("Stundendetail nach Ort", mL + 4, y, 8.5, true, brown); y -= 14;
         for (const [key, val] of Object.entries(ortMap)) {
+          y = checkPageBreak(y);
           const ortLabel = key.replace("::", " · ");
           const std = val.minuten / 60;
-          p1.d(`Ist – ${ortLabel}:`, cLbl, y, 8.5, false, grey);
-          p1.d(`${std.toFixed(2)} h × CHF ${val.satz.toFixed(2)} = ${fmt(std * val.satz)}`, cSoll, y, 8.5, false);
+          currentPageCtx!.d(`Ist – ${ortLabel}:`, cLbl, y, 8.5, false, grey);
+          const ortDetail = `${std.toFixed(2)} h × CHF ${val.satz.toFixed(2)} = ${fmt(std * val.satz)}`;
+          currentPageCtx!.d(ortDetail, cSoll, y, 8.5, false);
           y -= 12;
         }
         y -= 10;
 
-        // VK breakdown
-        p1.d("VK-Offertpreis Referenz:", mL + 4, y, 8.5, true, brown); y -= 14;
-        p1.d("Offertpreis (brutto):", W - mR - 230, y, 8.5, false, grey);
+        // VK-Offertpreis Referenz
+        y = checkPageBreak(y, 80);
+        currentPageCtx!.d("VK-Offertpreis Referenz:", mL + 4, y, 8.5, true, brown); y -= 14;
+        currentPageCtx!.d("Offertpreis (brutto):", W - mR - 230, y, 8.5, false, grey);
         const bruttoStr = fmt(vkBrutto);
         const bsw = fontB.widthOfTextAtSize(bruttoStr, 9);
-        p1.d(bruttoStr, W - mR - bsw, y, 9, true, orange);
+        currentPageCtx!.d(bruttoStr, W - mR - bsw, y, 9, true, orange);
         y -= 14;
 
         const diffStr = (istSubtotal - vkSubtotal >= 0 ? "+" : "") + fmt(istSubtotal - vkSubtotal);
         const diffCol = istSubtotal > vkSubtotal ? rgb(0.75, 0.10, 0.10) : rgb(0.10, 0.55, 0.10);
-        p1.d("Kosten-Abweichung (Ist–Soll):", W - mR - 230, y, 8.5, false, grey);
+        currentPageCtx!.d("Kosten-Abweichung (Ist–Soll):", W - mR - 230, y, 8.5, false, grey);
         const dsw = fontB.widthOfTextAtSize(diffStr, 9);
-        p1.d(diffStr, W - mR - dsw, y, 9, true, diffCol);
+        currentPageCtx!.d(diffStr, W - mR - dsw, y, 9, true, diffCol);
         y -= 20;
 
         if ((nakaMaterial as any[]).length > 0) {
-          p1.ln(mL, y + 4, W - mR, y + 4, 0.3, lgrey); y -= 8;
-          p1.d("Ist-Material (erfasst)", mL + 4, y, 8.5, true, brown); y -= 14;
+          y = checkPageBreak(y, 100);
+          currentPageCtx!.ln(mL, y + 4, W - mR, y + 4, 0.3, lgrey); y -= 8;
+          currentPageCtx!.d("Ist-Material (erfasst)", mL + 4, y, 8.5, true, brown); y -= 14;
           for (const r of (nakaMaterial as any[])) {
             y = checkPageBreak(y);
-            currentPageCtx!.d(`${(r.bezeichnung || "").slice(0, 30)} – ${r.lieferant || "-"}`, cLbl, y, 8.5, false);
+            currentPageCtx!.d(`${(r.bezeichnung || "").slice(0, 35)} – ${r.lieferant || "-"}`, cLbl, y, 8.5, false);
             const ms = font.widthOfTextAtSize(fmt(Number(r.betrag_chf)), 8.5);
             currentPageCtx!.d(fmt(Number(r.betrag_chf)), W - mR - ms, y, 8.5, false);
             y -= 12;
@@ -4136,25 +4148,31 @@ html: string): Promise<Buffer> {
         }
 
         if ((nakaFremd as any[]).length > 0) {
-          p1.ln(mL, y + 4, W - mR, y + 4, 0.3, lgrey); y -= 8;
-          p1.d("Ist-Fremdleistungen (erfasst)", mL + 4, y, 8.5, true, brown); y -= 14;
+          y = checkPageBreak(y, 100);
+          currentPageCtx!.ln(mL, y + 4, W - mR, y + 4, 0.3, lgrey); y -= 8;
+          currentPageCtx!.d("Ist-Fremdleistungen (erfasst)", mL + 4, y, 8.5, true, brown); y -= 14;
           for (const r of (nakaFremd as any[])) {
             y = checkPageBreak(y);
-            currentPageCtx!.d(`${(r.bezeichnung || "").slice(0, 30)} – ${r.lieferant || "-"}`, cLbl, y, 8.5, false);
+            currentPageCtx!.d(`${(r.bezeichnung || "").slice(0, 35)} – ${r.lieferant || "-"}`, cLbl, y, 8.5, false);
             const fs2 = font.widthOfTextAtSize(fmt(Number(r.betrag_chf)), 8.5);
             currentPageCtx!.d(fmt(Number(r.betrag_chf)), W - mR - fs2, y, 8.5, false);
             y -= 12;
           }
         }
 
-        // Footer — farbiger Balken wie Offerte
-        const pg1 = pdfDoc.getPages()[0];
-        pg1.drawRectangle({ x: 0, y: 0, width: W, height: 28, color: brown });
-        const ftxt = `Nachkalkulation / Soll-Ist-Vergleich  ${auftrag.nr} – Schneggenburger GmbH`;
-        pg1.drawText(ftxt, { x: mL, y: 10, size: 7.5, font, color: rgb(1,1,1) });
-        const erstelltStr = `Erstellt: ${new Date().toLocaleDateString("de-CH")}`;
-        const esw = font.widthOfTextAtSize(erstelltStr, 7.5);
-        pg1.drawText(erstelltStr, { x: W - mR - esw, y: 10, size: 7.5, font, color: rgb(1,1,1) });
+        // Footer auf allen Seiten
+        const allPages = pdfDoc.getPages();
+        const totalPages = allPages.length;
+        for (let pi = 0; pi < allPages.length; pi++) {
+          const pg2 = allPages[pi];
+          pg2.drawRectangle({ x: 0, y: 0, width: W, height: 22, color: brown });
+          const wh2 = rgb(1, 1, 1);
+          const firmaFull2 = (offSMap.firmenname||"Schneggenburger GmbH")+" · "+(offSMap.adresse||"Hefenhoferstrasse 7")+" · "+(offSMap.plz_ort||"8580 Sommeri");
+          pg2.drawText(firmaFull2, { x: mL, y: 7, size: 6.5, font, color: wh2 });
+          const pgStr = `Seite ${pi + 1}/${totalPages} | Erstellt: ${new Date().toLocaleDateString("de-CH")}`;
+          const pgW = font.widthOfTextAtSize(pgStr, 6.5);
+          pg2.drawText(pgStr, { x: W - mR - pgW, y: 7, size: 6.5, font, color: wh2 });
+        }
       }
 
       const bytes = await pdfDoc.save();
