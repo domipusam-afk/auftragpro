@@ -284,58 +284,64 @@ function GlobalSearch({ collapsed }: { collapsed: boolean }) {
         <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 px-4" onClick={() => setOpen(false)}>
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
           <div
-            className="relative bg-background border rounded-xl shadow-2xl w-full max-w-lg overflow-hidden"
+            className="relative rounded-xl shadow-2xl w-full max-w-lg overflow-hidden"
+            style={{ background: "hsl(var(--sidebar))", border: "1px solid rgba(255,255,255,0.12)" }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center gap-3 px-4 py-3 border-b">
-              <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+            <div className="flex items-center gap-3 px-4 py-3" style={{ borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
+              <Search className="h-4 w-4 shrink-0" style={{ color: "rgba(255,255,255,0.5)" }} />
               <input
                 ref={inputRef}
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Aufträge, Kunden, Rechnungen, Offerten…"
-                className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                className="flex-1 bg-transparent text-sm outline-none"
+                style={{ color: "rgba(255,255,255,0.9)", caretColor: "white" }}
                 data-testid="input-global-search"
                 onKeyDown={(e) => e.key === "Escape" && setOpen(false)}
               />
-              {loading && <div className="h-4 w-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />}
+              {loading && <div className="h-4 w-4 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: "rgba(255,255,255,0.4)", borderTopColor: "transparent" }} />}
               <kbd
-                className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded cursor-pointer"
+                className="text-xs px-1.5 py-0.5 rounded cursor-pointer"
+                style={{ color: "rgba(255,255,255,0.4)", background: "rgba(255,255,255,0.08)" }}
                 onClick={() => setOpen(false)}
               >Esc</kbd>
             </div>
 
             <div className="max-h-96 overflow-y-auto p-2">
               {q.length < 2 && (
-                <div className="px-3 py-8 text-center text-sm text-muted-foreground">
+                <div className="px-3 py-8 text-center text-sm" style={{ color: "rgba(255,255,255,0.4)" }}>
                   Mindestens 2 Zeichen eingeben…
                 </div>
               )}
 
               {q.length >= 2 && !loading && !hasResults && (
-                <div className="px-3 py-8 text-center text-sm text-muted-foreground">
+                <div className="px-3 py-8 text-center text-sm" style={{ color: "rgba(255,255,255,0.4)" }}>
                   Keine Ergebnisse für „{q}"
                 </div>
               )}
 
               {results?.auftraege?.length > 0 && (
                 <div className="mb-2">
-                  <div className="px-3 py-1 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Aufträge</div>
+                  <div className="px-3 py-1 text-[10px] uppercase tracking-wider font-semibold" style={{ color: "rgba(255,255,255,0.35)" }}>Aufträge</div>
                   {results.auftraege.map((a: any) => (
                     <button
                       key={a.id}
                       onClick={() => go(`/auftraege/${a.id}`)}
-                      className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg hover:bg-muted/60 text-left"
+                      className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-left transition-colors"
+                      style={{ color: "rgba(255,255,255,0.85)" }}
+                      onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")}
+                      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                     >
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="font-mono text-xs text-muted-foreground">{a.nr}</span>
+                          <span className="font-mono text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>{a.nr}</span>
                           <span className="text-sm font-medium truncate">{a.titel}</span>
                         </div>
-                        <div className="text-xs text-muted-foreground truncate">{a.kunde}</div>
+                        <div className="text-xs truncate" style={{ color: "rgba(255,255,255,0.45)" }}>{a.kunde}</div>
                       </div>
                       {a.angebots_betrag > 0 && (
-                        <span className="text-xs font-semibold tabular-nums shrink-0">CHF {Number(a.angebots_betrag).toLocaleString("de-CH")}</span>
+                        <span className="text-xs font-semibold tabular-nums shrink-0" style={{ color: "rgba(255,255,255,0.6)" }}>CHF {Number(a.angebots_betrag).toLocaleString("de-CH")}</span>
                       )}
                     </button>
                   ))}
@@ -344,15 +350,18 @@ function GlobalSearch({ collapsed }: { collapsed: boolean }) {
 
               {results?.kunden?.length > 0 && (
                 <div className="mb-2">
-                  <div className="px-3 py-1 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Kunden</div>
+                  <div className="px-3 py-1 text-[10px] uppercase tracking-wider font-semibold" style={{ color: "rgba(255,255,255,0.35)" }}>Kunden</div>
                   {results.kunden.map((k: any, i: number) => (
                     <button
                       key={i}
                       onClick={() => go(`/auftraege/${k.auftrag_id}`)}
-                      className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/60 text-left"
+                      className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors"
+                      style={{ color: "rgba(255,255,255,0.85)" }}
+                      onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")}
+                      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                     >
                       <span className="text-sm">{k.name}</span>
-                      <span className="text-xs text-muted-foreground">→ {k.auftrag_nr}</span>
+                      <span className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>→ {k.auftrag_nr}</span>
                     </button>
                   ))}
                 </div>
@@ -360,16 +369,19 @@ function GlobalSearch({ collapsed }: { collapsed: boolean }) {
 
               {results?.rechnungen?.length > 0 && (
                 <div className="mb-2">
-                  <div className="px-3 py-1 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Rechnungen</div>
+                  <div className="px-3 py-1 text-[10px] uppercase tracking-wider font-semibold" style={{ color: "rgba(255,255,255,0.35)" }}>Rechnungen</div>
                   {results.rechnungen.map((r: any) => (
                     <button
                       key={r.id}
                       onClick={() => go(`/rechnungen`)}
-                      className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg hover:bg-muted/60 text-left"
+                      className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-left transition-colors"
+                      style={{ color: "rgba(255,255,255,0.85)" }}
+                      onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")}
+                      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                     >
                       <span className="font-mono text-sm">{r.nr}</span>
-                      <span className="text-xs text-muted-foreground">{r.bezahlt_am ? "✓ Bezahlt" : "Offen"}</span>
-                      <span className="text-xs font-semibold tabular-nums">CHF {Number(r.betrag).toLocaleString("de-CH")}</span>
+                      <span className="text-xs" style={{ color: r.bezahlt_am ? "rgba(134,239,172,0.8)" : "rgba(255,255,255,0.4)" }}>{r.bezahlt_am ? "✓ Bezahlt" : "Offen"}</span>
+                      <span className="text-xs font-semibold tabular-nums" style={{ color: "rgba(255,255,255,0.6)" }}>CHF {Number(r.betrag).toLocaleString("de-CH")}</span>
                     </button>
                   ))}
                 </div>
@@ -377,14 +389,17 @@ function GlobalSearch({ collapsed }: { collapsed: boolean }) {
 
               {results?.offerten?.length > 0 && (
                 <div className="mb-2">
-                  <div className="px-3 py-1 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Offerten</div>
+                  <div className="px-3 py-1 text-[10px] uppercase tracking-wider font-semibold" style={{ color: "rgba(255,255,255,0.35)" }}>Offerten</div>
                   {results.offerten.map((o: any) => (
                     <button
                       key={o.id}
                       onClick={() => go(`/auftraege/${o.auftrag_id}`)}
-                      className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/60 text-left"
+                      className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors"
+                      style={{ color: "rgba(255,255,255,0.85)" }}
+                      onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")}
+                      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                     >
-                      <span className="font-mono text-xs text-muted-foreground">{o.nr}</span>
+                      <span className="font-mono text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>{o.nr}</span>
                       <span className="text-sm truncate">{o.titel}</span>
                     </button>
                   ))}
