@@ -24,18 +24,33 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Search, Eye, Pencil, Trash2 } from "lucide-react";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Plus, Search, Eye, Pencil, Trash2, ChevronDown, ChevronRight, ArchiveRestore, CheckCircle2 } from "lucide-react";
 import type { Auftrag, Status, Prioritaet } from "@shared/schema";
 import { STATUS_LABEL, STATUS_ORDER, PRIORITAETEN } from "@shared/schema";
 import { STATUS_BADGE, PRIO_BADGE, formatCHF, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 
+// Status, die als "abgeschlossen / archiviert" gelten
+const DONE_STATUSES: Status[] = ["abgeschlossen", "storniert"];
+
 export default function AuftragsListe() {
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [prioFilter, setPrioFilter] = useState<string>("all");
   const [toDelete, setToDelete] = useState<Auftrag | null>(null);
+  const [archivOpen, setArchivOpen] = useState(false);
   const { toast } = useToast();
 
   const { data, isLoading } = useQuery<Auftrag[]>({
@@ -57,30 +72,169 @@ export default function AuftragsListe() {
     },
   });
 
-  const filtered = (data || []).filter((a) => {
-    if (statusFilter !== "all" && a.status !== statusFilter) return false;
-    if (prioFilter !== "all" && a.prioritaet !== prioFilter) return false;
-    if (q) {
-      const s = q.toLowerCase();
-      if (
-        !a.titel?.toLowerCase().includes(s) &&
-        !a.kunde?.toLowerCase().includes(s) &&
-        !a.nr?.toLowerCase().includes(s)
-      )
-        return false;
-    }
-    return true;
+  const reactivateMut = useMutation({
+    mutationFn: async (id: string) => {
+      const r = await apiRequest("PATCH", `/api/auftraege/${id}/status`, { status: "in_arbeit" });
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auftraege"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
+      toast({ title: "Auftrag reaktiviert", description: "Status auf «In Arbeit» zurückgesetzt." });
+    },
+    onError: (e: Error) => {
+      toast({ title: "Fehler", description: e.message, variant: "destructive" });
+    },
   });
 
+  const allAuftraege = data || [];
+
+  // Aktive Aufträge (nicht abgeschlossen / storniert)
+  const aktiveFiltered = allAuftraege
+    .filter((a) => !DONE_STATUSES.includes(a.status as Status))
+    .filter((a) => {
+      if (statusFilter !== "all" && a.status !== statusFilter) return false;
+      if (prioFilter !== "all" && a.prioritaet !== prioFilter) return false;
+      if (q) {
+        const s = q.toLowerCase();
+        if (
+          !a.titel?.toLowerCase().includes(s) &&
+          !a.kunde?.toLowerCase().includes(s) &&
+          !a.nr?.toLowerCase().includes(s)
+        )
+          return false;
+      }
+      return true;
+    });
+
+  // Abgeschlossene / stornierte Aufträge
+  const archivFiltered = allAuftraege
+    .filter((a) => DONE_STATUSES.includes(a.status as Status))
+    .filter((a) => {
+      if (q) {
+        const s = q.toLowerCase();
+        if (
+          !a.titel?.toLowerCase().includes(s) &&
+          !a.kunde?.toLowerCase().includes(s) &&
+          !a.nr?.toLowerCase().includes(s)
+        )
+          return false;
+      }
+      return true;
+    })
+    // Neueste zuerst
+    .sort((a, b) => new Date(b.erstellt).getTime() - new Date(a.erstellt).getTime());
+
+  // Status-Filter-Optionen: nur aktive Status anzeigen (abgeschlossen im Archiv)
+  const activeStatusOptions = STATUS_ORDER.filter((s) => !DONE_STATUSES.includes(s));
+
+  function AuftragRow({ a, showReactivate = false }: { a: Auftrag; showReactivate?: boolean }) {
+    return (
+      <tr
+        key={a.id}
+        data-testid={`row-${a.id}`}
+        className="hover:bg-muted/30 transition-colors"
+      >
+        <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{a.nr}</td>
+        <td className="px-4 py-3">
+          <Link href={`/auftraege/${a.id}`}>
+            <a className="font-medium hover:text-primary">{a.titel}</a>
+          </Link>
+        </td>
+        <td className="px-4 py-3 text-muted-foreground">{a.kunde}</td>
+        <td className="px-4 py-3">
+          <Badge variant="outline" className={cn(STATUS_BADGE[a.status])}>
+            {STATUS_LABEL[a.status]}
+          </Badge>
+        </td>
+        <td className="px-4 py-3">
+          <Badge variant="outline" className={cn(PRIO_BADGE[a.prioritaet])}>
+            {a.prioritaet}
+          </Badge>
+        </td>
+        <td className="px-4 py-3 text-right font-medium tabular-nums">
+          {formatCHF(a.angebots_betrag, a.waehrung)}
+        </td>
+        <td className="px-4 py-3 text-right text-muted-foreground text-xs">
+          {formatDate(a.erstellt)}
+        </td>
+        <td className="px-4 py-3">
+          <div className="flex items-center justify-end gap-1">
+            <Link href={`/auftraege/${a.id}`}>
+              <a>
+                <Button size="icon" variant="ghost" data-testid={`button-view-${a.id}`}>
+                  <Eye className="h-4 w-4" />
+                </Button>
+              </a>
+            </Link>
+            <Link href={`/auftraege/${a.id}/bearbeiten`}>
+              <a>
+                <Button size="icon" variant="ghost" data-testid={`button-edit-${a.id}`}>
+                  <Pencil className="h-4 w-4" />
+                </Button>
+              </a>
+            </Link>
+            {showReactivate ? (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      data-testid={`button-reactivate-${a.id}`}
+                      onClick={() => reactivateMut.mutate(a.id)}
+                      disabled={reactivateMut.isPending}
+                      className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                    >
+                      <ArchiveRestore className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="left">
+                    <p>Zu aktiven Aufträgen zurückschieben</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            ) : null}
+            <Button
+              size="icon"
+              variant="ghost"
+              data-testid={`button-delete-${a.id}`}
+              onClick={() => setToDelete(a)}
+            >
+              <Trash2 className="h-4 w-4 text-destructive" />
+            </Button>
+          </div>
+        </td>
+      </tr>
+    );
+  }
+
+  const tableHead = (
+    <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
+      <tr>
+        <th className="text-left px-4 py-3 font-medium">Nr.</th>
+        <th className="text-left px-4 py-3 font-medium">Titel</th>
+        <th className="text-left px-4 py-3 font-medium">Kunde</th>
+        <th className="text-left px-4 py-3 font-medium">Status</th>
+        <th className="text-left px-4 py-3 font-medium">Priorität</th>
+        <th className="text-right px-4 py-3 font-medium">Betrag</th>
+        <th className="text-right px-4 py-3 font-medium">Erstellt</th>
+        <th className="px-4 py-3"></th>
+      </tr>
+    </thead>
+  );
+
   return (
-    <div className="p-4 md:p-8 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold" style={{ fontFamily: "var(--font-display)" }}>
             Aufträge
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {filtered.length} von {data?.length ?? 0} Aufträgen
+            {aktiveFiltered.length} aktive Aufträge
+            {archivFiltered.length > 0 && ` · ${archivFiltered.length} abgeschlossen`}
           </p>
         </div>
         <Link href="/neu">
@@ -96,7 +250,8 @@ export default function AuftragsListe() {
         </Link>
       </div>
 
-      <Card className="p-4 mb-4 bg-card">
+      {/* Filter */}
+      <Card className="p-4 bg-card">
         <div className="flex flex-col md:flex-row gap-3">
           <div className="relative flex-1">
             <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -114,7 +269,7 @@ export default function AuftragsListe() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Alle Status</SelectItem>
-              {STATUS_ORDER.concat(["storniert"] as Status[]).map((s) => (
+              {activeStatusOptions.map((s) => (
                 <SelectItem key={s} value={s}>
                   {STATUS_LABEL[s]}
                 </SelectItem>
@@ -137,6 +292,7 @@ export default function AuftragsListe() {
         </div>
       </Card>
 
+      {/* ── Aktive Aufträge ── */}
       <Card className="bg-card overflow-hidden">
         {isLoading ? (
           <div className="p-6 space-y-3">
@@ -144,90 +300,19 @@ export default function AuftragsListe() {
             <Skeleton className="h-10" />
             <Skeleton className="h-10" />
           </div>
-        ) : filtered.length === 0 ? (
+        ) : aktiveFiltered.length === 0 ? (
           <div className="p-12 text-center text-muted-foreground text-sm">
-            Keine Aufträge gefunden.
+            {q || statusFilter !== "all" || prioFilter !== "all"
+              ? "Keine Aufträge gefunden."
+              : "Alle Aufträge sind abgeschlossen."}
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
-                <tr>
-                  <th className="text-left px-4 py-3 font-medium">Nr.</th>
-                  <th className="text-left px-4 py-3 font-medium">Titel</th>
-                  <th className="text-left px-4 py-3 font-medium">Kunde</th>
-                  <th className="text-left px-4 py-3 font-medium">Status</th>
-                  <th className="text-left px-4 py-3 font-medium">Priorität</th>
-                  <th className="text-right px-4 py-3 font-medium">Betrag</th>
-                  <th className="text-right px-4 py-3 font-medium">Erstellt</th>
-                  <th className="px-4 py-3"></th>
-                </tr>
-              </thead>
+              {tableHead}
               <tbody className="divide-y">
-                {filtered.map((a) => (
-                  <tr
-                    key={a.id}
-                    data-testid={`row-${a.id}`}
-                    className="hover:bg-muted/30 transition-colors"
-                  >
-                    <td className="px-4 py-3 font-mono text-xs">{a.nr}</td>
-                    <td className="px-4 py-3">
-                      <Link href={`/auftraege/${a.id}`}>
-                        <a className="font-medium hover:text-primary">{a.titel}</a>
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">{a.kunde}</td>
-                    <td className="px-4 py-3">
-                      <Badge variant="outline" className={cn(STATUS_BADGE[a.status])}>
-                        {STATUS_LABEL[a.status]}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge variant="outline" className={cn(PRIO_BADGE[a.prioritaet])}>
-                        {a.prioritaet}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3 text-right font-medium tabular-nums">
-                      {formatCHF(a.angebots_betrag, a.waehrung)}
-                    </td>
-                    <td className="px-4 py-3 text-right text-muted-foreground text-xs">
-                      {formatDate(a.erstellt)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-1">
-                        <Link href={`/auftraege/${a.id}`}>
-                          <a>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              data-testid={`button-view-${a.id}`}
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                          </a>
-                        </Link>
-                        <Link href={`/auftraege/${a.id}/bearbeiten`}>
-                          <a>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              data-testid={`button-edit-${a.id}`}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                          </a>
-                        </Link>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          data-testid={`button-delete-${a.id}`}
-                          onClick={() => setToDelete(a)}
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
+                {aktiveFiltered.map((a) => (
+                  <AuftragRow key={a.id} a={a} showReactivate={false} />
                 ))}
               </tbody>
             </table>
@@ -235,6 +320,67 @@ export default function AuftragsListe() {
         )}
       </Card>
 
+      {/* ── Abgeschlossene Projekte (Archiv) ── */}
+      {(archivFiltered.length > 0 || !isLoading) && (
+        <Collapsible open={archivOpen} onOpenChange={setArchivOpen}>
+          <CollapsibleTrigger asChild>
+            <button
+              className="w-full flex items-center justify-between px-4 py-3 rounded-lg border bg-card hover:bg-muted/30 transition-colors text-left"
+              data-testid="toggle-archiv"
+            >
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-semibold text-muted-foreground">
+                  Abgeschlossene Projekte
+                </span>
+                {archivFiltered.length > 0 && (
+                  <Badge variant="secondary" className="text-xs px-1.5 py-0 h-5">
+                    {archivFiltered.length}
+                  </Badge>
+                )}
+              </div>
+              {archivOpen
+                ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                : <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              }
+            </button>
+          </CollapsibleTrigger>
+
+          <CollapsibleContent>
+            <Card className="mt-2 bg-card overflow-hidden border-dashed">
+              {archivFiltered.length === 0 ? (
+                <div className="p-8 text-center text-muted-foreground text-sm">
+                  Noch keine abgeschlossenen Aufträge.
+                </div>
+              ) : (
+                <>
+                  <div className="px-4 py-2.5 bg-muted/30 border-b flex items-center justify-between">
+                    <p className="text-xs text-muted-foreground">
+                      Abgeschlossene und stornierte Aufträge · Mit{" "}
+                      <span className="inline-flex items-center gap-1 text-blue-600 font-medium">
+                        <ArchiveRestore className="h-3 w-3" /> Reaktivieren
+                      </span>{" "}
+                      zurück zu aktiven Aufträgen schieben
+                    </p>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm opacity-80">
+                      {tableHead}
+                      <tbody className="divide-y">
+                        {archivFiltered.map((a) => (
+                          <AuftragRow key={a.id} a={a} showReactivate={true} />
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </Card>
+          </CollapsibleContent>
+        </Collapsible>
+      )}
+
+      {/* Delete Dialog */}
       <AlertDialog open={!!toDelete} onOpenChange={(o) => !o && setToDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
