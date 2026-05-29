@@ -2090,22 +2090,23 @@ export default function AuftragDetail({ id }: Props) {
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <span className="font-mono text-xs text-muted-foreground">{data.nr}</span>
-              <Badge variant="outline" className={cn(STATUS_BADGE[data.status])}>
+              <span className="font-mono text-xs bg-background/80 backdrop-blur-sm rounded px-1 text-muted-foreground">{data.nr}</span>
+              <Badge variant="outline" className={cn(STATUS_BADGE[data.status], "bg-background/80 backdrop-blur-sm")}>
                 {STATUS_LABEL[data.status]}
               </Badge>
-              <Badge variant="outline" className={cn(PRIO_BADGE[data.prioritaet])}>
+              <Badge variant="outline" className={cn(PRIO_BADGE[data.prioritaet], "bg-background/80 backdrop-blur-sm")}>
                 {data.prioritaet}
               </Badge>
             </div>
-            <h1 className="text-xl font-bold" style={{ fontFamily: "var(--font-display)" }}>
+            <h1 className="text-xl font-bold bg-background/80 backdrop-blur-sm rounded px-1" style={{ fontFamily: "var(--font-display)" }}>
               {data.titel}
             </h1>
-            <p className="text-sm text-muted-foreground mt-1">{data.kunde}</p>
+            <p className="text-sm text-muted-foreground mt-1 bg-background/80 backdrop-blur-sm rounded px-1">{data.kunde}</p>
           </div>
           <div className="flex gap-2 flex-wrap">
             <Button
               variant="outline"
+              className="bg-background/80 backdrop-blur-sm border border-border"
               onClick={async () => {
                 try {
                   const r = await apiRequest("POST", `/api/auftraege/${id}/lieferschein-pdf`, { ansprechpersonIntern: auftrag.verantwortlicher || "" });
@@ -2122,6 +2123,7 @@ export default function AuftragDetail({ id }: Props) {
             </Button>
             <Button
               variant="outline"
+              className="bg-background/80 backdrop-blur-sm border border-border"
               onClick={async () => {
                 try {
                   const r = await apiRequest("POST", `/api/auftraege/${id}/auftragsbestaetigung-pdf`, { ansprechpersonIntern: auftrag.verantwortlicher || "" });
@@ -2138,7 +2140,7 @@ export default function AuftragDetail({ id }: Props) {
             </Button>
             <Link href={`/vorkalkulation/${id}`}>
               <a>
-                <Button variant="outline" data-testid="button-vorkalkulation" style={{ color: "#1a3a6b" }}>
+                <Button variant="outline" data-testid="button-vorkalkulation" className="bg-background/80 backdrop-blur-sm border border-border" style={{ color: "#1a3a6b" }}>
                   <Calculator className="h-4 w-4 mr-1" />
                   Vorkalkulation
                 </Button>
@@ -2146,7 +2148,7 @@ export default function AuftragDetail({ id }: Props) {
             </Link>
             <Link href={`/nachkalkulation/${id}`}>
               <a>
-                <Button variant="outline" data-testid="button-nachkalkulation" style={{ color: "#e8620a" }}>
+                <Button variant="outline" data-testid="button-nachkalkulation" className="bg-background/80 backdrop-blur-sm border border-border" style={{ color: "#e8620a" }}>
                   <BarChart3 className="h-4 w-4 mr-1" />
                   Nachkalkulation
                 </Button>
@@ -2154,7 +2156,7 @@ export default function AuftragDetail({ id }: Props) {
             </Link>
             <Link href={`/auftraege/${id}/bearbeiten`}>
               <a>
-                <Button variant="outline" data-testid="button-edit">
+                <Button variant="outline" data-testid="button-edit" className="bg-background/80 backdrop-blur-sm border border-border">
                   <Pencil className="h-4 w-4 mr-1" />
                   Bearbeiten
                 </Button>
@@ -2164,7 +2166,7 @@ export default function AuftragDetail({ id }: Props) {
               variant="outline"
               data-testid="button-delete"
               onClick={() => setDelOpen(true)}
-              className="text-destructive hover:text-destructive"
+              className="text-destructive hover:text-destructive bg-background/80 backdrop-blur-sm border border-border"
             >
               <Trash2 className="h-4 w-4 mr-1" />
               Löschen
@@ -2174,7 +2176,7 @@ export default function AuftragDetail({ id }: Props) {
             {/* Projektstatus-Link */}
             {data.public_token ? (
               <div className="flex gap-1">
-                <Button variant="outline" size="icon" title="Link kopieren"
+                <Button variant="outline" size="icon" title="Link kopieren" className="bg-background/80 backdrop-blur-sm border border-border"
                   onClick={() => {
                     const url = `${window.location.origin}/#/projekt/${data.public_token}`;
                     navigator.clipboard.writeText(url);
@@ -2182,7 +2184,7 @@ export default function AuftragDetail({ id }: Props) {
                   }}>
                   <Copy className="h-4 w-4" />
                 </Button>
-                <Button variant="outline" size="icon" title="Link deaktivieren" className="text-red-600"
+                <Button variant="outline" size="icon" title="Link deaktivieren" className="text-red-600 bg-background/80 backdrop-blur-sm border border-border"
                   onClick={async () => {
                     await apiRequest("DELETE", `/api/auftraege/${id}/generate-token`);
                     queryClient.invalidateQueries({ queryKey: ["/api/auftraege", id] });
@@ -2192,7 +2194,7 @@ export default function AuftragDetail({ id }: Props) {
                 </Button>
               </div>
             ) : (
-              <Button variant="outline" title="Kundenstatus-Link generieren"
+              <Button variant="outline" title="Kundenstatus-Link generieren" className="bg-background/80 backdrop-blur-sm border border-border"
                 onClick={async () => {
                   const r = await apiRequest("POST", `/api/auftraege/${id}/generate-token`);
                   const d = await r.json();
