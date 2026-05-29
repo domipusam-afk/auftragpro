@@ -963,15 +963,41 @@ export async function registerRoutes(
       const menge   = parseFloat(p.menge || p.anzahl || 1);
       const ep      = parseFloat(p.einzelpreis || p.preis || 0);
       const bet     = Number(p.total ?? p.betrag ?? (menge * ep));
-      // Bezeichnung: titel bevorzugt, dann beschreibung
-      const bezeichnung = [p.titel || p.beschreibung || "", p.titel ? (p.beschreibung || "") : ""].filter(Boolean).join(" — ");
       const einheit = p.einheit || "Stk.";
+
+      // Beschreibung mit Unterpunkten:
+      // Offerte: p.titel = Haupttitel, p.beschreibung = Unterzeilen (newline-getrennt)
+      // Rechnung: p.beschreibung = erste Zeile Haupttitel, weitere Zeilen = Unterpunkte
+      let haupttitel = "";
+      let unterzeilen: string[] = [];
+
+      if (p.titel) {
+        // Offerte-Position: hat expliziten titel
+        haupttitel = p.titel;
+        const descLines = (p.beschreibung || "").split("\n").map((l: string) => l.trim()).filter(Boolean);
+        unterzeilen = descLines;
+      } else if (p.beschreibung) {
+        // Rechnung-Position: beschreibung, erste Zeile = Titel
+        const lines = p.beschreibung.split("\n").map((l: string) => l.trim()).filter(Boolean);
+        haupttitel = lines[0] || "";
+        unterzeilen = lines.slice(1);
+      }
+
+      // HTML für Beschreibungs-Zelle aufbauen
+      const esc = (s: string) => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+      let descHtml = `<span style="font-weight:600;color:#1a1a1a;">${esc(haupttitel)}</span>`;
+      if (unterzeilen.length > 0) {
+        descHtml += unterzeilen.map((z: string) =>
+          `<br/><span style="font-size:8.5pt;color:#555;padding-left:8px;">– ${esc(z)}</span>`
+        ).join("");
+      }
+
       return `<tr style="border-bottom:1px solid #f0ebde">
-        <td style="padding:7px 4px;color:#999;width:28px">${(p.nr ?? i+1)}</td>
-        <td style="padding:7px 4px;font-weight:500">${bezeichnung}</td>
-        <td style="padding:7px 4px;text-align:right;color:#555;width:55px">${menge % 1 === 0 ? menge.toFixed(0) : menge.toFixed(2)} ${einheit}</td>
-        <td style="padding:7px 4px;text-align:right;color:#555;width:90px">${fmtCHF(ep)}</td>
-        <td style="padding:7px 4px;text-align:right;font-weight:600;width:90px">${fmtCHF(bet)}</td>
+        <td style="padding:7px 4px;color:#999;width:28px;vertical-align:top;">${(p.nr ?? i+1)}</td>
+        <td style="padding:7px 4px;line-height:1.5;">${descHtml}</td>
+        <td style="padding:7px 4px;text-align:right;color:#555;width:55px;vertical-align:top;">${menge % 1 === 0 ? menge.toFixed(0) : menge.toFixed(2)} ${einheit}</td>
+        <td style="padding:7px 4px;text-align:right;color:#555;width:90px;vertical-align:top;">${fmtCHF(ep)}</td>
+        <td style="padding:7px 4px;text-align:right;font-weight:600;width:90px;vertical-align:top;">${fmtCHF(bet)}</td>
       </tr>`;
     }).join("");
 
@@ -1062,9 +1088,8 @@ export async function registerRoutes(
             </div>
             <div style="height:2px;background:${hc};margin-bottom:12px;border-radius:1px;"></div>
             <div style="margin-bottom:12px;font-size:10pt;color:#333;">
-              <div style="font-size:7.5pt;color:#aaa;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:2px;">Empfänger</div>
-              <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}${absenderPosH === "rechts" ? "text-align:right;" : absenderPosH === "mitte" ? "text-align:center;" : ""}">
-                <div>${data.empfaenger}</div>
+              <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}text-align:left;line-height:1.55;">
+                <div style="font-weight:600;">${data.empfaenger}</div>
                 ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
                 ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
               </div>
@@ -1119,8 +1144,8 @@ export async function registerRoutes(
             </div>
             <div style="height:0.5px;background:#ccc;margin:16px 0 12px;"></div>
             <div style="font-size:8pt;color:#aaa;margin-bottom:3px;">${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
-            <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:10mm;font-size:10pt;color:#333;${absenderPosH === "rechts" ? "text-align:right;" : absenderPosH === "mitte" ? "text-align:center;" : ""}">
-              <div>${data.empfaenger}</div>
+            <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:10mm;font-size:10pt;color:#333;text-align:left;line-height:1.55;">
+              <div style="font-weight:600;">${data.empfaenger}</div>
               ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
               ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
             </div>
@@ -1181,8 +1206,8 @@ export async function registerRoutes(
             </div>
             <div style="height:1.5px;background:#222;margin:10px 0 1px;"></div>
             <div style="height:0.5px;background:#bbb;margin-bottom:14px;"></div>
-            <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:10mm;font-size:10pt;color:#333;${absenderPosH === "rechts" ? "text-align:right;" : absenderPosH === "mitte" ? "text-align:center;" : ""}">
-              <div>${data.empfaenger}</div>
+            <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:10mm;font-size:10pt;color:#333;text-align:left;line-height:1.55;">
+              <div style="font-weight:600;">${data.empfaenger}</div>
               ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
               ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
             </div>
@@ -1243,8 +1268,8 @@ export async function registerRoutes(
               </div>
             </div>
             <div style="height:0.5px;background:#ccc;margin:14px 0;"></div>
-            <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:10mm;font-size:10pt;color:#333;${absenderPosH === "rechts" ? "text-align:right;" : absenderPosH === "mitte" ? "text-align:center;" : ""}">
-              <div>${data.empfaenger}</div>
+            <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:10mm;font-size:10pt;color:#333;text-align:left;line-height:1.55;">
+              <div style="font-weight:600;">${data.empfaenger}</div>
               ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
               ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
             </div>
@@ -1292,9 +1317,8 @@ export async function registerRoutes(
       <div style="position:relative;z-index:1;min-height:100vh;display:flex;flex-direction:column;">
         ${headerHtml}
         <div style="padding:14px 40px;flex:1;">
-          <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:6mm;font-size:10pt;color:#333;${absenderPosH === "rechts" ? "text-align:right;" : absenderPosH === "mitte" ? "text-align:center;" : ""}">
-            <div style="font-size:7.5pt;color:#aaa;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:2px;">Empfänger</div>
-            <div>${data.empfaenger}</div>
+          <div style="margin-top:${absenderTopMm - 20}mm;${absenderLeftMm > 0 ? `margin-left:${absenderLeftMm}mm;` : ""}margin-bottom:6mm;font-size:10pt;color:#333;text-align:left;line-height:1.55;">
+            <div style="font-weight:600;">${data.empfaenger}</div>
             ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
             ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
           </div>
@@ -1320,7 +1344,37 @@ export async function registerRoutes(
     </body></html>`;
   }
 
-  async function renderPdfFromHtml(html: string): Promise<Buffer> {
+
+  // Helper: Adresse-String in Strasse + PLZ/Ort aufteilen
+  function splitAdresse(adresse: string): { strasse: string; plzOrt: string } {
+    if (!adresse) return { strasse: "", plzOrt: "" };
+    const lines = adresse.split(/\n|\r/).map(l => l.trim()).filter(Boolean);
+    if (lines.length >= 2) {
+      // Mehrzeilig: letzte Zeile ist PLZ/Ort oder letzte zwei zusammen
+      const lastLine = lines[lines.length - 1];
+      const secondLast = lines.length >= 3 ? lines[lines.length - 2] : null;
+      // Wenn vorletzte Zeile nur PLZ (4-5 Stellen), merge mit letzter
+      if (secondLast && /^\d{4,5}$/.test(secondLast)) {
+        return {
+          strasse: lines.slice(0, -2).join(", ") || lines[0],
+          plzOrt: secondLast + " " + lastLine,
+        };
+      }
+      return {
+        strasse: lines.slice(0, -1).join(", "),
+        plzOrt: lastLine,
+      };
+    }
+    // Einzeilig: PLZ erkennen (4-5 Stellen)
+    const plzMatch = adresse.match(/^(.+?)\s+(\d{4,5}\s+.+)$/);
+    if (plzMatch) {
+      return { strasse: plzMatch[1].trim(), plzOrt: plzMatch[2].trim() };
+    }
+    return { strasse: adresse, plzOrt: "" };
+  }
+
+  async function renderPdfFromHtml(
+html: string): Promise<Buffer> {
     const puppeteer = await import("puppeteer");
     const execPath = process.env.PUPPETEER_EXECUTABLE_PATH || undefined;
     const browser = await puppeteer.default.launch({
@@ -1356,8 +1410,10 @@ export async function registerRoutes(
       for (const s of (settingsArr || [])) sMap[s.schluessel] = s.wert;
 
       const empfaenger  = quelleOfferte?.empfaenger_name || auftrag?.kunde || rechnung.kunde_name || "";
-      const empStrasse  = quelleOfferte?.empfaenger_strasse || auftrag?.kunde_adresse || "";
-      const empPlzOrt   = quelleOfferte?.empfaenger_plz_ort || "";
+      const _rawAdr     = auftrag?.kunde_adresse || "";
+      const _splitAdr   = splitAdresse(_rawAdr);
+      const empStrasse  = quelleOfferte?.empfaenger_strasse || _splitAdr.strasse || "";
+      const empPlzOrt   = quelleOfferte?.empfaenger_plz_ort || _splitAdr.plzOrt || "";
       const positionen: any[] = Array.isArray(rechnung.positionen) ? rechnung.positionen : [];
       const subtotal    = positionen.reduce((s: number, p: any) => s + Number(p.total ?? p.betrag ?? (Number(p.menge||p.anzahl||1)*Number(p.einzelpreis||p.preis||0))), 0);
       const mwstPct     = 8.1;

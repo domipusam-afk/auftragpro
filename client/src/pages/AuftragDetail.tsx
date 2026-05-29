@@ -468,50 +468,48 @@ function RechnungenTab({
         </h3>
 
 
-        <div className="space-y-2">
-          <div className="grid grid-cols-12 gap-2 text-xs uppercase text-muted-foreground font-medium px-1">
-            <div className="col-span-6">Beschreibung</div>
-            <div className="col-span-2 text-right">Menge</div>
-            <div className="col-span-2 text-right">Einzelpreis</div>
-            <div className="col-span-2 text-right">Betrag</div>
-          </div>
+        <div className="space-y-3">
           {positionen.map((p, i) => (
-            <div key={i} className="grid grid-cols-12 gap-2 items-center">
-              <Input
-                className="col-span-6"
-                value={p.beschreibung}
-                onChange={(e) => updatePos(i, "beschreibung", e.target.value)}
-                placeholder="Position"
-                data-testid={`input-pos-beschreibung-${i}`}
-              />
-              <Input
-                type="number"
-                step="0.01"
-                className="col-span-2 text-right"
-                value={p.menge}
-                onChange={(e) => updatePos(i, "menge", e.target.value)}
-                data-testid={`input-pos-menge-${i}`}
-              />
-              <Input
-                type="number"
-                step="0.01"
-                className="col-span-2 text-right"
-                value={p.einzelpreis}
-                onChange={(e) => updatePos(i, "einzelpreis", e.target.value)}
-                data-testid={`input-pos-preis-${i}`}
-              />
-              <div className="col-span-1 text-right text-sm tabular-nums">
-                {(p.menge * p.einzelpreis).toFixed(2)}
-              </div>
-              <div className="col-span-1 text-right">
-                <Button
-                  size="icon"
-                  variant="ghost"
+            <div key={i} className="border rounded-lg p-3 space-y-2 bg-white dark:bg-card">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-[#6b4c2a]">Pos. {i + 1}</span>
+                <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-500"
                   onClick={() => setPositionen((arr) => arr.filter((_, j) => j !== i))}
-                  disabled={positionen.length === 1}
-                >
-                  <Trash className="h-3 w-3" />
+                  disabled={positionen.length === 1}>
+                  <Trash className="w-3 h-3" />
                 </Button>
+              </div>
+              <div>
+                <Label className="text-xs">Beschreibung (Titel + Details)</Label>
+                <Textarea
+                  value={p.beschreibung}
+                  onChange={(e) => updatePos(i, "beschreibung", e.target.value)}
+                  placeholder={"Erste Zeile = Titel (fett im PDF)\nWeitere Zeilen = Unterpunkte\nz.B.:\nHauseingangstüre\nWärme gedämmt\nEinbruchsklasse RC2"}
+                  rows={4}
+                  className="text-sm font-mono mt-1"
+                  data-testid={`input-pos-beschreibung-${i}`}
+                />
+                <p className="text-[10px] text-muted-foreground mt-0.5">↵ Enter = neue Zeile wird als Unterpunkt im PDF dargestellt</p>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <Label className="text-xs">Menge</Label>
+                  <Input type="number" step="0.01" value={p.menge}
+                    onChange={(e) => updatePos(i, "menge", e.target.value)}
+                    data-testid={`input-pos-menge-${i}`} />
+                </div>
+                <div>
+                  <Label className="text-xs">Einzelpreis CHF</Label>
+                  <Input type="number" step="0.01" value={p.einzelpreis}
+                    onChange={(e) => updatePos(i, "einzelpreis", e.target.value)}
+                    data-testid={`input-pos-preis-${i}`} />
+                </div>
+                <div>
+                  <Label className="text-xs">Betrag CHF</Label>
+                  <div className="h-10 flex items-center px-3 rounded-md border bg-muted text-sm font-semibold">
+                    {(p.menge * p.einzelpreis).toFixed(2)}
+                  </div>
+                </div>
               </div>
             </div>
           ))}
@@ -635,8 +633,18 @@ function OffertenTab({ id, auftrag }: { id: string; auftrag: Auftrag }) {
   const [email, setEmail] = useState(auftrag.kunde_email || "");
   const [anrede, setAnrede] = useState("Herr");
   const [empfaengerName, setEmpfaengerName] = useState(auftrag.kunde || "");
-  const [empfaengerStr, setEmpfaengerStr] = useState(auftrag.kunde_adresse || "");
-  const [empfaengerPlz, setEmpfaengerPlz] = useState("");
+  // Adresse aufsplitten: Strasse / PLZ Ort
+  const _initAdr = (() => {
+    const raw = auftrag.kunde_adresse || "";
+    if (!raw) return { str: "", plz: "" };
+    const lines = raw.split(/\n|\r/).map((l: string) => l.trim()).filter(Boolean);
+    if (lines.length >= 2) return { str: lines.slice(0, -1).join(", "), plz: lines[lines.length - 1] };
+    const m = raw.match(/^(.+?)\s+(\d{4,5}\s+.+)$/);
+    if (m) return { str: m[1].trim(), plz: m[2].trim() };
+    return { str: raw, plz: "" };
+  })();
+  const [empfaengerStr, setEmpfaengerStr] = useState(_initAdr.str);
+  const [empfaengerPlz, setEmpfaengerPlz] = useState(_initAdr.plz);
   const [projektBeschr, setProjektBeschr] = useState(auftrag.titel || "");
   const [introText, setIntroText] = useState("Wir danken für Ihre Anfrage und erlauben uns, Ihnen für die beschriebenen Arbeiten folgende Offerte zu unterbreiten.");
   const [liefertermin, setLiefertermin] = useState("nach Absprache");
@@ -864,7 +872,8 @@ function OffertenTab({ id, auftrag }: { id: string; auftrag: Auftrag }) {
                   <div>
                     <Label className="text-xs">Beschreibung (Details)</Label>
                     <Textarea value={pos.beschreibung} onChange={e => updatePos(i, "beschreibung", e.target.value)}
-                      placeholder="Detaillierte Beschreibung der Position..." rows={2} className="text-sm" />
+                      placeholder={"Detaillierte Beschreibung...\nJede neue Zeile = Unterpunkt im PDF\nz.B.:\nWärme gedämmt\nEinbruchsklasse RC2"} rows={4} className="text-sm font-mono" />
+                    <p className="text-[10px] text-muted-foreground mt-0.5">↵ Enter = neue Zeile wird als Unterpunkt im PDF dargestellt</p>
                   </div>
                   <div className="grid grid-cols-3 gap-2">
                     <div>
