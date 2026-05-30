@@ -1417,43 +1417,54 @@ export async function registerRoutes(
     return _browser;
   }
 
-  async function renderPdfFromHtml(html: string): Promise<Buffer> {
-    const browser = await getBrowser();
-    const page = await browser.newPage();
-    try {
-      await page.setContent(html, { waitUntil: "domcontentloaded" });
-      const pdfBuf = await page.pdf({
-        format: "A4",
-        printBackground: true,
-        margin: { top: "0", bottom: "0", left: "0", right: "0" }
-      });
-      return Buffer.from(pdfBuf);
-    } finally {
-      await page.close();
+  // Rendert eine HTML-Seite zu PDF — mit Retry bei Browser-Crash
+  async function renderPageToPdf(html: string, waitUntil: "domcontentloaded" | "networkidle0" = "domcontentloaded"): Promise<Buffer> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      let page: any = null;
+      try {
+        const browser = await getBrowser();
+        page = await browser.newPage();
+        await page.setContent(html, { waitUntil });
+        const pdfBuf = await page.pdf({
+          format: "A4",
+          printBackground: true,
+          margin: { top: "0", bottom: "0", left: "0", right: "0" }
+        });
+        return Buffer.from(pdfBuf);
+      } catch (err: any) {
+        // Browser abgestürzt → singleton zurücksetzen, nochmals versuchen
+        _browser = null;
+        if (attempt >= 2) throw err;
+        await new Promise(r => setTimeout(r, 800));
+      } finally {
+        try { if (page) await page.close(); } catch {}
+      }
     }
+    throw new Error("PDF render failed after 3 attempts");
   }
 
-  // Rechnung PDF: Seiten + QR-Bill mergen
+  async function renderPdfFromHtml(html: string): Promise<Buffer> {
+    return renderPageToPdf(html, "domcontentloaded");
+  }
+
+  // Rechnung PDF: Seiten + QR-Bill sequenziell (separate Pages → weniger RAM-Spike)
   async function renderRechnungPdfFromHtml(htmlSeiten: string, htmlQR: string): Promise<Buffer> {
     const { PDFDocument } = await import("pdf-lib") as any;
-    const browser = await getBrowser();
-    const page = await browser.newPage();
-    try {
-      await page.setContent(htmlSeiten, { waitUntil: "domcontentloaded" });
-      const pdfA = await page.pdf({ format: "A4", printBackground: true, margin: { top: "0", bottom: "0", left: "0", right: "0" } });
-      await page.setContent(htmlQR, { waitUntil: "domcontentloaded" });
-      const pdfB = await page.pdf({ format: "A4", printBackground: true, margin: { top: "0", bottom: "0", left: "0", right: "0" } });
-      const docA = await PDFDocument.load(pdfA);
-      const docB = await PDFDocument.load(pdfB);
-      const merged = await PDFDocument.create();
-      const pagesA = await merged.copyPages(docA, docA.getPageIndices());
-      pagesA.forEach((p: any) => merged.addPage(p));
-      const pagesB = await merged.copyPages(docB, docB.getPageIndices());
-      pagesB.forEach((p: any) => merged.addPage(p));
-      return Buffer.from(await merged.save());
-    } finally {
-      await page.close();
-    }
+    // Seite 1 rendern
+    const pdfA = await renderPageToPdf(htmlSeiten, "domcontentloaded");
+    // Kurz warten damit RAM freigegeben wird
+    await new Promise(r => setTimeout(r, 300));
+    // Seite 2 (QR-Bill) rendern
+    const pdfB = await renderPageToPdf(htmlQR, "domcontentloaded");
+    // Mergen
+    const docA = await PDFDocument.load(pdfA);
+    const docB = await PDFDocument.load(pdfB);
+    const merged = await PDFDocument.create();
+    const pagesA = await merged.copyPages(docA, docA.getPageIndices());
+    pagesA.forEach((p: any) => merged.addPage(p));
+    const pagesB = await merged.copyPages(docB, docB.getPageIndices());
+    pagesB.forEach((p: any) => merged.addPage(p));
+    return Buffer.from(await merged.save());
   }
 
   // ─── Rechnung PDF (Vorlage aus DB) ──────────────────────────────────────────
