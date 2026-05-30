@@ -954,6 +954,16 @@ export async function registerRoutes(
     const wmHtml = wmUrl ? `<div style="position:absolute;${wmStyle};z-index:0;pointer-events:none;">
       <img src="${wmUrl}" style="opacity:${wmOpacity};${wmPos==="full"?`width:100%;height:100%;object-fit:cover`:`width:${wmSize}%;max-width:none;object-fit:contain`};display:block;" /></div>` : "";
 
+    // Meta-Zeilen (VOR headerHtml, da Design A metaHtml im Header braucht)
+    const datumLabel = data.titel === "RECHNUNG" ? "Rechnungsdatum:" : data.titel === "OFFERTE" ? "Offertendatum:" : data.titel === "MAHNUNG" ? "Mahndatum:" : "Datum:";
+    const metaRows: string[] = [];
+    if (data.kundenNr) metaRows.push(`<tr><td style="color:#999;font-weight:400;padding:1px 14px 1px 0;white-space:nowrap;font-size:8.5pt;">Ihre Kundennummer:</td><td style="font-size:8.5pt;">${data.kundenNr}</td></tr>`);
+    metaRows.push(`<tr><td style="color:#999;font-weight:400;padding:1px 14px 1px 0;white-space:nowrap;font-size:8.5pt;">${datumLabel}</td><td style="font-size:8.5pt;">${data.datum}</td></tr>`);
+    if (data.faelligDatum) metaRows.push(`<tr><td style="color:#999;font-weight:400;padding:1px 14px 1px 0;white-space:nowrap;font-size:8.5pt;">Zahlbar bis:</td><td style="font-size:8.5pt;">${data.faelligDatum}</td></tr>`);
+    if (data.gueltigBis)  metaRows.push(`<tr><td style="color:#999;font-weight:400;padding:1px 14px 1px 0;white-space:nowrap;font-size:8.5pt;">Gültig bis:</td><td style="font-size:8.5pt;">${data.gueltigBis}</td></tr>`);
+    // "Unsere Referenz" entfernt (per User-Anfrage)
+    const metaHtml = `<table style="border-collapse:collapse;">${metaRows.join("")}</table>`;
+
     // Header
     let headerHtml = "";
     if (design === "B") {
@@ -978,26 +988,17 @@ export async function registerRoutes(
       </div>
       <div style="height:3px;background:linear-gradient(90deg,${hc},${fc});margin:0 40px 0;border-radius:2px;"></div>`;
     } else {
-      // Design A: Klassisch — Logo links, Dokument-Titel/Nr/Datum rechts (wie Frontend-Vorschau)
-      // Info-Block rechts: Kundennummer / Datum / Referenz — sauber untereinander
-      const infoRows: string[] = [];
-      if (data.kundenNr) infoRows.push(`<tr><td style="color:#777;font-size:8.5pt;padding:1px 12px 1px 0;white-space:nowrap;">Ihre Kundennummer:</td><td style="font-size:8.5pt;color:#222;">${data.kundenNr}</td></tr>`);
-      infoRows.push(`<tr><td style="color:#777;font-size:8.5pt;padding:1px 12px 1px 0;white-space:nowrap;">${data.titel === "RECHNUNG" ? "Rechnungsdatum:" : data.titel === "OFFERTE" ? "Offertendatum:" : data.titel === "MAHNUNG" ? "Mahndatum:" : "Datum:"}</td><td style="font-size:8.5pt;color:#222;">${data.datum}</td></tr>`);
-      if (data.faelligDatum) infoRows.push(`<tr><td style="color:#777;font-size:8.5pt;padding:1px 12px 1px 0;white-space:nowrap;">Zahlbar bis:</td><td style="font-size:8.5pt;color:#222;">${data.faelligDatum}</td></tr>`);
-      if (data.gueltigBis) infoRows.push(`<tr><td style="color:#777;font-size:8.5pt;padding:1px 12px 1px 0;white-space:nowrap;">Gültig bis:</td><td style="font-size:8.5pt;color:#222;">${data.gueltigBis}</td></tr>`);
-      const refName = data.ansprechpersonIntern || data.ansprechpersonManuell || "";
-      if (refName) infoRows.push(`<tr><td style="color:#777;font-size:8.5pt;padding:1px 12px 1px 0;white-space:nowrap;">Unsere Referenz:</td><td style="font-size:8.5pt;color:#222;">${refName}</td></tr>`);
-      const infoTableHtml = `<table style="border-collapse:collapse;margin-top:4px;">${infoRows.join("")}</table>`;
-
-      headerHtml = `<div style="padding:20px 40px 14px;display:flex;align-items:flex-start;justify-content:space-between;gap:16px;${logoPos==="rechts"?"flex-direction:row-reverse":""}">
-        <div style="flex-shrink:0">
-          ${logoHtml}
-          ${slogan ? `<div style="font-size:8pt;color:#888;margin-top:3px;">${slogan}</div>` : ""}
+      // Design A: Header = Firmendaten links + Logo rechts (Swiss-Norm Bild-2-Layout)
+      headerHtml = `<div style="padding:10px 40px 6px;display:flex;align-items:flex-start;justify-content:space-between;">
+        <div style="flex:1;font-size:8pt;color:#555;line-height:1.5;">
+          <div style="font-weight:700;font-size:9pt;color:#222;">${data.firma}</div>
+          <div>${data.firmaAdresse}</div>
+          <div>${data.firmaPlzOrt}</div>
+          <div>${data.firmaTel}</div>
         </div>
-        <div style="text-align:right">
-          <div style="font-size:15pt;font-weight:700;color:${hc};letter-spacing:0.5px;">${data.titel}</div>
-          <div style="font-size:8.5pt;color:#888;margin-top:1px;margin-bottom:4px;">Nr. ${data.nummer}</div>
-          ${infoTableHtml}
+        <div style="flex-shrink:0;text-align:right;">
+          ${logoHtml}
+          ${slogan ? `<div style="font-size:7.5pt;color:#aaa;margin-top:2px;">${slogan}</div>` : ""}
         </div>
       </div>
       <div style="height:2px;background:${hc};margin:0 40px 0;"></div>`;
@@ -1059,11 +1060,6 @@ export async function registerRoutes(
         </div>
       </div>` : "";
 
-    // Meta-Zeilen
-    let metaHtml = `<span><b style="color:#999;font-weight:400">Datum: </b>${data.datum}</span>`;
-    if (data.gueltigBis)  metaHtml += `&nbsp;&nbsp;<span><b style="color:#999;font-weight:400">Gültig bis: </b>${data.gueltigBis}</span>`;
-    if (data.faelligDatum) metaHtml += `&nbsp;&nbsp;<span><b style="color:#999;font-weight:400">Zahlbar bis: </b>${data.faelligDatum}</span>`;
-
     // Footer — farbiger Balken wie in der Vorschau
     const footerHtml = design === "E"
       ? `<div>
@@ -1085,9 +1081,16 @@ export async function registerRoutes(
                : (design === "C") ? (logoUrl ? 18 : 10)
                : (design === "E") ? (logoUrl ? 22 : 14)
                : (design === "G") ? (logoUrl ? 26 : 18)
-               : (logoUrl ? 28 : 20); // Design A
+               : 30; // Design A — Firma links + Logo rechts (4 Zeilen ≈ 30mm)
     const ftrH = (design === "E") ? 16 : 12;
     const padMm = 10; // Seitenrand in mm
+
+    // Swiss-Norm Empfänger-Position (wird später in aHtml genutzt)
+    // Vorberechnung hier damit apBlock max-width nutzen kann
+    const _empfTopBody  = Math.max(0, 52 - (hdrH + 4));
+    const _empfLeftBody = 118 - padMm; // 108mm
+    // apBlock darf nur bis links vom Empfänger reichen (11mm Sicherheitsabstand)
+    const apBlockMaxWidth = _empfLeftBody - 11; // ca. 97mm
 
     // Gemeinsames CSS für alle Designs: fixed header/footer wiederholt sich auf jeder Seite
     const sharedFixedCss = `
@@ -1115,7 +1118,8 @@ export async function registerRoutes(
     const pad = 40; // Seitenrand in px für Inline-Styles
 
     // Für Design A: Titel ist bereits im Header — nicht nochmals im Body zeigen
-    const titelImHeader = design === "A";
+    // titelImHeader: false = Titel+Meta immer im Content (Design A: Bild-2-Layout)
+    const titelImHeader = (design === "G"); // nur G hat Titel im Header
 
     // Ansprechperson — immer aus ansprechpersonIntern lesen (Name aus Dialog/Auftrag)
     const apAktiv = v.ansprechperson_aktiv !== false;
@@ -1146,15 +1150,35 @@ export async function registerRoutes(
       }
     }
 
+    // Anrede für "Sehr geehrte/r" Block
+    const anredeText = (() => {
+      const anrede = (data as any).anrede || "";
+      const name = data.empfaenger || "";
+      if (!name) return "Sehr geehrte Damen und Herren";
+      if (/^herr/i.test(anrede)) return `Sehr geehrter Herr ${name}`;
+      if (/^frau/i.test(anrede)) return `Sehr geehrte Frau ${name}`;
+      return `Sehr geehrte/r ${name}`;
+    })();
+    // Nummer des Dokuments für die Zeile oberhalb Sehr geehrte
+    const docNrLine = data.nummer ? `${data.titel} Nr. ${data.nummer}` : "";
+
+    // apBlockMaxWidth = 97mm (Design A: verhindert Überlappung mit Empfänger bei 108mm)
+    const _apMaxW = (design === "A" || design === "B" || design === "C" || design === "E") ? `max-width:${apBlockMaxWidth}mm;` : "";
+
     const apBlock = apAktiv && ansprechperson
-      ? `<div style="font-size:9pt;color:#444;margin-bottom:8px;">
+      ? `<div style="font-size:9pt;color:#444;margin-bottom:0;${_apMaxW}">
           <strong>${apLabel}:</strong> ${ansprechperson}${
             apEmail ? `<br><span style="font-weight:normal;">E-Mail: ${apEmail}</span>` : ""
           }${
             apTelefon ? `<br><span style="font-weight:normal;">Telefon Direkt: ${apTelefon}</span>` : ""
           }
+          <div style="margin-top:4px;">${metaHtml}</div>
+          <div style="margin-top:18px;font-size:10pt;font-weight:600;color:#222;">${anredeText}</div>
         </div>`
-      : "";
+      : `<div style="font-size:9pt;color:#444;margin-bottom:0;${_apMaxW}">
+          <div>${metaHtml}</div>
+          <div style="margin-top:18px;font-size:10pt;font-weight:600;color:#222;">${anredeText}</div>
+        </div>`;
 
     // Positionstexte (Spaltenbezeichnungen)
     const pt = (typeof v.positionstexte === "object" && v.positionstexte) ? v.positionstexte : {};
@@ -1192,12 +1216,28 @@ export async function registerRoutes(
         ${wmHtml}
         <div class="pdf-header">${gHeaderHtml}</div>
         <div class="pdf-footer">${footerHtml}</div>
-        <div style="position:absolute;top:${Math.max(0, absenderTopMm - (hdrH + 4))}mm;${absenderPosH==='rechts'?`right:${absenderLeftMm}mm;text-align:right;`:`left:${absenderLeftMm}mm;text-align:left;`}${absenderPosH==='mitte'?'left:50%;transform:translateX(-50%);text-align:left;':''}width:90mm;font-size:10pt;color:#333;line-height:1.55;z-index:10;">
+        <div style="margin-top:${Math.max(0, absenderTopMm - (hdrH + 4))}mm;min-height:25mm;overflow:hidden;">
+          ${absenderPosH==='rechts' ? `
+          <div style="float:right;width:90mm;text-align:right;font-size:10pt;color:#333;line-height:1.55;">
+            <div style="font-size:7.5pt;color:#999;margin-bottom:3px;white-space:nowrap;">${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
             <div style="font-weight:600;">${data.empfaenger}</div>
             ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
             ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
-          </div>
-        <div class="pdf-content" style="padding:${Math.max(4, absenderTopMm - (hdrH + 4) + 42)}mm ${pad}px ${ftrH+8}mm;">
+          </div>` : absenderPosH==='mitte' ? `
+          <div style="margin:0 auto;width:90mm;text-align:left;font-size:10pt;color:#333;line-height:1.55;">
+            <div style="font-size:7.5pt;color:#999;margin-bottom:3px;white-space:nowrap;">${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
+            <div style="font-weight:600;">${data.empfaenger}</div>
+            ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
+            ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
+          </div>` : `
+          <div style="width:90mm;text-align:left;font-size:10pt;color:#333;line-height:1.55;">
+            <div style="font-size:7.5pt;color:#999;margin-bottom:3px;white-space:nowrap;">${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
+            <div style="font-weight:600;">${data.empfaenger}</div>
+            ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
+            ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
+          </div>`}
+        </div>
+        <div class="pdf-content" style="padding:42mm ${pad}px ${ftrH+8}mm;">
           <div style="font-size:8pt;color:#aaa;margin-bottom:3px;">${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
           <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;">
             <div style="font-size:15pt;font-weight:700;color:#111;">${data.titel} Nr. ${data.nummer}</div>
@@ -1228,7 +1268,15 @@ export async function registerRoutes(
 
 
     // ── Design A (default) + Fallback für B/C/E ──
-    // headerHtml ist je Design bereits korrekt definiert (oben)
+    // Swiss-Norm SN 010130 Empfänger-Position (Fenstercouvert C5/C6):
+    // Adressfenster: top=52mm vom Blattrand, left=118mm vom Blattrand (Rechtsadressierung)
+    // @page margin: top=(hdrH+4)=34mm, left=padMm=10mm
+    // Im body (position:absolute relativ zu body): top=52mm, left=118mm
+    const empfTopAbs  = 52;   // mm ab Seitenanfang (absolut auf Blatt)
+    const empfLeftAbs = 118;  // mm ab linkem Blattrand
+    // Content-Padding-Top: Empfänger endet bei ca. 52+22=74mm ab Blattrand → minus @page-top (hdrH+4)
+    const contentPadTopMm = Math.max(95, 74 - (hdrH + 4));
+
     const aHtml = `<!DOCTYPE html><html><head><meta charset="utf-8">
     <style>
       ${sharedFixedCss}
@@ -1238,17 +1286,23 @@ export async function registerRoutes(
     </style></head>
     <body style="position:relative;">
       ${wmHtml}
-      <!-- HAUPTINHALT -->
       <div class="pdf-header">${headerHtml}</div>
       <div class="pdf-footer">${footerHtml}</div>
-      <div style="position:absolute;top:${Math.max(0, absenderTopMm - (hdrH + 4))}mm;${absenderPosH==='rechts'?`right:${absenderLeftMm}mm;text-align:right;`:`left:${absenderLeftMm}mm;text-align:left;`}${absenderPosH==='mitte'?'left:50%;transform:translateX(-50%);text-align:left;':''}width:90mm;font-size:10pt;color:#333;line-height:1.55;z-index:10;">
-          <div style="font-weight:600;">${data.empfaenger}</div>
-          ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
-          ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
+
+      <!-- Empfänger Swiss-Norm SN 010130: position:absolute auf Blatt fixiert -->
+      <!-- top=52mm, left=118mm ab Blattrand; im Puppeteer-body = exakt diese Pixel -->
+      <div style="position:absolute;top:${empfTopAbs}mm;left:${empfLeftAbs}mm;width:76mm;font-size:9.5pt;color:#222;line-height:1.55;z-index:50;">
+        <div style="font-size:7pt;color:#888;margin-bottom:2px;white-space:nowrap;border-bottom:0.5px solid #bbb;padding-bottom:2px;">${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
+        <div style="font-weight:700;margin-top:2px;">${data.empfaenger}</div>
+        ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
+        ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
+      </div>
+
+      <div class="pdf-content" style="padding:${contentPadTopMm}mm ${pad}px ${ftrH + 8}mm;">
+        <!-- Titel gross + mehr Abstand nach unten -->
+        <div style="margin-bottom:18px;">
+          <div style="font-size:20pt;font-weight:700;color:#111;">${data.titel}</div>
         </div>
-      <div class="pdf-content" style="padding:${Math.max(4, absenderTopMm - (hdrH + 4) + 42)}mm ${pad}px ${ftrH+8}mm;">
-        ${!titelImHeader ? `<div style="font-size:16pt;font-weight:700;color:${fc};margin:12px 0 4px;">${data.titel} Nr. ${data.nummer}</div>
-        <div style="font-size:8.5pt;color:#555;margin-bottom:10px;display:flex;flex-wrap:wrap;gap:16px;">${metaHtml}</div>` : ""}
         ${apBlock}
         ${einl ? `<div class="intro" style="margin-bottom:12px;">${einl}</div>` : ""}
         <table>
@@ -1528,17 +1582,51 @@ export async function registerRoutes(
       // IBAN formatiert für Anzeige: Gruppen à 4 Zeichen
       const ibanFormatted = ibanClean.replace(/(.{4})/g, "$1 ").trim();
 
-      // Swiss QR Bill — eigenstaendige HTML-Seite (margin:0, volle 210mm Breite)
-      // Wird als separates PDF gerendert und mit pdf-lib zusammengemischt
+      // Swiss QR Bill — eigenstaendige HTML-Seite mit Header + Footer (inline gebaut)
+      // hdrH/headerHtml/footerHtml nicht im Scope — direkt aus sMap aufbauen
+      const qrVorlage = await supabase.from("pdf_vorlagen").select("*").eq("doc_typ", "rechnung").single();
+      const qrV = qrVorlage.data || {};
+      const qrHdrColor = qrV.header_color || "#6b4c2a";
+      const qrFtrColor = qrV.footer_color || "#6b4c2a";
+      const qrLogoUrl  = qrV.logo_data_url || sMap.logo_data_url || "";
+      const qrSlogan   = qrV.slogan || "";
+      const qrHdrH     = qrLogoUrl ? 22 : 14; // Nur Logo rechts (wie Referenzbild)
+      const qrFtrH     = 12;
+      const qrPadMm    = 10;
+      const qrFirma    = sMap.firmenname || "Schneggenburger GmbH";
+      const qrAdr      = sMap.adresse || "Hefenhoferstrasse 7";
+      const qrPlzOrt   = sMap.plz_ort || "8580 Sommeri";
+      const qrTel      = sMap.telefon || "071 411 16 87";
+      const qrFcText   = "#ffffff";
+      const qrLogoHtml = qrLogoUrl ? `<img src="${qrLogoUrl}" style="max-width:80px;max-height:40px;object-fit:contain;" alt="Logo"/>` : `<div style="font-size:20pt;font-weight:700;color:${qrHdrColor};">SG</div>`;
+      // Meta-Tabelle für QR-Header (gleich wie Seite 1)
+      const qrMetaRows = [
+        rechnung.kunde_nr || auftrag?.kunde ? `<tr><td style="color:#999;padding:1px 14px 1px 0;white-space:nowrap;font-size:8.5pt;">Ihre Kundennummer:</td><td style="font-size:8.5pt;font-weight:600;">${await getKundenNr(auftrag?.kunde || "")}</td></tr>` : "",
+        `<tr><td style="color:#999;padding:1px 14px 1px 0;white-space:nowrap;font-size:8.5pt;">Rechnungsdatum:</td><td style="font-size:8.5pt;font-weight:600;">${datumStr}</td></tr>`,
+        faelligStr ? `<tr><td style="color:#999;padding:1px 14px 1px 0;white-space:nowrap;font-size:8.5pt;">Zahlbar bis:</td><td style="font-size:8.5pt;font-weight:600;">${faelligStr}</td></tr>` : "",
+      ].join("");
+      // QR-Seite Header: nur Logo rechts + Slogan (wie Referenzbild)
+      const qrHeaderHtml = `<div style="padding:10px 40px 6px;display:flex;align-items:flex-start;justify-content:flex-end;font-family:Arial,sans-serif;">
+        <div style="flex-shrink:0;text-align:right;">
+          ${qrLogoHtml}
+          ${qrSlogan ? `<div style="font-size:7.5pt;color:#aaa;margin-top:2px;">${qrSlogan}</div>` : ""}
+        </div>
+      </div><div style="height:2px;background:${qrHdrColor};margin:0 40px 0;"></div>`;
+      const qrFooterHtml = `<div style="background:${qrFtrColor};color:${qrFcText};padding:6px 40px;font-size:8pt;display:flex;justify-content:space-between;align-items:center;-webkit-print-color-adjust:exact;print-color-adjust:exact;font-family:Arial,sans-serif;"><span>${qrFirma} · ${qrAdr} · ${qrPlzOrt} · ${qrTel}</span><span>Seite 2 / 2</span></div>`;
+
       const qrZahlscheinHtml = `<!DOCTYPE html><html><head><meta charset="utf-8">
 <style>
   * { box-sizing:border-box; -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; }
-  @page { margin: 0; size: A4;  position:relative;}
-  body { font-family:Arial,Helvetica,sans-serif;font-size:10pt;color:#000;margin:0;padding:0;width:210mm; }
+  @page { margin: ${qrHdrH+4}mm ${qrPadMm}mm ${qrFtrH+4}mm ${qrPadMm}mm; size: A4; }
+  body { font-family:Arial,Helvetica,sans-serif;font-size:10pt;color:#000;margin:0;padding:0; }
+  .pdf-header { position:fixed; top:0; left:0; right:0; height:${qrHdrH+4}mm; overflow:hidden; background:white; z-index:100; }
+  .pdf-footer { position:fixed; bottom:0; left:0; right:0; height:${qrFtrH+4}mm; overflow:hidden; background:white; z-index:100; }
 </style></head>
 <body>
+<div class="pdf-header">${qrHeaderHtml}</div>
+<div class="pdf-footer">${qrFooterHtml}</div>
 ${(ibanMissing || qrIbanError) ? `<div style="background:#fff3cd;border:1px solid #ffc107;padding:6px 10px;margin:5mm 5mm 0 5mm;font-size:8pt;color:#856404;">&#9888; ${qrIbanError || "Bitte IBAN in Einstellungen hinterlegen."}</div>` : ""}
-<div style="width:210mm;padding-top:10mm;">
+<div style="padding-top:35mm;">
   <div style="display:flex;align-items:center;margin-bottom:3mm;">
     <div style="flex:1;border-top:1px dashed #000;"></div>
     <div style="padding:0 2mm;font-size:11pt;line-height:1;">&#9986;</div>
