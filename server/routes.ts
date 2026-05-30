@@ -1091,7 +1091,7 @@ export async function registerRoutes(
 
     // Gemeinsames CSS für alle Designs: fixed header/footer wiederholt sich auf jeder Seite
     const sharedFixedCss = `
-      @page { margin: ${hdrH + 8}mm ${padMm}mm ${ftrH + 8}mm ${padMm}mm; }
+      /* @page margin wird von Puppeteer via margin-Option gesteuert — nicht hier setzen */
       body { font-family:Arial,sans-serif;font-size:10pt;color:#222;margin:0;padding:0;  position:relative;}
       table { width:100%;border-collapse:collapse; }
       .pdf-header {
@@ -1188,12 +1188,12 @@ export async function registerRoutes(
       </style></head>
       <body style="position:relative;">
         ${wmHtml}
-        <div style="position:absolute;top:${absenderTopMm}mm;${absenderPosH==='rechts'?`right:${absenderLeftMm}mm;text-align:right;`:`left:${absenderLeftMm}mm;text-align:left;`}${absenderPosH==='mitte'?'left:50%;transform:translateX(-50%);text-align:left;':''}width:90mm;font-size:10pt;color:#333;line-height:1.55;z-index:10;">
+        <div style="position:absolute;top:${Math.max(0, absenderTopMm - (hdrH+8))}mm;${absenderPosH==='rechts'?`right:${absenderLeftMm}mm;text-align:right;`:`left:${absenderLeftMm}mm;text-align:left;`}${absenderPosH==='mitte'?'left:50%;transform:translateX(-50%);text-align:left;':''}width:90mm;font-size:10pt;color:#333;line-height:1.55;z-index:10;">
             <div style="font-weight:600;">${data.empfaenger}</div>
             ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
             ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
           </div>
-        <div class="pdf-content" style="padding:${Math.max(hdrH+8, absenderTopMm+20)}mm ${pad}px ${ftrH+8}mm;">
+        <div class="pdf-content" style="padding:${Math.max(0, absenderTopMm - (hdrH+8) + 20)}mm ${pad}px ${ftrH+8}mm;">
           <div style="font-size:8pt;color:#aaa;margin-bottom:3px;">${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
           <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;">
             <div style="font-size:15pt;font-weight:700;color:#111;">${data.titel} Nr. ${data.nummer}</div>
@@ -1235,12 +1235,12 @@ export async function registerRoutes(
     <body style="position:relative;">
       ${wmHtml}
       <!-- HAUPTINHALT -->
-      <div style="position:absolute;top:${absenderTopMm}mm;${absenderPosH==='rechts'?`right:${absenderLeftMm}mm;text-align:right;`:`left:${absenderLeftMm}mm;text-align:left;`}${absenderPosH==='mitte'?'left:50%;transform:translateX(-50%);text-align:left;':''}width:90mm;font-size:10pt;color:#333;line-height:1.55;z-index:10;">
+      <div style="position:absolute;top:${Math.max(0, absenderTopMm - (hdrH+8))}mm;${absenderPosH==='rechts'?`right:${absenderLeftMm}mm;text-align:right;`:`left:${absenderLeftMm}mm;text-align:left;`}${absenderPosH==='mitte'?'left:50%;transform:translateX(-50%);text-align:left;':''}width:90mm;font-size:10pt;color:#333;line-height:1.55;z-index:10;">
           <div style="font-weight:600;">${data.empfaenger}</div>
           ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
           ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
         </div>
-      <div class="pdf-content" style="padding:${Math.max(hdrH+8, absenderTopMm+20)}mm ${pad}px ${ftrH+8}mm;">
+      <div class="pdf-content" style="padding:${Math.max(0, absenderTopMm - (hdrH+8) + 20)}mm ${pad}px ${ftrH+8}mm;">
         ${!titelImHeader ? `<div style="font-size:16pt;font-weight:700;color:${fc};margin:12px 0 4px;">${data.titel} Nr. ${data.nummer}</div>
         <div style="font-size:8.5pt;color:#555;margin-bottom:10px;display:flex;flex-wrap:wrap;gap:16px;">${metaHtml}</div>` : ""}
         ${apBlock}
@@ -1342,21 +1342,34 @@ export async function registerRoutes(
 
     // Neu: strukturiertes Objekt mit native Puppeteer header/footer
     const { html, headerHtml, footerHtml, topMm, bottomMm, leftMm, rightMm } = input;
-    await page.setContent(html, { waitUntil: "domcontentloaded" });
+    await page.setContent(html, { waitUntil: "networkidle0" });
 
     // Puppeteer headerTemplate/footerTemplate:
-    // - Muss vollständiges HTML-Snippet sein
-    // - font-size muss explizit gesetzt sein (Puppeteer reset)
-    // - -webkit-print-color-adjust für Farben
-    // - Klasse .pageNumber und .totalPages für Seitenzahlen
-    const headerTemplate = `
-      <div style="width:100%;font-family:Arial,sans-serif;font-size:9pt;-webkit-print-color-adjust:exact;print-color-adjust:exact;box-sizing:border-box;">
+    // - WICHTIG: Puppeteer setzt font-size auf 0 im header/footer Kontext → explizit setzen
+    // - -webkit-print-color-adjust für Farben (sonst werden Hintergründe weggelassen)
+    // - margin:0;padding:0 am body wichtig — Puppeteer fügt sonst extra Abstände ein
+    // - Das Template wird in einem separaten iframe gerendert (kein Zugriff auf Body-CSS)
+    const headerTemplate = `<!DOCTYPE html><html><head><meta charset="utf-8">
+      <style>
+        * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; box-sizing:border-box; }
+        body { margin:0; padding:0; font-family:Arial,sans-serif; font-size:9pt; width:100%; }
+        img { display:block; }
+      </style>
+    </head><body style="margin:0;padding:0;width:100%;">
+      <div style="width:100%;font-family:Arial,sans-serif;font-size:9pt;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
         ${headerHtml}
-      </div>`;
-    const footerTemplate = `
-      <div style="width:100%;font-family:Arial,sans-serif;font-size:9pt;-webkit-print-color-adjust:exact;print-color-adjust:exact;box-sizing:border-box;">
+      </div>
+    </body></html>`;
+    const footerTemplate = `<!DOCTYPE html><html><head><meta charset="utf-8">
+      <style>
+        * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; box-sizing:border-box; }
+        body { margin:0; padding:0; font-family:Arial,sans-serif; font-size:9pt; width:100%; }
+      </style>
+    </head><body style="margin:0;padding:0;width:100%;">
+      <div style="width:100%;font-family:Arial,sans-serif;font-size:9pt;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
         ${footerHtml}
-      </div>`;
+      </div>
+    </body></html>`;
 
     const pdfBuf = await page.pdf({
       format: "A4",
@@ -1394,9 +1407,9 @@ export async function registerRoutes(
         pdfA = Buffer.from(await page.pdf({ format: "A4", printBackground: true, margin: { top: "0", bottom: "0", left: "0", right: "0" } }));
       } else {
         const { html, headerHtml, footerHtml, topMm, bottomMm, leftMm, rightMm } = htmlSeiten;
-        await page.setContent(html, { waitUntil: "domcontentloaded" });
-        const headerTemplate = `<div style="width:100%;font-family:Arial,sans-serif;font-size:9pt;-webkit-print-color-adjust:exact;print-color-adjust:exact;box-sizing:border-box;">${headerHtml}</div>`;
-        const footerTemplate = `<div style="width:100%;font-family:Arial,sans-serif;font-size:9pt;-webkit-print-color-adjust:exact;print-color-adjust:exact;box-sizing:border-box;">${footerHtml}</div>`;
+        await page.setContent(html, { waitUntil: "networkidle0" });
+        const headerTemplate = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>* { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; box-sizing:border-box; } body { margin:0;padding:0;font-family:Arial,sans-serif;font-size:9pt;width:100%; } img { display:block; }</style></head><body style="margin:0;padding:0;width:100%;"><div style="width:100%;font-family:Arial,sans-serif;font-size:9pt;-webkit-print-color-adjust:exact;print-color-adjust:exact;">${headerHtml}</div></body></html>`;
+        const footerTemplate = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>* { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; box-sizing:border-box; } body { margin:0;padding:0;font-family:Arial,sans-serif;font-size:9pt;width:100%; }</style></head><body style="margin:0;padding:0;width:100%;"><div style="width:100%;font-family:Arial,sans-serif;font-size:9pt;-webkit-print-color-adjust:exact;print-color-adjust:exact;">${footerHtml}</div></body></html>`;
         pdfA = Buffer.from(await page.pdf({
           format: "A4", printBackground: true,
           displayHeaderFooter: true, headerTemplate, footerTemplate,
@@ -1405,7 +1418,7 @@ export async function registerRoutes(
       }
 
       // PDF B: QR-Bill volle Seite, margin:0
-      await page.setContent(htmlQR, { waitUntil: "domcontentloaded" });
+      await page.setContent(htmlQR, { waitUntil: "networkidle0" });
       const pdfB = await page.pdf({ format: "A4", printBackground: true, margin: { top: "0", bottom: "0", left: "0", right: "0" } });
 
       // Merge
