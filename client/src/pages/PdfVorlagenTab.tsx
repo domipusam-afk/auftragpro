@@ -296,17 +296,32 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
         <img src="${watermark_data_url}" style="opacity:${wmOp};${watermark_pos==='full'?`width:100%;height:100%;object-fit:cover`:`width:${wmSz}%;max-width:none;object-fit:contain`};display:block;"/></div>`
     : "";
 
-  // Empfänger-Block: Couvert-Versatz NUR für Offerte, alle anderen fix linkbündig oben
-  const isOfferte = docTyp === "offerte";
-  const absTop = isOfferte ? `${Math.max(0,(absender_top_mm||55)-20)*S*3.78}px` : "0px";
-  const absLeft = isOfferte ? `${(absender_left_mm||0)*S*3.78}px` : "0px";
-  const absAlign = isOfferte ? (absender_pos_h === "rechts" ? "text-align:right;" : absender_pos_h === "mitte" ? "text-align:center;" : "") : "";
+  // Empfänger-Block: absolut positioniert wie im echten PDF
+  // absender_pos_h / absender_top_mm / absender_left_mm gilt für ALLE Dokument-Typen
+  const absTopPx  = (absender_top_mm  ?? 55) * S * 3.78;
+  const absLeftPx = (absender_left_mm ?? 20) * S * 3.78;
+  const absWidthPx = Math.round(90 * S * 3.78); // 90mm Fensterbreite (SN-Norm)
+  const absPos = absender_pos_h === "rechts"
+    ? `right:${absLeftPx.toFixed(1)}px;text-align:right;`
+    : absender_pos_h === "mitte"
+      ? `left:50%;transform:translateX(-50%);text-align:left;`
+      : `left:${absLeftPx.toFixed(1)}px;text-align:left;`;
+  // Empfänger ist position:absolute — braucht keinen margin-top im Flow
   const empfaengerBlock = `
-    <div style="margin-top:${absTop};${absLeft && absLeft !== "0px" ? `margin-left:${absLeft};` : ""}${absAlign}font-size:${Math.round(10*S)}pt;color:#333;line-height:1.55;margin-bottom:${Math.round(6*S)}mm;">
+    <div style="position:absolute;top:${absTopPx.toFixed(1)}px;${absPos}width:${absWidthPx}px;font-size:${Math.round(10*S)}pt;color:#333;line-height:1.55;z-index:10;">
       <div style="font-weight:600;">Musterfirma AG</div>
       <div>Musterstrasse 42</div>
       <div>8001 Z&uuml;rich</div>
     </div>`;
+  // Empfänger-Höhe: 3 Zeilen × 10pt × 1.55 lineheight × S × 1.33 (pt→px) + 8mm Abstand
+  const empfaengerHoehePx = Math.round(3 * 10 * S * 1.33 * 1.55 + 8 * S * 3.78);
+  // Spacer-Höhe: vom Content-Container-Anfang aus (nach dem Header)
+  // Empfänger-Block endet bei: absTopPx + empfaengerHoehePx (vom Seitenanfang)
+  // Content-Container beginnt nach dem Header. Da wir die Header-Höhe nicht kennen,
+  // nutzen wir einen Spacer der den Content RELATIV zum eigenen Container verschiebt.
+  // Der Spacer hat height = absTopPx + empfaengerHoehePx (worst-case: Header=0).
+  // Das ist etwas zu viel, aber sicher — der Empfänger überlappt nie den Content.
+  const spacerHoehePx = Math.round(absTopPx + empfaengerHoehePx);
 
   // Ansprechperson — zeigt Beispielwerte (wie in buildPdfHtml aus Mitarbeiter geladen)
   const apBlock = ansprechperson_aktiv
@@ -409,9 +424,12 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
 
   // ═══════════════════════════════════════════════════════
   // EINHEITLICHER INHALTS-BLOCK — gleich für alle Designs
+  // Empfänger: position:absolute (kein Flow-Element)
+  // Spacer: schiebt Ansprechperson + Tabelle nach unten
   // ═══════════════════════════════════════════════════════
   const contentBlock = `
     ${empfaengerBlock}
+    <div style="height:${spacerHoehePx}px;"></div>
     ${apBlock}
     ${einlHtml}
     ${tableHtml}
