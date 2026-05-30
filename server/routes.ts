@@ -1197,7 +1197,7 @@ export async function registerRoutes(
             ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
             ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
           </div>
-        <div class="pdf-content" style="padding:${Math.max(4, absenderTopMm - (hdrH + 4) + 20)}mm ${pad}px ${ftrH+4}mm;">
+        <div class="pdf-content" style="padding:${Math.max(4, absenderTopMm - (hdrH + 4) + 42)}mm ${pad}px ${ftrH+4}mm;">
           <div style="font-size:8pt;color:#aaa;margin-bottom:3px;">${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
           <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;">
             <div style="font-size:15pt;font-weight:700;color:#111;">${data.titel} Nr. ${data.nummer}</div>
@@ -1246,7 +1246,7 @@ export async function registerRoutes(
           ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
           ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
         </div>
-      <div class="pdf-content" style="padding:${Math.max(4, absenderTopMm - (hdrH + 4) + 20)}mm ${pad}px ${ftrH+4}mm;">
+      <div class="pdf-content" style="padding:${Math.max(4, absenderTopMm - (hdrH + 4) + 42)}mm ${pad}px ${ftrH+4}mm;">
         ${!titelImHeader ? `<div style="font-size:16pt;font-weight:700;color:${fc};margin:12px 0 4px;">${data.titel} Nr. ${data.nummer}</div>
         <div style="font-size:8.5pt;color:#555;margin-bottom:10px;display:flex;flex-wrap:wrap;gap:16px;">${metaHtml}</div>` : ""}
         ${apBlock}
@@ -1317,17 +1317,56 @@ export async function registerRoutes(
     return { strasse: adresse, plzOrt: "" };
   }
 
-  async function renderPdfFromHtml(html: string): Promise<Buffer> {
+
+
+  // ─── Browser-Singleton: eine Instanz für alle PDF-Requests ─────────────────
+  // Vermeidet OOM auf Render Free Plan (jede neue Instanz = ~200MB RAM)
+  let _browser: any = null;
+  let _browserPid: number | null = null;
+  const CHROMIUM_ARGS = [
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-dev-shm-usage",
+    "--disable-gpu",
+    "--disable-extensions",
+    "--disable-background-networking",
+    "--disable-default-apps",
+    "--disable-sync",
+    "--disable-translate",
+    "--hide-scrollbars",
+    "--metrics-recording-only",
+    "--mute-audio",
+    "--no-first-run",
+    "--safebrowsing-disable-auto-update",
+    "--single-process",          // ← wichtigste Speicher-Optimierung
+    "--memory-pressure-off",
+    "--js-flags=--max-old-space-size=128"
+  ];
+
+  async function getBrowser(): Promise<any> {
+    if (_browser) {
+      try {
+        // Prüfen ob noch alive
+        await _browser.version();
+        return _browser;
+      } catch {
+        _browser = null;
+      }
+    }
     const puppeteer = await import("puppeteer");
     const execPath = process.env.PUPPETEER_EXECUTABLE_PATH || undefined;
-    const browser = await puppeteer.default.launch({
+    _browser = await puppeteer.default.launch({
       executablePath: execPath,
-      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
+      args: CHROMIUM_ARGS,
     });
+    _browser.on("disconnected", () => { _browser = null; });
+    return _browser;
+  }
+
+  async function renderPdfFromHtml(html: string): Promise<Buffer> {
+    const browser = await getBrowser();
+    const page = await browser.newPage();
     try {
-      const page = await browser.newPage();
-      // margin:0 in page.pdf() — @page CSS im HTML steuert Margins vollständig.
-      // position:fixed divs im Body werden von Chrome-PDF auf JEDER Seite wiederholt.
       await page.setContent(html, { waitUntil: "domcontentloaded" });
       const pdfBuf = await page.pdf({
         format: "A4",
@@ -1336,28 +1375,20 @@ export async function registerRoutes(
       });
       return Buffer.from(pdfBuf);
     } finally {
-      await browser.close();
+      await page.close();
     }
   }
 
-  // Rechnung PDF: Seiten + QR-Bill als separate PDFs mergen
+  // Rechnung PDF: Seiten + QR-Bill mergen
   async function renderRechnungPdfFromHtml(htmlSeiten: string, htmlQR: string): Promise<Buffer> {
-    const puppeteer = await import("puppeteer");
     const { PDFDocument } = await import("pdf-lib") as any;
-    const execPath = process.env.PUPPETEER_EXECUTABLE_PATH || undefined;
-    const browser = await puppeteer.default.launch({
-      executablePath: execPath,
-      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
-    });
+    const browser = await getBrowser();
+    const page = await browser.newPage();
     try {
-      const page = await browser.newPage();
-      // PDF A: Rechnung-Seiten mit position:fixed Header/Footer
       await page.setContent(htmlSeiten, { waitUntil: "domcontentloaded" });
       const pdfA = await page.pdf({ format: "A4", printBackground: true, margin: { top: "0", bottom: "0", left: "0", right: "0" } });
-      // PDF B: QR-Bill volle Seite
       await page.setContent(htmlQR, { waitUntil: "domcontentloaded" });
       const pdfB = await page.pdf({ format: "A4", printBackground: true, margin: { top: "0", bottom: "0", left: "0", right: "0" } });
-      // Merge A + B
       const docA = await PDFDocument.load(pdfA);
       const docB = await PDFDocument.load(pdfB);
       const merged = await PDFDocument.create();
@@ -1365,10 +1396,9 @@ export async function registerRoutes(
       pagesA.forEach((p: any) => merged.addPage(p));
       const pagesB = await merged.copyPages(docB, docB.getPageIndices());
       pagesB.forEach((p: any) => merged.addPage(p));
-      const mergedBytes = await merged.save();
-      return Buffer.from(mergedBytes);
+      return Buffer.from(await merged.save());
     } finally {
-      await browser.close();
+      await page.close();
     }
   }
 
