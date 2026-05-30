@@ -989,7 +989,7 @@ export async function registerRoutes(
       <div style="height:3px;background:linear-gradient(90deg,${hc},${fc});margin:0 40px 0;border-radius:2px;"></div>`;
     } else {
       // Design A: Header = Firmendaten links + Logo rechts (Swiss-Norm Bild-2-Layout)
-      headerHtml = `<div style="padding:5px 40px 4px;display:flex;align-items:flex-start;justify-content:space-between;">
+      headerHtml = `<div style="padding:8px 40px 5px;display:flex;align-items:center;justify-content:space-between;">
         <div style="flex:1;font-size:8pt;color:#555;line-height:1.5;">
           <div style="font-weight:700;font-size:9pt;color:#222;">${data.firma}</div>
           <div>${data.firmaAdresse}</div>
