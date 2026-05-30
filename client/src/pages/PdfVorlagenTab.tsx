@@ -1292,46 +1292,47 @@ export default function PdfVorlagenTab() {
                   </div>
                 </div>
 
-                {/* Couvert-Fenster Position — nur Offerte */}
-                {activeDoc === "offerte" && (
-                  <>
-                    <div className="rounded bg-amber-50 border border-amber-100 px-2.5 py-1.5 text-xs text-amber-700">
-                      Couvert-Fenster: Position wird für Briefumschlag-Druck verwendet
+                {/* Couvert-Fenster Position — für ALLE Dokument-Typen */}
+                <div className="rounded bg-blue-50 border border-blue-100 px-2.5 py-1.5 text-xs text-blue-700">
+                  Schweizer Norm SN (C5/6 Couvert): oben 55 mm, links 20 mm
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs text-gray-600">Abstand oben (mm)</Label>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min={10}
+                        max={150}
+                        value={vorlage.absender_top_mm ?? 55}
+                        onChange={(e) => updateVorlage({ absender_top_mm: Number(e.target.value) })}
+                        className="h-8 text-xs border border-gray-200 rounded-md px-2 w-20 focus:outline-none"
+                      />
+                      <span className="text-xs text-gray-400">mm</span>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <Label className="text-xs text-gray-600">Abstand oben (mm)</Label>
-                        <div className="flex items-center gap-1.5">
-                          <input
-                            type="number"
-                            min={20}
-                            max={120}
-                            value={vorlage.absender_top_mm}
-                            onChange={(e) => updateVorlage({ absender_top_mm: Number(e.target.value) })}
-                            className="h-8 text-xs border border-gray-200 rounded-md px-2 w-20 focus:outline-none"
-                          />
-                          <span className="text-xs text-gray-400">mm</span>
-                        </div>
-                        <p className="text-xs text-gray-400">Standard: 55 mm</p>
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs text-gray-600">Abstand links (mm)</Label>
-                        <div className="flex items-center gap-1.5">
-                          <input
-                            type="number"
-                            min={0}
-                            max={150}
-                            value={vorlage.absender_left_mm ?? 0}
-                            onChange={(e) => updateVorlage({ absender_left_mm: Number(e.target.value) })}
-                            className="h-8 text-xs border border-gray-200 rounded-md px-2 w-20 focus:outline-none"
-                          />
-                          <span className="text-xs text-gray-400">mm</span>
-                        </div>
-                        <p className="text-xs text-gray-400">Standard: 0 mm</p>
-                      </div>
+                    <p className="text-xs text-gray-400">SN-Norm: 55 mm (A4 2× gefaltet)</p>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-gray-600">Abstand links (mm)</Label>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min={0}
+                        max={150}
+                        value={vorlage.absender_left_mm ?? 20}
+                        onChange={(e) => updateVorlage({ absender_left_mm: Number(e.target.value) })}
+                        className="h-8 text-xs border border-gray-200 rounded-md px-2 w-20 focus:outline-none"
+                      />
+                      <span className="text-xs text-gray-400">mm</span>
                     </div>
-                  </>
-                )}
+                    <p className="text-xs text-gray-400">SN-Norm: 20 mm vom Rand</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-1 text-xs text-gray-400 bg-gray-50 rounded p-2">
+                  <div><span className="font-semibold text-gray-600">C5/6 (DL)</span><br/>oben 21 mm<br/>links 12 mm (SN)</div>
+                  <div><span className="font-semibold text-gray-600">C5</span><br/>oben 65 mm<br/>links 12 mm (SN)</div>
+                  <div><span className="font-semibold text-gray-600">A4 gefaltet</span><br/>oben 55 mm<br/>links 20 mm (⭐)</div>
+                </div>
               </div>
             </AccordionSection>
 

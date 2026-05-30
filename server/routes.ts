@@ -909,10 +909,11 @@ export async function registerRoutes(
     const wmPos      = v.watermark_pos || "bottom";
     const showTotals = data.showTotals !== false;
     // Couvert-Fenster-Einstellungen nur für Offerte/Rechnung relevant
-    const _useCovert = ["offerte"].includes(docTyp); // nur Offerte hat Couvert-Fenster
-    const absenderPosH  = _useCovert ? (v.absender_pos_h  || "links") : "links";
-    const absenderTopMm  = _useCovert ? (Number(v.absender_top_mm) || 55) : 20;
-    const absenderLeftMm = _useCovert ? (Number(v.absender_left_mm) || 0) : 0;
+    // Alle Docs lesen Empfänger-Position aus Vorlage
+    // Schweizer Norm SN C5/6 (DL): Fenster 100x45mm, top=55mm (A4 zweifach gefaltet), left=20mm
+    const absenderPosH   = v.absender_pos_h   || "links";
+    const absenderTopMm  = v.absender_top_mm  != null ? Number(v.absender_top_mm)  : 55;
+    const absenderLeftMm = v.absender_left_mm != null ? Number(v.absender_left_mm) : 20;
     const fmtCHF = (n: number) => `CHF ${n.toFixed(2)}`;
 
     // Hilfsfunktion: Schriftfarbe je nach Hintergrundfarbe (schwarz oder weiss)
