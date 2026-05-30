@@ -989,7 +989,7 @@ export async function registerRoutes(
       <div style="height:3px;background:linear-gradient(90deg,${hc},${fc});margin:0 40px 0;border-radius:2px;"></div>`;
     } else {
       // Design A: Header = Firmendaten links + Logo rechts (Swiss-Norm Bild-2-Layout)
-      headerHtml = `<div style="padding:10px 40px 6px;display:flex;align-items:flex-start;justify-content:space-between;">
+      headerHtml = `<div style="padding:5px 40px 4px;display:flex;align-items:flex-start;justify-content:space-between;">
         <div style="flex:1;font-size:8pt;color:#555;line-height:1.5;">
           <div style="font-weight:700;font-size:9pt;color:#222;">${data.firma}</div>
           <div>${data.firmaAdresse}</div>
@@ -1081,7 +1081,7 @@ export async function registerRoutes(
                : (design === "C") ? (logoUrl ? 18 : 10)
                : (design === "E") ? (logoUrl ? 22 : 14)
                : (design === "G") ? (logoUrl ? 26 : 18)
-               : 30; // Design A — Firma links + Logo rechts (4 Zeilen ≈ 30mm)
+               : 22; // Design A — Firma links + Logo rechts (kompakt, kein Leerraum oben)
     const ftrH = (design === "E") ? 16 : 12;
     const padMm = 10; // Seitenrand in mm
 
