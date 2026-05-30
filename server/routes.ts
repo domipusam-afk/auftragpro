@@ -1091,7 +1091,7 @@ export async function registerRoutes(
 
     // Gemeinsames CSS für alle Designs: fixed header/footer wiederholt sich auf jeder Seite
     const sharedFixedCss = `
-      /* @page margin wird von Puppeteer via margin-Option gesteuert — nicht hier setzen */
+      @page { margin: ${hdrH}mm ${padMm}mm ${ftrH}mm ${padMm}mm; }
       body { font-family:Arial,sans-serif;font-size:10pt;color:#222;margin:0;padding:0;  position:relative;}
       table { width:100%;border-collapse:collapse; }
       .pdf-header {
@@ -1188,12 +1188,14 @@ export async function registerRoutes(
       </style></head>
       <body style="position:relative;">
         ${wmHtml}
-        <div style="position:absolute;top:${Math.max(0, absenderTopMm - (hdrH+8))}mm;${absenderPosH==='rechts'?`right:${absenderLeftMm}mm;text-align:right;`:`left:${absenderLeftMm}mm;text-align:left;`}${absenderPosH==='mitte'?'left:50%;transform:translateX(-50%);text-align:left;':''}width:90mm;font-size:10pt;color:#333;line-height:1.55;z-index:10;">
+        <div class="pdf-header">${gHeaderHtml}</div>
+        <div class="pdf-footer">${footerHtml}</div>
+        <div style="position:absolute;top:${absenderTopMm}mm;${absenderPosH==='rechts'?`right:${absenderLeftMm}mm;text-align:right;`:`left:${absenderLeftMm}mm;text-align:left;`}${absenderPosH==='mitte'?'left:50%;transform:translateX(-50%);text-align:left;':''}width:90mm;font-size:10pt;color:#333;line-height:1.55;z-index:10;">
             <div style="font-weight:600;">${data.empfaenger}</div>
             ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
             ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
           </div>
-        <div class="pdf-content" style="padding:${Math.max(0, absenderTopMm - (hdrH+8) + 20)}mm ${pad}px ${ftrH+8}mm;">
+        <div class="pdf-content" style="padding:${Math.max(hdrH+4, absenderTopMm+20)}mm ${pad}px ${ftrH+4}mm;">
           <div style="font-size:8pt;color:#aaa;margin-bottom:3px;">${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
           <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;">
             <div style="font-size:15pt;font-weight:700;color:#111;">${data.titel} Nr. ${data.nummer}</div>
@@ -1219,7 +1221,7 @@ export async function registerRoutes(
           ${data.extraHtml || ""}
         </div>
       </body></html>`;
-      return { html: gHtml, headerHtml: gHeaderHtml, footerHtml, topMm: hdrH+8, bottomMm: ftrH+8, leftMm: padMm, rightMm: padMm };
+      return gHtml;
     }
 
 
@@ -1235,12 +1237,14 @@ export async function registerRoutes(
     <body style="position:relative;">
       ${wmHtml}
       <!-- HAUPTINHALT -->
-      <div style="position:absolute;top:${Math.max(0, absenderTopMm - (hdrH+8))}mm;${absenderPosH==='rechts'?`right:${absenderLeftMm}mm;text-align:right;`:`left:${absenderLeftMm}mm;text-align:left;`}${absenderPosH==='mitte'?'left:50%;transform:translateX(-50%);text-align:left;':''}width:90mm;font-size:10pt;color:#333;line-height:1.55;z-index:10;">
+      <div class="pdf-header">${headerHtml}</div>
+      <div class="pdf-footer">${footerHtml}</div>
+      <div style="position:absolute;top:${absenderTopMm}mm;${absenderPosH==='rechts'?`right:${absenderLeftMm}mm;text-align:right;`:`left:${absenderLeftMm}mm;text-align:left;`}${absenderPosH==='mitte'?'left:50%;transform:translateX(-50%);text-align:left;':''}width:90mm;font-size:10pt;color:#333;line-height:1.55;z-index:10;">
           <div style="font-weight:600;">${data.empfaenger}</div>
           ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
           ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
         </div>
-      <div class="pdf-content" style="padding:${Math.max(0, absenderTopMm - (hdrH+8) + 20)}mm ${pad}px ${ftrH+8}mm;">
+      <div class="pdf-content" style="padding:${Math.max(hdrH+4, absenderTopMm+20)}mm ${pad}px ${ftrH+4}mm;">
         ${!titelImHeader ? `<div style="font-size:16pt;font-weight:700;color:${fc};margin:12px 0 4px;">${data.titel} Nr. ${data.nummer}</div>
         <div style="font-size:8.5pt;color:#555;margin-bottom:10px;display:flex;flex-wrap:wrap;gap:16px;">${metaHtml}</div>` : ""}
         ${apBlock}
@@ -1260,7 +1264,7 @@ export async function registerRoutes(
       </div>
       ${data.extraHtmlFullWidth ? `<div style="font-family:Arial,Helvetica,sans-serif;">${data.extraHtmlFullWidth}</div>` : ""}
     </body></html>`;
-    return { html: aHtml, headerHtml, footerHtml, topMm: hdrH+8, bottomMm: ftrH+8, leftMm: padMm, rightMm: padMm };
+    return aHtml;
   }
 
 
@@ -1311,65 +1315,31 @@ export async function registerRoutes(
     return { strasse: adresse, plzOrt: "" };
   }
 
-  interface PdfHtmlResult {
-    html: string;
-    headerHtml: string;
-    footerHtml: string;
-    topMm: number;
-    bottomMm: number;
-    leftMm: number;
-    rightMm: number;
-  }
-
-  async function renderPdfFromHtml(
-    input: string | PdfHtmlResult
-  ): Promise<Buffer> {
+  async function renderPdfFromHtml(html: string): Promise<Buffer> {
     const puppeteer = await import("puppeteer");
     const execPath = process.env.PUPPETEER_EXECUTABLE_PATH || undefined;
     const browser = await puppeteer.default.launch({
       executablePath: execPath,
       args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
     });
-    const page = await browser.newPage();
-
-    if (typeof input === "string") {
-      // Legacy: plain HTML string — position:fixed CSS steuert Header/Footer
-      await page.setContent(input, { waitUntil: "domcontentloaded" });
-      const pdfBuf = await page.pdf({ format: "A4", printBackground: true, margin: { top: "0", bottom: "0", left: "0", right: "0" } });
-      await browser.close();
+    try {
+      const page = await browser.newPage();
+      // margin:0 in page.pdf() — @page CSS im HTML steuert Margins vollständig.
+      // position:fixed divs im Body werden von Chrome-PDF auf JEDER Seite wiederholt.
+      await page.setContent(html, { waitUntil: "domcontentloaded" });
+      const pdfBuf = await page.pdf({
+        format: "A4",
+        printBackground: true,
+        margin: { top: "0", bottom: "0", left: "0", right: "0" }
+      });
       return Buffer.from(pdfBuf);
+    } finally {
+      await browser.close();
     }
-
-    // Neu: strukturiertes Objekt mit native Puppeteer header/footer
-    const { html, headerHtml, footerHtml, topMm, bottomMm, leftMm, rightMm } = input;
-    await page.setContent(html, { waitUntil: "load" });
-
-    // Puppeteer headerTemplate/footerTemplate:
-    // WICHTIG: Muss ein <div>-Snippet sein (kein vollständiges HTML-Dokument)
-    // font-size:9pt explizit setzen (Puppeteer setzt es sonst auf 0)
-    // -webkit-print-color-adjust für Hintergrundfarben
-    const headerTemplate = `<div style="width:100%;margin:0;padding:0;font-family:Arial,sans-serif;font-size:9pt;-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;box-sizing:border-box;">${headerHtml}</div>`;
-    const footerTemplate = `<div style="width:100%;margin:0;padding:0;font-family:Arial,sans-serif;font-size:9pt;-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;box-sizing:border-box;">${footerHtml}</div>`;
-
-    const pdfBuf = await page.pdf({
-      format: "A4",
-      printBackground: true,
-      displayHeaderFooter: true,
-      headerTemplate,
-      footerTemplate,
-      margin: {
-        top:    `${topMm}mm`,
-        bottom: `${bottomMm}mm`,
-        left:   `${leftMm}mm`,
-        right:  `${rightMm}mm`,
-      },
-    });
-    await browser.close();
-    return Buffer.from(pdfBuf);
   }
 
-  // Rechnung PDF: Seiten + QR-Bill als separate PDFs mergen (QR braucht margin:0 fuer volle 210mm)
-  async function renderRechnungPdfFromHtml(htmlSeiten: string | PdfHtmlResult, htmlQR: string): Promise<Buffer> {
+  // Rechnung PDF: Seiten + QR-Bill als separate PDFs mergen
+  async function renderRechnungPdfFromHtml(htmlSeiten: string, htmlQR: string): Promise<Buffer> {
     const puppeteer = await import("puppeteer");
     const { PDFDocument } = await import("pdf-lib") as any;
     const execPath = process.env.PUPPETEER_EXECUTABLE_PATH || undefined;
@@ -1379,29 +1349,13 @@ export async function registerRoutes(
     });
     try {
       const page = await browser.newPage();
-
-      // PDF A: Rechnung-Seiten mit Header/Footer
-      let pdfA: Buffer;
-      if (typeof htmlSeiten === "string") {
-        await page.setContent(htmlSeiten, { waitUntil: "domcontentloaded" });
-        pdfA = Buffer.from(await page.pdf({ format: "A4", printBackground: true, margin: { top: "0", bottom: "0", left: "0", right: "0" } }));
-      } else {
-        const { html, headerHtml, footerHtml, topMm, bottomMm, leftMm, rightMm } = htmlSeiten;
-        await page.setContent(html, { waitUntil: "load" });
-        const headerTemplate = `<div style="width:100%;margin:0;padding:0;font-family:Arial,sans-serif;font-size:9pt;-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;box-sizing:border-box;">${headerHtml}</div>`;
-        const footerTemplate = `<div style="width:100%;margin:0;padding:0;font-family:Arial,sans-serif;font-size:9pt;-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;box-sizing:border-box;">${footerHtml}</div>`;
-        pdfA = Buffer.from(await page.pdf({
-          format: "A4", printBackground: true,
-          displayHeaderFooter: true, headerTemplate, footerTemplate,
-          margin: { top: `${topMm}mm`, bottom: `${bottomMm}mm`, left: `${leftMm}mm`, right: `${rightMm}mm` },
-        }));
-      }
-
-      // PDF B: QR-Bill volle Seite, margin:0
-      await page.setContent(htmlQR, { waitUntil: "load" });
+      // PDF A: Rechnung-Seiten mit position:fixed Header/Footer
+      await page.setContent(htmlSeiten, { waitUntil: "domcontentloaded" });
+      const pdfA = await page.pdf({ format: "A4", printBackground: true, margin: { top: "0", bottom: "0", left: "0", right: "0" } });
+      // PDF B: QR-Bill volle Seite
+      await page.setContent(htmlQR, { waitUntil: "domcontentloaded" });
       const pdfB = await page.pdf({ format: "A4", printBackground: true, margin: { top: "0", bottom: "0", left: "0", right: "0" } });
-
-      // Merge
+      // Merge A + B
       const docA = await PDFDocument.load(pdfA);
       const docB = await PDFDocument.load(pdfB);
       const merged = await PDFDocument.create();
@@ -1598,7 +1552,7 @@ ${(ibanMissing || qrIbanError) ? `<div style="background:#fff3cd;border:1px soli
 </div>
 </body></html>`;
 
-      const pdfResult = await buildPdfHtml("rechnung", {
+      const html = await buildPdfHtml("rechnung", {
         titel: "RECHNUNG",
         nummer: rechnung.nr || rid.substring(0,8).toUpperCase(),
         datum: datumStr,
@@ -1622,7 +1576,7 @@ ${(ibanMissing || qrIbanError) ? `<div style="background:#fff3cd;border:1px soli
         kundenNr: await getKundenNr(auftrag?.kunde || ""),
       });
 
-      const pdfBuf = await renderRechnungPdfFromHtml(pdfResult, qrZahlscheinHtml);
+      const pdfBuf = await renderRechnungPdfFromHtml(html, qrZahlscheinHtml);
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `inline; filename="Rechnung-${rechnung.nr || rid}.pdf"`);
       res.send(pdfBuf);
@@ -2668,7 +2622,7 @@ ${(ibanMissing || qrIbanError) ? `<div style="background:#fff3cd;border:1px soli
       const empfaenger = mahnung.empfaenger_name || rechnung?.kunde_name || auftrag?.kunde_name || auftrag?.kunde || "";
       const stufe = mahnung.mahnstufe ? ` (${mahnung.mahnstufe}. Mahnung)` : "";
 
-      const pdfResult = await buildPdfHtml("mahnung", {
+      const html = await buildPdfHtml("mahnung", {
         titel: "MAHNUNG" + stufe,
         nummer: mahnung.nr || rechnung?.nr || id.substring(0, 8).toUpperCase(),
         datum: datumStr,
@@ -2695,7 +2649,7 @@ ${(ibanMissing || qrIbanError) ? `<div style="background:#fff3cd;border:1px soli
         kundenNr: await getKundenNr(empfaenger),
       });
 
-      const pdfBuf = await renderPdfFromHtml(pdfResult);
+      const pdfBuf = await renderPdfFromHtml(html);
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `inline; filename="Mahnung-${mahnung.nr || id}.pdf"`);
       res.send(pdfBuf);
@@ -2992,7 +2946,7 @@ ${(ibanMissing || qrIbanError) ? `<div style="background:#fff3cd;border:1px soli
         }
       }
 
-      const pdfResult = await buildPdfHtml("offerte", {
+      const html = await buildPdfHtml("offerte", {
         titel: "OFFERTE",
         nummer: offerte.nr || req.params.id.substring(0, 8).toUpperCase(),
         datum: datumStr,
@@ -3017,7 +2971,7 @@ ${(ibanMissing || qrIbanError) ? `<div style="background:#fff3cd;border:1px soli
         kundenNr: await getKundenNr(offerte.empfaenger_name || offerte.anrede || auftrag?.kunde || ""),
       });
 
-      const pdfBuf = await renderPdfFromHtml(pdfResult);
+      const pdfBuf = await renderPdfFromHtml(html);
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `inline; filename="Offerte-${offerte.nr || req.params.id}.pdf"`);
       res.send(pdfBuf);
@@ -3058,7 +3012,7 @@ ${(ibanMissing || qrIbanError) ? `<div style="background:#fff3cd;border:1px soli
         }
       }
 
-      const pdfResult = await buildPdfHtml("offerte", {
+      const html = await buildPdfHtml("offerte", {
         titel: "OFFERTE",
         nummer: offerte.offerten_nr || offerte.nr || req.params.id.substring(0, 8).toUpperCase(),
         datum: datumStr,
@@ -3081,7 +3035,7 @@ ${(ibanMissing || qrIbanError) ? `<div style="background:#fff3cd;border:1px soli
         kundenNr: await getKundenNr(offerte.empfaenger_name || offerte.anrede || auftrag?.kunde || ""),
       });
 
-      const pdfBuf = await renderPdfFromHtml(pdfResult);
+      const pdfBuf = await renderPdfFromHtml(html);
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `inline; filename="Offerte-${offerte.offerten_nr || offerte.nr || req.params.id}.pdf"`);
       res.send(pdfBuf);
@@ -3163,7 +3117,7 @@ ${(ibanMissing || qrIbanError) ? `<div style="background:#fff3cd;border:1px soli
           </table>
         </div>`;
 
-      const pdfResult = await buildPdfHtml("lohnabrechnung", {
+      const html = await buildPdfHtml("lohnabrechnung", {
         titel: "LOHNABRECHNUNG",
         nummer: `${mName} ${jahr}`,
         datum: datumStr,
@@ -3184,7 +3138,7 @@ ${(ibanMissing || qrIbanError) ? `<div style="background:#fff3cd;border:1px soli
         extraHtml,
       });
 
-      const pdfBuf = await renderPdfFromHtml(pdfResult);
+      const pdfBuf = await renderPdfFromHtml(html);
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `inline; filename="Lohnabrechnung-${mitarbeiter_name}-${mName}-${jahr}.pdf"`);
       res.send(pdfBuf);
@@ -3241,7 +3195,7 @@ ${(ibanMissing || qrIbanError) ? `<div style="background:#fff3cd;border:1px soli
           <span style="font-weight:700;font-size:10pt;">Total: ${totalStd.toFixed(2)} Stunden (${totalMin} Min.)</span>
         </div>`;
 
-      const pdfResult = await buildPdfHtml("stundenabrechnung", {
+      const html = await buildPdfHtml("stundenabrechnung", {
         titel: "STUNDENABRECHNUNG",
         nummer: periodeStr,
         datum: datumStr,
@@ -3259,7 +3213,7 @@ ${(ibanMissing || qrIbanError) ? `<div style="background:#fff3cd;border:1px soli
         extraHtml,
       });
 
-      const pdfBuf = await renderPdfFromHtml(pdfResult);
+      const pdfBuf = await renderPdfFromHtml(html);
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `inline; filename="Stundenabrechnung-${startDt}-${endDt}.pdf"`);
       res.send(pdfBuf);
@@ -4811,7 +4765,7 @@ ${(ibanMissing || qrIbanError) ? `<div style="background:#fff3cd;border:1px soli
         </div>`;
 
       const ansprechpersonInternLS: string = req.body?.ansprechpersonIntern || auftrag.verantwortlicher || "";
-      const pdfResult = await buildPdfHtml("lieferschein", {
+      const html = await buildPdfHtml("lieferschein", {
         titel: "LIEFERSCHEIN",
         nummer: auftrag.nr || id.substring(0, 8).toUpperCase(),
         datum: datumStr,
@@ -4830,7 +4784,7 @@ ${(ibanMissing || qrIbanError) ? `<div style="background:#fff3cd;border:1px soli
         kundenNr: await getKundenNr(auftrag.kunde_name || auftrag.kunde || ""),
       });
 
-      const pdfBuf = await renderPdfFromHtml(pdfResult);
+      const pdfBuf = await renderPdfFromHtml(html);
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `inline; filename="Lieferschein-${auftrag.nr || id}.pdf"`);
       res.send(pdfBuf);
@@ -4872,7 +4826,7 @@ ${(ibanMissing || qrIbanError) ? `<div style="background:#fff3cd;border:1px soli
         : undefined;
 
       const ansprechpersonInternAB: string = req.body?.ansprechpersonIntern || auftrag.verantwortlicher || "";
-      const pdfResult = await buildPdfHtml("auftragsbestaetigung", {
+      const html = await buildPdfHtml("auftragsbestaetigung", {
         titel: "AUFTRAGSBESTÄTIGUNG",
         nummer: auftrag.nr || id.substring(0, 8).toUpperCase(),
         datum: datumStr,
@@ -4893,7 +4847,7 @@ ${(ibanMissing || qrIbanError) ? `<div style="background:#fff3cd;border:1px soli
         kundenNr: await getKundenNr(auftrag.kunde_name || auftrag.kunde || ""),
       });
 
-      const pdfBuf = await renderPdfFromHtml(pdfResult);
+      const pdfBuf = await renderPdfFromHtml(html);
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `inline; filename="Auftragsbestaetigung-${auftrag.nr || id}.pdf"`);
       res.send(pdfBuf);
