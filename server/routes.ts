@@ -1197,7 +1197,7 @@ export async function registerRoutes(
             ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
             ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
           </div>
-        <div class="pdf-content" style="padding:${Math.max(4, absenderTopMm - (hdrH + 4) + 42)}mm ${pad}px ${ftrH+4}mm;">
+        <div class="pdf-content" style="padding:${Math.max(4, absenderTopMm - (hdrH + 4) + 42)}mm ${pad}px ${ftrH+8}mm;">
           <div style="font-size:8pt;color:#aaa;margin-bottom:3px;">${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
           <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;">
             <div style="font-size:15pt;font-weight:700;color:#111;">${data.titel} Nr. ${data.nummer}</div>
@@ -1246,7 +1246,7 @@ export async function registerRoutes(
           ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
           ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
         </div>
-      <div class="pdf-content" style="padding:${Math.max(4, absenderTopMm - (hdrH + 4) + 42)}mm ${pad}px ${ftrH+4}mm;">
+      <div class="pdf-content" style="padding:${Math.max(4, absenderTopMm - (hdrH + 4) + 42)}mm ${pad}px ${ftrH+8}mm;">
         ${!titelImHeader ? `<div style="font-size:16pt;font-weight:700;color:${fc};margin:12px 0 4px;">${data.titel} Nr. ${data.nummer}</div>
         <div style="font-size:8.5pt;color:#555;margin-bottom:10px;display:flex;flex-wrap:wrap;gap:16px;">${metaHtml}</div>` : ""}
         ${apBlock}
