@@ -315,13 +315,21 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
     </div>`;
   // Empfänger-Höhe: 3 Zeilen × 10pt × 1.55 lineheight × S × 1.33 (pt→px) + 8mm Abstand
   const empfaengerHoehePx = Math.round(3 * 10 * S * 1.33 * 1.55 + 8 * S * 3.78);
-  // Spacer-Höhe: vom Content-Container-Anfang aus (nach dem Header)
-  // Empfänger-Block endet bei: absTopPx + empfaengerHoehePx (vom Seitenanfang)
-  // Content-Container beginnt nach dem Header. Da wir die Header-Höhe nicht kennen,
-  // nutzen wir einen Spacer der den Content RELATIV zum eigenen Container verschiebt.
-  // Der Spacer hat height = absTopPx + empfaengerHoehePx (worst-case: Header=0).
-  // Das ist etwas zu viel, aber sicher — der Empfänger überlappt nie den Content.
-  const spacerHoehePx = Math.round(absTopPx + empfaengerHoehePx);
+  // Spacer-Höhe: schiebt Content nach unten, damit er NACH dem Empfänger-Block beginnt.
+  // Empfänger endet bei absTopPx + empfaengerHoehePx (gemessen vom Seitenanfang).
+  // Content-Container startet nach dem Header.
+  // Spacer = Empfänger-Ende - Header-Höhe (pro Design approximiert)
+  // Ohne Logo: A≈20mm, B≈18mm, C≈12mm, E≈16mm, G≈22mm (incl. hr-Linie)
+  // Mit Logo: A≈28mm, B≈26mm, C≈16mm, E≈20mm, G≈28mm
+  // In Pixel skaliert (S=0.38, 1mm=3.78px):
+  const hasLogo = !!logo_data_url;
+  const hdrMmApprox = design === "B" ? (hasLogo ? 26 : 18)
+                    : design === "C" ? (hasLogo ? 14 : 10)
+                    : design === "E" ? (hasLogo ? 20 : 14)
+                    : design === "G" ? (hasLogo ? 28 : 22)
+                    : (hasLogo ? 28 : 20); // Design A
+  const hdrPxApprox = hdrMmApprox * S * 3.78;
+  const spacerHoehePx = Math.max(0, Math.round(absTopPx + empfaengerHoehePx - hdrPxApprox));
 
   // Ansprechperson — zeigt Beispielwerte (wie in buildPdfHtml aus Mitarbeiter geladen)
   const apBlock = ansprechperson_aktiv
@@ -498,34 +506,10 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
     </div>`;
   }
 
-  // ── Design D: Zweifarbig ─────────────────────────────────────────────────────
-  if (design === "D") {
-    return `<div style="font-family:Arial,sans-serif;font-size:${Math.round(10*S)}pt;color:#222;min-height:100%;display:flex;position:relative;padding-bottom:${Math.round(24*S)}px;box-sizing:border-box;">
-      ${wmHtml}
-      <div style="width:${Math.round(22*S)}px;background:${hc};flex-shrink:0;display:flex;flex-direction:column;align-items:center;padding-top:${Math.round(20*S)}px;z-index:1;">
-        ${logo_data_url ? `<img src="${logo_data_url}" style="width:${Math.round(16*S)}px;object-fit:contain;filter:brightness(0) invert(1);opacity:0.9;" alt="Logo"/>` : `<span style="color:${hcText};font-weight:700;font-size:${Math.round(7*S)}pt;writing-mode:vertical-rl;transform:rotate(180deg);">SG</span>`}
-      </div>
-      <div style="flex:1;display:flex;flex-direction:column;position:relative;z-index:1;">
-        <div style="padding:${Math.round(18*S)}px ${Math.round(36*S)}px ${Math.round(10*S)}px;">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:${Math.round(6*S)}px;">
-            <div style="font-size:${Math.round(14*S)}pt;font-weight:700;color:${hc};">${docTitle}</div>
-            ${docInfoHtml}
-          </div>
-          <div style="height:2px;background:${hc};margin-bottom:${Math.round(12*S)}px;border-radius:1px;"></div>
-        </div>
-        <div style="padding:0 ${Math.round(36*S)}px;flex:1;">
-          ${contentBlock}
-        </div>
-        <div style="background:${fc};color:${fcText};padding:${Math.round(6*S)}px ${Math.round(36*S)}px;font-size:${Math.round(8*S)}pt;display:flex;justify-content:space-between;align-items:center;">
-          <span>${footerContact}</span><span>${footerPage}</span>
-        </div>
-      </div>
-    </div>`;
-  }
 
   // ── Design E: Elegant ────────────────────────────────────────────────────────
   if (design === "E") {
-    return `<div style="font-family:Georgia,serif;font-size:${Math.round(10*S)}pt;color:#222;min-height:100%;display:flex;flex-direction:column;position:relative;padding-bottom:${Math.round(24*S)}px;box-sizing:border-box;">
+    return `<div style="font-family:Arial,sans-serif;font-size:${Math.round(10*S)}pt;color:#222;min-height:100%;display:flex;flex-direction:column;position:relative;padding-bottom:${Math.round(24*S)}px;box-sizing:border-box;">
       ${wmHtml}
       <div style="padding:${Math.round(20*S)}px ${Math.round(40*S)}px ${Math.round(10*S)}px;display:flex;align-items:center;justify-content:space-between;gap:${Math.round(16*S)}px;position:relative;z-index:1;">
         <div style="flex-shrink:0;">${logoHtml}${slogan ? `<div style="font-size:${Math.round(7*S)}pt;color:#aaa;letter-spacing:0.1em;margin-top:${Math.round(3*S)}px;">${slogan.toUpperCase()}</div>` : ""}</div>
@@ -547,26 +531,6 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
     </div>`;
   }
 
-  // ── Design F: Box-Header ─────────────────────────────────────────────────────
-  if (design === "F") {
-    const logoLeft = logo_pos !== "rechts";
-    return `<div style="font-family:Arial,sans-serif;font-size:${Math.round(10*S)}pt;color:#222;min-height:100%;display:flex;flex-direction:column;position:relative;padding-bottom:${Math.round(24*S)}px;box-sizing:border-box;">
-      ${wmHtml}
-      <div style="background:${hc};color:${hcText};padding:${Math.round(22*S)}px ${Math.round(40*S)}px ${Math.round(18*S)}px;display:flex;align-items:flex-end;justify-content:space-between;gap:${Math.round(16*S)}px;flex-direction:${logoLeft?"row":"row-reverse"};position:relative;z-index:1;">
-        <div style="flex-shrink:0;">${logo_data_url ? `<img src="${logo_data_url}" style="max-width:${lws}px;max-height:${lhs}px;object-fit:contain;filter:brightness(0) invert(1);" alt="Logo"/>` : `<span style="font-size:${Math.round(16*S)}pt;font-weight:900;color:${hcText};letter-spacing:2px;">SG</span>`}${slogan ? `<div style="font-size:${Math.round(7*S)}pt;opacity:0.75;margin-top:${Math.round(4*S)}px;">${slogan}</div>` : ""}</div>
-        <div style="text-align:right;">
-          <div style="font-size:${Math.round(14*S)}pt;font-weight:800;letter-spacing:1px;">${docTitle}</div>
-          ${docInfoHtml.replace("color:#555", "color:rgba(255,255,255,0.8)")}
-        </div>
-      </div>
-      <div style="padding:${Math.round(12*S)}px ${Math.round(40*S)}px;flex:1;position:relative;z-index:1;">
-        ${contentBlock}
-      </div>
-      <div style="background:${fc};color:${fcText};padding:${Math.round(6*S)}px ${Math.round(40*S)}px;font-size:${Math.round(8*S)}pt;display:flex;justify-content:space-between;align-items:center;">
-        <span>${footerContact}</span><span>${footerPage}</span>
-      </div>
-    </div>`;
-  }
 
   // ── Design G: Swiss Classic ──────────────────────────────────────────────────
   if (design === "G") {
@@ -598,69 +562,7 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
     </div>`;
   }
 
-  // ── Design H: Helvetica Pro ──────────────────────────────────────────────────
-  if (design === "H") {
-    const logoLeft = logo_pos !== "rechts";
-    return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:${Math.round(10*S)}pt;color:#222;min-height:100%;display:flex;flex-direction:column;position:relative;padding-bottom:${Math.round(24*S)}px;box-sizing:border-box;">
-      ${wmHtml}
-      <div style="padding:${Math.round(22*S)}px ${Math.round(40*S)}px 0;position:relative;z-index:1;flex-direction:${logoLeft?"row":"row-reverse"};">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:${Math.round(6*S)}px;">
-          <div style="flex-shrink:0;">${logoHtml}${slogan ? `<div style="font-size:${Math.round(8*S)}pt;color:#aaa;margin-top:${Math.round(3*S)}px;letter-spacing:1px;">${slogan}</div>` : ""}</div>
-          <div style="text-align:right;font-size:${Math.round(8*S)}pt;color:#aaa;line-height:1.6;">
-            <div style="font-weight:700;color:#333;">Schneggenburger GmbH</div>
-            <div>Hefenhoferstrasse 7 &middot; 8580 Sommeri</div>
-          </div>
-        </div>
-        <div style="height:1.5px;background:#222;margin-bottom:1px;"></div>
-        <div style="height:0.5px;background:#bbb;margin-bottom:${Math.round(10*S)}px;"></div>
-        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:${Math.round(8*S)}px;">
-          <div style="font-size:${Math.round(14*S)}pt;font-weight:700;color:#111;text-transform:uppercase;letter-spacing:1px;">${docTitle}</div>
-          ${docInfoHtml}
-        </div>
-      </div>
-      <div style="padding:0 ${Math.round(40*S)}px;flex:1;position:relative;z-index:1;">
-        ${contentBlock}
-      </div>
-      <div style="position:relative;z-index:1;">
-        <div style="height:1.5px;background:#222;"></div>
-        <div style="height:0.5px;background:#bbb;margin-bottom:1px;"></div>
-        <div style="padding:${Math.round(4*S)}px ${Math.round(40*S)}px;font-size:${Math.round(8*S)}pt;color:#888;display:flex;justify-content:space-between;">
-          <span>${footerContact}</span><span>${footerPage}</span>
-        </div>
-      </div>
-    </div>`;
-  }
 
-  // ── Design I: Corporate Slim ─────────────────────────────────────────────────
-  if (design === "I") {
-    const logoLeft = logo_pos !== "rechts";
-    return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:${Math.round(10*S)}pt;color:#222;min-height:100%;display:flex;position:relative;padding-bottom:${Math.round(24*S)}px;box-sizing:border-box;">
-      ${wmHtml}
-      <div style="width:${Math.round(5*S)}px;background:${hc};flex-shrink:0;z-index:1;"></div>
-      <div style="flex:1;display:flex;flex-direction:column;position:relative;z-index:1;">
-        <div style="padding:${Math.round(22*S)}px ${Math.round(36*S)}px 0;">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-direction:${logoLeft?"row":"row-reverse"};margin-bottom:${Math.round(6*S)}px;">
-            <div style="flex-shrink:0;">${logoHtml}${slogan ? `<div style="font-size:${Math.round(8*S)}pt;color:#999;margin-top:${Math.round(3*S)}px;">${slogan}</div>` : ""}</div>
-            <div style="text-align:right;font-size:${Math.round(8*S)}pt;color:#777;line-height:1.6;">
-              <div style="font-weight:700;color:#333;">Schneggenburger GmbH</div>
-              <div>Hefenhoferstrasse 7 &middot; 8580 Sommeri</div>
-            </div>
-          </div>
-          <div style="height:0.5px;background:#ccc;margin-bottom:${Math.round(10*S)}px;"></div>
-          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:${Math.round(8*S)}px;">
-            <div style="font-size:${Math.round(14*S)}pt;font-weight:700;color:${hc};">${docTitle}</div>
-            ${docInfoHtml}
-          </div>
-        </div>
-        <div style="padding:0 ${Math.round(36*S)}px;flex:1;">
-          ${contentBlock}
-        </div>
-        <div style="background:${fc};color:${fcText};padding:${Math.round(6*S)}px ${Math.round(36*S)}px;font-size:${Math.round(8*S)}pt;display:flex;justify-content:space-between;align-items:center;">
-          <span>${footerContact}</span><span>${footerPage}</span>
-        </div>
-      </div>
-    </div>`;
-  }
 
   // Fallback: Design A
   return renderA4Preview({ ...vorlage, design: "A" }, docTyp);
@@ -1027,28 +929,6 @@ export default function PdfVorlagenTab() {
       ),
     },
     {
-      id: "D",
-      title: "Zweifarbig",
-      description: "Linke Farbspalte",
-      previewContent: (
-        <div style={{ height: "100%", display: "flex" }}>
-          <div style={{ width: 14, background: vorlage.header_color, flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 4 }}>
-            <div style={{ width: 8, height: 8, background: "rgba(255,255,255,0.5)", borderRadius: "50%" }} />
-          </div>
-          <div style={{ flex: 1, padding: "3px 5px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-            <div>
-              <div style={{ fontSize: 7, fontWeight: 700, color: vorlage.header_color }}>RECHNUNG</div>
-              <div style={{ height: 1, background: vorlage.header_color, margin: "2px 0", opacity: 0.3 }} />
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-              {[1, 2, 3].map(i => <div key={i} style={{ height: 2.5, background: "#e5e7eb", borderRadius: 1, width: `${75 - i * 12}%` }} />)}
-            </div>
-            <div style={{ height: 8, background: vorlage.footer_color, borderRadius: 1, opacity: 0.8 }} />
-          </div>
-        </div>
-      ),
-    },
-    {
       id: "E",
       title: "Elegant",
       description: "Goldene Akzentlinie",
@@ -1066,28 +946,6 @@ export default function PdfVorlagenTab() {
             {[1, 2, 3].map(i => <div key={i} style={{ height: 2.5, background: "#e5e7eb", borderRadius: 1, width: `${80 - i * 10}%` }} />)}
           </div>
           <div style={{ height: 1, background: `linear-gradient(90deg, ${vorlage.footer_color}, ${vorlage.header_color})`, borderRadius: 1, marginTop: 3 }} />
-        </div>
-      ),
-    },
-    {
-      id: "F",
-      title: "Box-Header",
-      description: "Voller Farbblock oben",
-      previewContent: (
-        <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-          <div style={{ background: vorlage.header_color, padding: "5px 6px", display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
-            <div style={{ fontSize: 9, fontWeight: 800, color: "white", letterSpacing: 0.5 }}>SG</div>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 7, fontWeight: 700, color: "white" }}>RECHNUNG</div>
-              <div style={{ fontSize: 5.5, color: "rgba(255,255,255,0.7)" }}>Nr. 2024-001</div>
-            </div>
-          </div>
-          <div style={{ flex: 1, padding: "4px 6px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-              {[1, 2, 3].map(i => <div key={i} style={{ height: 2.5, background: "#e5e7eb", borderRadius: 1, width: `${70 - i * 10}%` }} />)}
-            </div>
-            <div style={{ background: vorlage.footer_color, height: 10, borderRadius: 1 }} />
-          </div>
         </div>
       ),
     },
@@ -1115,49 +973,7 @@ export default function PdfVorlagenTab() {
         </div>
       ),
     },
-    {
-      id: "H",
-      title: "Helvetica Pro",
-      description: "Klare Linien, kein Farb-Header",
-      previewContent: (
-        <div style={{ padding: "4px 6px", height: "100%", display: "flex", flexDirection: "column", background: "white" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-            <div style={{ fontSize: 9, fontWeight: 800, color: "#111", letterSpacing: 0.5 }}>SG</div>
-            <div style={{ fontSize: 5.5, color: "#aaa", textAlign: "right" }}>Schneggenburger GmbH</div>
-          </div>
-          <div style={{ height: 1, background: "#222", margin: "2px 0 1px 0" }} />
-          <div style={{ height: "0.5px", background: "#ccc", marginBottom: 3 }} />
-          <div style={{ fontSize: 8, fontWeight: 700, color: "#111", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Rechnung</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-            {[1, 2, 3].map(i => <div key={i} style={{ height: 2.5, background: "#e8e8e8", borderRadius: 1, width: `${72 - i * 10}%` }} />)}
-          </div>
-        </div>
-      ),
-    },
-    {
-      id: "I",
-      title: "Corporate Slim",
-      description: "Dezenter Akzent, sachlich",
-      previewContent: (
-        <div style={{ padding: "0", height: "100%", display: "flex", flexDirection: "column", background: "white" }}>
-          <div style={{ display: "flex" }}>
-            <div style={{ width: 3, background: vorlage.header_color, flexShrink: 0 }} />
-            <div style={{ flex: 1, padding: "4px 5px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
-                <div style={{ fontSize: 6.5, fontWeight: 700, color: "#222" }}>Schneggenburger GmbH</div>
-                <div style={{ fontSize: 5.5, color: "#aaa" }}>8580 Sommeri</div>
-              </div>
-              <div style={{ borderBottom: "0.5px solid #ddd", marginBottom: 3 }} />
-              <div style={{ fontSize: 8, fontWeight: 700, color: "#111", marginBottom: 2 }}>RECHNUNG</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-                {[1, 2, 3].map(i => <div key={i} style={{ height: 2.5, background: "#e8e8e8", borderRadius: 1, width: `${70 - i * 10}%` }} />)}
-              </div>
-            </div>
-          </div>
-        </div>
-      ),
-    },
-  ];
+    ];
 
   return (
     <div className="space-y-4">

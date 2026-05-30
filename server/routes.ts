@@ -914,6 +914,9 @@ export async function registerRoutes(
     const absenderPosH   = v.absender_pos_h   || "links";
     const absenderTopMm  = v.absender_top_mm  != null ? Number(v.absender_top_mm)  : 55;
     const absenderLeftMm = v.absender_left_mm != null ? Number(v.absender_left_mm) : 20;
+    // Empfänger-Block endet bei: absenderTopMm + ~20mm (3 Zeilen + Abstand)
+    // pdf-content muss DARUNTER starten — sonst Überlappung mit Tabelle
+    // contentTopMm wird nach hdrH-Berechnung via Closure genutzt (Inline-Berechnung)
     const fmtCHF = (n: number) => `CHF ${n.toFixed(2)}`;
 
     // Hilfsfunktion: Schriftfarbe je nach Hintergrundfarbe (schwarz oder weiss)
@@ -956,13 +959,14 @@ export async function registerRoutes(
     if (design === "B") {
       headerHtml = `<div style="background:${hc};color:${hcText};padding:22px 40px 18px;display:flex;align-items:center;gap:16px;${logoPos==="rechts"?"flex-direction:row-reverse":""}">
         <div style="flex-shrink:0">${logoHtml}</div>
-        <div><div style="font-size:15pt;font-weight:700;color:${hcText};">${data.firma}</div><div style="font-size:9pt;opacity:0.85;color:${hcText};">${slogan}</div></div>
+        <div style="flex:1;">
+          <div style="font-size:15pt;font-weight:700;color:${hcText};">${data.firma}</div>
+          ${slogan ? `<div style="font-size:9pt;opacity:0.85;color:${hcText};">${slogan}</div>` : ""}
+        </div>
+        <div style="text-align:right;font-size:8pt;opacity:0.85;color:${hcText};">${data.firmaAdresse}<br>${data.firmaPlzOrt}</div>
       </div>`;
     } else if (design === "C") {
       headerHtml = `<div style="padding:16px 40px 6px;">${logoHtml}</div>`;
-    } else if (design === "D") {
-      // Zweifarbig: Linke Farbspalte — kein klassischer Header, wird im Body behandelt
-      headerHtml = ``;
     } else if (design === "E") {
       // Elegant: Gradient-Linie
       headerHtml = `<div style="padding:20px 40px 10px;display:flex;align-items:center;justify-content:space-between;gap:16px;">
@@ -973,15 +977,6 @@ export async function registerRoutes(
         </div>
       </div>
       <div style="height:3px;background:linear-gradient(90deg,${hc},${fc});margin:0 40px 0;border-radius:2px;"></div>`;
-    } else if (design === "F") {
-      // Box-Header: voller Farbblock
-      headerHtml = `<div style="background:${hc};color:${hcText};padding:22px 40px 18px;display:flex;align-items:flex-end;justify-content:space-between;gap:16px;${logoPos==="rechts"?"flex-direction:row-reverse":""}">
-        <div style="flex-shrink:0">${logoHtml}<div style="font-size:8.5pt;opacity:0.75;margin-top:4px;">${slogan}</div></div>
-        <div style="text-align:right">
-          <div style="font-size:14pt;font-weight:800;letter-spacing:1px;color:${hcText};">${data.firma}</div>
-          <div style="font-size:8.5pt;opacity:0.8;color:${hcText};">${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
-        </div>
-      </div>`;
     } else {
       // Design A: Klassisch — Logo links, Dokument-Titel/Nr/Datum rechts (wie Frontend-Vorschau)
       // Info-Block rechts: Kundennummer / Datum / Referenz — sauber untereinander
@@ -1086,18 +1081,17 @@ export async function registerRoutes(
         </div>`;
 
     // Gemeinsame Höhen für @page-Margins (Header/Footer nicht überlappen)
-    const hdrH = (design === "B" || design === "F") ? (logoUrl ? 26 : 20)
+    const hdrH = (design === "B") ? (logoUrl ? 26 : 20)
                : (design === "C") ? (logoUrl ? 18 : 10)
-               : (design === "D") ? 12
                : (design === "E") ? (logoUrl ? 22 : 14)
-               : (design === "G" || design === "H" || design === "I") ? (logoUrl ? 26 : 18)
+               : (design === "G") ? (logoUrl ? 26 : 18)
                : (logoUrl ? 28 : 20); // Design A
     const ftrH = (design === "E") ? 16 : 12;
     const padMm = 10; // Seitenrand in mm
 
     // Gemeinsames CSS für alle Designs: fixed header/footer wiederholt sich auf jeder Seite
     const sharedFixedCss = `
-      @page { margin: ${hdrH + 4}mm ${padMm}mm ${ftrH + 4}mm ${padMm}mm; }
+      @page { margin: ${hdrH + 8}mm ${padMm}mm ${ftrH + 8}mm ${padMm}mm; }
       body { font-family:Arial,sans-serif;font-size:10pt;color:#222;margin:0;padding:0;  position:relative;}
       table { width:100%;border-collapse:collapse; }
       .pdf-header {
@@ -1111,6 +1105,9 @@ export async function registerRoutes(
         -webkit-print-color-adjust: exact; print-color-adjust: exact;
       }
       .pdf-content { position: relative; z-index: 1; }
+      thead { display: table-header-group; }
+      tbody { display: table-row-group; }
+      tr { page-break-inside: avoid; }
       * { box-sizing:border-box; -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
     `;
     const pad = 40; // Seitenrand in px für Inline-Styles
@@ -1165,75 +1162,10 @@ export async function registerRoutes(
     const ptPreis = (pt as any).preis        || "Preis";
     const ptTotal = (pt as any).total        || "Total";
 
-    // Design D: Zweifarbig braucht speziellen Wrapper mit linker Spalte
-    if (design === "D") {
-      return `<!DOCTYPE html><html><head><meta charset="utf-8">
-      <style>
-        ${sharedFixedCss}
-        th { background:${hc};color:${hcText};padding:8px 4px;text-align:left;font-size:8.5pt; }
-        td { font-size:9pt; }
-        .intro,.schluss { font-size:9pt;color:#444;white-space:pre-line; }
-        /* Design D: breiter farbiger Linksbalken — fixed über alle Seiten */
-        .design-d-bar {
-          position: fixed; top: 0; left: 0; bottom: 0;
-          width: 22px; background: ${hc};
-          z-index: 200;
-          display: flex; flex-direction: column; align-items: center; padding-top: 20px;
-          -webkit-print-color-adjust: exact; print-color-adjust: exact;
-        }
-        .pdf-header { left: 22px !important; }
-        .pdf-footer { left: 22px !important; }
-        .pdf-content { margin-left: 22px; }
-      </style></head>
-      <body style="position:relative;">
-        ${wmHtml}
-        <div class="design-d-bar">
-          ${logoUrl ? `<img src="${logoUrl}" style="width:16px;object-fit:contain;filter:brightness(0) invert(1);opacity:0.9;" />` : `<span style="color:${hcText};font-weight:700;font-size:8pt;writing-mode:vertical-rl;transform:rotate(180deg);">${data.firma.substring(0,2).toUpperCase()}</span>`}
-        </div>
-        <div class="pdf-header">
-          <div style="padding:14px 36px 8px;">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;">
-              <div>
-                <div style="font-size:14pt;font-weight:700;color:${hc};">${data.titel} Nr. ${data.nummer}</div>
-                <div style="font-size:8.5pt;color:#555;margin-top:2px;">${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
-              </div>
-              <div style="font-size:8.5pt;color:#555;text-align:right;line-height:1.6;">
-                <div><b style="color:#999;font-weight:400">Datum: </b>${data.datum}</div>
-                ${data.faelligDatum ? `<div><b style="color:#999;font-weight:400">Zahlbar bis: </b>${data.faelligDatum}</div>` : ""}
-              </div>
-            </div>
-            <div style="height:2px;background:${hc};border-radius:1px;"></div>
-          </div>
-        </div>
-        <div class="pdf-footer">${footerHtml}</div>
-        <div style="position:absolute;top:${absenderTopMm}mm;${absenderPosH==='rechts'?`right:${absenderLeftMm}mm;text-align:right;`:`left:${absenderLeftMm}mm;text-align:left;`}${absenderPosH==='mitte'?'left:50%;transform:translateX(-50%);text-align:left;':''}width:90mm;font-size:10pt;color:#333;line-height:1.55;z-index:10;">
-            <div style="font-weight:600;">${data.empfaenger}</div>
-            ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
-            ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
-          </div>
-        <div class="pdf-content" style="padding:${hdrH+4}mm 36px ${ftrH+4}mm;">
-          ${apBlock}
-          ${einl ? `<div class="intro" style="margin-bottom:12px;">${einl}</div>` : ""}
-          <table>
-            <thead><tr>
-              <th style="width:28px">${ptPos}</th><th>${ptBeschr}</th>
-              <th style="width:65px;text-align:right">${ptMenge}</th>
-              <th style="width:90px;text-align:right">${ptPreis}</th>
-              <th style="width:90px;text-align:right">${ptTotal}</th>
-            </tr></thead>
-            <tbody>${posHtml}</tbody>
-          </table>
-          ${totalsHtml}
-          ${schl ? `<div class="schluss" style="margin-top:14px;">${schl}</div>` : ""}
-          ${data.extraHtml || ""}
-        </div>
-      </body></html>`;
-    }
 
     // ─── Design G: Swiss Classic ─────────────────────────────────────────────
     if (design === "G") {
       // Design G: Swiss Classic
-      const headerG = `<div style="padding:20px 40px 10px;border-top:2px solid ${hc};">`;
       return `<!DOCTYPE html><html><head><meta charset="utf-8">
       <style>
         ${sharedFixedCss}
@@ -1262,7 +1194,7 @@ export async function registerRoutes(
               ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
               ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
             </div>
-          <div class="pdf-content" style="padding:${hdrH+4}mm ${pad}px ${ftrH+4}mm;">
+          <div class="pdf-content" style="padding:${Math.max(hdrH+8, absenderTopMm+20)}mm ${pad}px ${ftrH+4}mm;">
             <div style="font-size:8pt;color:#aaa;margin-bottom:3px;">${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
             <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;">
               <div style="font-size:15pt;font-weight:700;color:#111;">${data.titel} Nr. ${data.nummer}</div>
@@ -1290,135 +1222,6 @@ export async function registerRoutes(
       </body></html>`;
     }
 
-    // ─── Design H: Helvetica Pro ─────────────────────────────────────────────
-    if (design === "H") {
-      return `<!DOCTYPE html><html><head><meta charset="utf-8">
-      <style>
-        ${sharedFixedCss}
-        th { background:white;color:#333;padding:8px 4px;text-align:left;font-size:8.5pt;border-bottom:1.5px solid #222; }
-        td { font-size:9pt; }
-        .intro,.schluss { font-size:9pt;color:#444;white-space:pre-line; }
-      </style></head>
-      <body style="position:relative;">
-        ${wmHtml}
-        <div class="pdf-header">
-          <div style="padding:18px ${pad}px 0;${logoPos==="rechts"?"flex-direction:row-reverse;":""}">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-              <div style="flex-shrink:0">
-                ${logoHtml}
-                ${slogan ? `<div style="font-size:8pt;color:#aaa;margin-top:3px;">${slogan}</div>` : ""}
-              </div>
-              <div style="text-align:right;font-size:8pt;color:#aaa;line-height:1.6;">
-                <div style="font-weight:700;color:#333;">${data.firma}</div>
-                <div>${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
-              </div>
-            </div>
-            <div style="height:1.5px;background:#222;margin:8px 0 1px;"></div>
-            <div style="height:0.5px;background:#bbb;margin-bottom:4px;"></div>
-          </div>
-        </div>
-        <div class="pdf-footer">${footerHtml}</div>
-        <div style="position:absolute;top:${absenderTopMm}mm;${absenderPosH==='rechts'?`right:${absenderLeftMm}mm;text-align:right;`:`left:${absenderLeftMm}mm;text-align:left;`}${absenderPosH==='mitte'?'left:50%;transform:translateX(-50%);text-align:left;':''}width:90mm;font-size:10pt;color:#333;line-height:1.55;z-index:10;">
-            <div style="font-weight:600;">${data.empfaenger}</div>
-            ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
-            ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
-          </div>
-        <div class="pdf-content" style="padding:${hdrH+4}mm ${pad}px ${ftrH+4}mm;">
-          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;">
-            <div style="font-size:14pt;font-weight:700;color:#111;text-transform:uppercase;letter-spacing:1px;">${data.titel} Nr. ${data.nummer}</div>
-            <div style="font-size:8pt;color:#777;text-align:right;line-height:1.6;">
-              <div>${data.datum}</div>
-              ${data.gueltigBis ? `<div>Gültig bis: ${data.gueltigBis}</div>` : ""}
-              ${data.faelligDatum ? `<div>Zahlbar bis: ${data.faelligDatum}</div>` : ""}
-            </div>
-          </div>
-          ${apBlock}
-          ${einl ? `<div class="intro" style="margin-bottom:12px;">${einl}</div>` : ""}
-          <table>
-            <thead><tr>
-              <th style="width:28px">${ptPos}</th><th>${ptBeschr}</th>
-              <th style="width:65px;text-align:right">${ptMenge}</th>
-              <th style="width:90px;text-align:right">${ptPreis}</th>
-              <th style="width:90px;text-align:right">${ptTotal}</th>
-            </tr></thead>
-            <tbody>${posHtml}</tbody>
-          </table>
-          ${totalsHtml}
-          ${schl ? `<div class="schluss" style="margin-top:14px;">${schl}</div>` : ""}
-          ${data.extraHtml || ""}
-        </div>
-      </body></html>`;
-    }
-
-    // ─── Design I: Corporate Slim ─────────────────────────────────────────────
-    if (design === "I") {
-      return `<!DOCTYPE html><html><head><meta charset="utf-8">
-      <style>
-        ${sharedFixedCss}
-        th { background:${hc}20;color:#333;padding:8px 4px;text-align:left;font-size:8.5pt;border-bottom:1.5px solid ${hc}; }
-        td { font-size:9pt; }
-        .intro,.schluss { font-size:9pt;color:#444;white-space:pre-line; }
-        /* Design I: farbiger Linksstreifen — fixed über alle Seiten */
-        .design-i-stripe {
-          position: fixed; top: 0; left: 0; bottom: 0;
-          width: 5px; background: ${hc};
-          z-index: 200;
-          -webkit-print-color-adjust: exact; print-color-adjust: exact;
-        }
-        .pdf-header { left: 5px !important; }
-        .pdf-footer { left: 5px !important; }
-        .pdf-content { margin-left: 5px; }
-      </style></head>
-      <body style="position:relative;">
-        ${wmHtml}
-        <div class="design-i-stripe"></div>
-        <div class="pdf-header">
-          <div style="padding:18px 36px 0;${logoPos==="rechts"?"flex-direction:row-reverse;":""}">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-              <div style="flex-shrink:0">
-                ${logoHtml}
-                ${slogan ? `<div style="font-size:8pt;color:#999;margin-top:3px;">${slogan}</div>` : ""}
-              </div>
-              <div style="text-align:right;font-size:8pt;color:#777;line-height:1.6;">
-                <div style="font-weight:700;color:#333;">${data.firma}</div>
-                <div>${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
-              </div>
-            </div>
-            <div style="height:0.5px;background:#ccc;margin:10px 0 4px;"></div>
-          </div>
-        </div>
-        <div class="pdf-footer">${footerHtml}</div>
-        <div style="position:absolute;top:${absenderTopMm}mm;${absenderPosH==='rechts'?`right:${absenderLeftMm}mm;text-align:right;`:`left:${absenderLeftMm}mm;text-align:left;`}${absenderPosH==='mitte'?'left:50%;transform:translateX(-50%);text-align:left;':''}width:90mm;font-size:10pt;color:#333;line-height:1.55;z-index:10;">
-            <div style="font-weight:600;">${data.empfaenger}</div>
-            ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
-            ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
-          </div>
-        <div class="pdf-content" style="padding:${hdrH+4}mm 36px ${ftrH+4}mm;">
-          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;">
-            <div style="font-size:14pt;font-weight:700;color:${hc};">${data.titel} Nr. ${data.nummer}</div>
-            <div style="font-size:8.5pt;color:#555;text-align:right;line-height:1.6;">
-              <div><b style="color:#999;font-weight:400">Datum: </b>${data.datum}</div>
-              ${data.gueltigBis ? `<div><b style="color:#999;font-weight:400">Gültig bis: </b>${data.gueltigBis}</div>` : ""}
-              ${data.faelligDatum ? `<div><b style="color:#999;font-weight:400">Zahlbar bis: </b>${data.faelligDatum}</div>` : ""}
-            </div>
-          </div>
-          ${apBlock}
-          ${einl ? `<div class="intro" style="margin-bottom:12px;">${einl}</div>` : ""}
-          <table>
-            <thead><tr>
-              <th style="width:28px">${ptPos}</th><th>${ptBeschr}</th>
-              <th style="width:65px;text-align:right">${ptMenge}</th>
-              <th style="width:90px;text-align:right">${ptPreis}</th>
-              <th style="width:90px;text-align:right">${ptTotal}</th>
-            </tr></thead>
-            <tbody>${posHtml}</tbody>
-          </table>
-          ${totalsHtml}
-          ${schl ? `<div class="schluss" style="margin-top:14px;">${schl}</div>` : ""}
-          ${data.extraHtml || ""}
-        </div>
-      </body></html>`;
-    }
 
     // ── Design A (default): Header + Footer repeat on every page via position:fixed ──
     // paddingTop = approx header height so content starts below header
@@ -1448,7 +1251,7 @@ export async function registerRoutes(
           ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
           ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
         </div>
-      <div class="pdf-content" style="padding:${hdrH+4}mm ${pad}px ${ftrH+4}mm;">
+      <div class="pdf-content" style="padding:${Math.max(hdrH+8, absenderTopMm+20)}mm ${pad}px ${ftrH+4}mm;">
         ${!titelImHeader ? `<div style="font-size:16pt;font-weight:700;color:${fc};margin:12px 0 4px;">${data.titel} Nr. ${data.nummer}</div>
         <div style="font-size:8.5pt;color:#555;margin-bottom:10px;display:flex;flex-wrap:wrap;gap:16px;">${metaHtml}</div>` : ""}
         ${apBlock}
