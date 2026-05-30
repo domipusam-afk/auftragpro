@@ -1091,18 +1091,20 @@ export async function registerRoutes(
 
     // Gemeinsames CSS für alle Designs: fixed header/footer wiederholt sich auf jeder Seite
     const sharedFixedCss = `
-      @page { margin: ${hdrH}mm ${padMm}mm ${ftrH}mm ${padMm}mm; }
+      @page { margin: ${hdrH + 4}mm ${padMm}mm ${ftrH + 4}mm ${padMm}mm; }
       body { font-family:Arial,sans-serif;font-size:10pt;color:#222;margin:0;padding:0;  position:relative;}
       table { width:100%;border-collapse:collapse; }
       .pdf-header {
         position: fixed; top: 0; left: 0; right: 0;
-        background: white; z-index: 100;
-        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+        height: ${hdrH + 4}mm; overflow: hidden;
+        z-index: 100;
+        -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;
       }
       .pdf-footer {
         position: fixed; bottom: 0; left: 0; right: 0;
-        background: white; z-index: 100;
-        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+        height: ${ftrH + 4}mm; overflow: hidden;
+        z-index: 100;
+        -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;
       }
       .pdf-content { position: relative; z-index: 1; }
       thead { display: table-header-group; }
@@ -1190,12 +1192,12 @@ export async function registerRoutes(
         ${wmHtml}
         <div class="pdf-header">${gHeaderHtml}</div>
         <div class="pdf-footer">${footerHtml}</div>
-        <div style="position:absolute;top:${absenderTopMm}mm;${absenderPosH==='rechts'?`right:${absenderLeftMm}mm;text-align:right;`:`left:${absenderLeftMm}mm;text-align:left;`}${absenderPosH==='mitte'?'left:50%;transform:translateX(-50%);text-align:left;':''}width:90mm;font-size:10pt;color:#333;line-height:1.55;z-index:10;">
+        <div style="position:absolute;top:${Math.max(0, absenderTopMm - (hdrH + 4))}mm;${absenderPosH==='rechts'?`right:${absenderLeftMm}mm;text-align:right;`:`left:${absenderLeftMm}mm;text-align:left;`}${absenderPosH==='mitte'?'left:50%;transform:translateX(-50%);text-align:left;':''}width:90mm;font-size:10pt;color:#333;line-height:1.55;z-index:10;">
             <div style="font-weight:600;">${data.empfaenger}</div>
             ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
             ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
           </div>
-        <div class="pdf-content" style="padding:${Math.max(hdrH+4, absenderTopMm+20)}mm ${pad}px ${ftrH+4}mm;">
+        <div class="pdf-content" style="padding:${Math.max(4, absenderTopMm - (hdrH + 4) + 20)}mm ${pad}px ${ftrH+4}mm;">
           <div style="font-size:8pt;color:#aaa;margin-bottom:3px;">${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
           <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;">
             <div style="font-size:15pt;font-weight:700;color:#111;">${data.titel} Nr. ${data.nummer}</div>
@@ -1239,12 +1241,12 @@ export async function registerRoutes(
       <!-- HAUPTINHALT -->
       <div class="pdf-header">${headerHtml}</div>
       <div class="pdf-footer">${footerHtml}</div>
-      <div style="position:absolute;top:${absenderTopMm}mm;${absenderPosH==='rechts'?`right:${absenderLeftMm}mm;text-align:right;`:`left:${absenderLeftMm}mm;text-align:left;`}${absenderPosH==='mitte'?'left:50%;transform:translateX(-50%);text-align:left;':''}width:90mm;font-size:10pt;color:#333;line-height:1.55;z-index:10;">
+      <div style="position:absolute;top:${Math.max(0, absenderTopMm - (hdrH + 4))}mm;${absenderPosH==='rechts'?`right:${absenderLeftMm}mm;text-align:right;`:`left:${absenderLeftMm}mm;text-align:left;`}${absenderPosH==='mitte'?'left:50%;transform:translateX(-50%);text-align:left;':''}width:90mm;font-size:10pt;color:#333;line-height:1.55;z-index:10;">
           <div style="font-weight:600;">${data.empfaenger}</div>
           ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
           ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
         </div>
-      <div class="pdf-content" style="padding:${Math.max(hdrH+4, absenderTopMm+20)}mm ${pad}px ${ftrH+4}mm;">
+      <div class="pdf-content" style="padding:${Math.max(4, absenderTopMm - (hdrH + 4) + 20)}mm ${pad}px ${ftrH+4}mm;">
         ${!titelImHeader ? `<div style="font-size:16pt;font-weight:700;color:${fc};margin:12px 0 4px;">${data.titel} Nr. ${data.nummer}</div>
         <div style="font-size:8.5pt;color:#555;margin-bottom:10px;display:flex;flex-wrap:wrap;gap:16px;">${metaHtml}</div>` : ""}
         ${apBlock}
