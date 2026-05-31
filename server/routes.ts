@@ -957,12 +957,12 @@ export async function registerRoutes(
     // Meta-Zeilen (VOR headerHtml, da Design A metaHtml im Header braucht)
     const datumLabel = data.titel === "RECHNUNG" ? "Rechnungsdatum:" : data.titel === "OFFERTE" ? "Offertendatum:" : data.titel === "MAHNUNG" ? "Mahndatum:" : "Datum:";
     const metaRows: string[] = [];
-    if (data.kundenNr) metaRows.push(`<tr><td style="color:#999;font-weight:400;padding:1px 6px 1px 0;white-space:nowrap;font-size:8.5pt;">Ihre Kundennummer:</td><td style="font-size:8.5pt;">${data.kundenNr}</td></tr>`);
-    metaRows.push(`<tr><td style="color:#999;font-weight:400;padding:1px 6px 1px 0;white-space:nowrap;font-size:8.5pt;">${datumLabel}</td><td style="font-size:8.5pt;">${data.datum}</td></tr>`);
-    if (data.faelligDatum) metaRows.push(`<tr><td style="color:#999;font-weight:400;padding:1px 6px 1px 0;white-space:nowrap;font-size:8.5pt;">Zahlbar bis:</td><td style="font-size:8.5pt;">${data.faelligDatum}</td></tr>`);
-    if (data.gueltigBis)  metaRows.push(`<tr><td style="color:#999;font-weight:400;padding:1px 6px 1px 0;white-space:nowrap;font-size:8.5pt;">Gültig bis:</td><td style="font-size:8.5pt;">${data.gueltigBis}</td></tr>`);
+    if (data.kundenNr) metaRows.push(`<tr><td style="color:#999;font-weight:400;padding:1px 4px 1px 0;white-space:nowrap;font-size:8.5pt;">Kundennummer:</td><td style="font-size:8.5pt;white-space:nowrap;padding-left:2px;">${data.kundenNr}</td></tr>`);
+    metaRows.push(`<tr><td style="color:#999;font-weight:400;padding:1px 4px 1px 0;white-space:nowrap;font-size:8.5pt;">${datumLabel}</td><td style="font-size:8.5pt;white-space:nowrap;padding-left:2px;">${data.datum}</td></tr>`);
+    if (data.faelligDatum) metaRows.push(`<tr><td style="color:#999;font-weight:400;padding:1px 4px 1px 0;white-space:nowrap;font-size:8.5pt;">Zahlbar bis:</td><td style="font-size:8.5pt;white-space:nowrap;padding-left:2px;">${data.faelligDatum}</td></tr>`);
+    if (data.gueltigBis)  metaRows.push(`<tr><td style="color:#999;font-weight:400;padding:1px 4px 1px 0;white-space:nowrap;font-size:8.5pt;">Gültig bis:</td><td style="font-size:8.5pt;white-space:nowrap;padding-left:2px;">${data.gueltigBis}</td></tr>`);
     // "Unsere Referenz" entfernt (per User-Anfrage)
-    const metaHtml = `<table style="border-collapse:collapse;">${metaRows.join("")}</table>`;
+    const metaHtml = `<table style="border-collapse:collapse;width:auto;">${metaRows.join("")}</table>`;
 
     // Header
     let headerHtml = "";
@@ -1352,7 +1352,7 @@ export async function registerRoutes(
       <div style="padding:${contentPadTopMm}mm ${pad}px 8mm;">
         <!-- Titel gross (Rechnung / Offerte) -->
         <div style="margin-bottom:4px;">
-          <div style="font-size:22pt;font-weight:700;color:#111;">${data.titel}</div>
+          <div style="font-size:${data.titel.length > 12 ? '15' : '22'}pt;font-weight:700;color:#111;">${data.titel}</div>
         </div>
         <!-- Ansprechpartner + Meta + Anrede -->
         <div style="margin-top:14px;margin-bottom:14px;">
@@ -2830,7 +2830,7 @@ export async function registerRoutes(
         kundenNr: await getKundenNr(empfaenger),
       });
 
-      const pdfBuf = await renderPdfFromHtml(html);
+      const pdfBuf = await renderRechnungPdfFromHtml(html);
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `inline; filename="Mahnung-${mahnung.nr || id}.pdf"`);
       res.send(pdfBuf);
@@ -3152,7 +3152,7 @@ export async function registerRoutes(
         kundenNr: await getKundenNr(offerte.empfaenger_name || offerte.anrede || auftrag?.kunde || ""),
       });
 
-      const pdfBuf = await renderPdfFromHtml(html);
+      const pdfBuf = await renderRechnungPdfFromHtml(html);
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `inline; filename="Offerte-${offerte.nr || req.params.id}.pdf"`);
       res.send(pdfBuf);
@@ -3216,7 +3216,7 @@ export async function registerRoutes(
         kundenNr: await getKundenNr(offerte.empfaenger_name || offerte.anrede || auftrag?.kunde || ""),
       });
 
-      const pdfBuf = await renderPdfFromHtml(html);
+      const pdfBuf = await renderRechnungPdfFromHtml(html);
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `inline; filename="Offerte-${offerte.offerten_nr || offerte.nr || req.params.id}.pdf"`);
       res.send(pdfBuf);
@@ -3319,7 +3319,7 @@ export async function registerRoutes(
         extraHtml,
       });
 
-      const pdfBuf = await renderPdfFromHtml(html);
+      const pdfBuf = await renderRechnungPdfFromHtml(html);
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `inline; filename="Lohnabrechnung-${mitarbeiter_name}-${mName}-${jahr}.pdf"`);
       res.send(pdfBuf);
@@ -3394,7 +3394,7 @@ export async function registerRoutes(
         extraHtml,
       });
 
-      const pdfBuf = await renderPdfFromHtml(html);
+      const pdfBuf = await renderRechnungPdfFromHtml(html);
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `inline; filename="Stundenabrechnung-${startDt}-${endDt}.pdf"`);
       res.send(pdfBuf);
@@ -4965,7 +4965,7 @@ export async function registerRoutes(
         kundenNr: await getKundenNr(auftrag.kunde_name || auftrag.kunde || ""),
       });
 
-      const pdfBuf = await renderPdfFromHtml(html);
+      const pdfBuf = await renderRechnungPdfFromHtml(html);
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `inline; filename="Lieferschein-${auftrag.nr || id}.pdf"`);
       res.send(pdfBuf);
@@ -5028,7 +5028,7 @@ export async function registerRoutes(
         kundenNr: await getKundenNr(auftrag.kunde_name || auftrag.kunde || ""),
       });
 
-      const pdfBuf = await renderPdfFromHtml(html);
+      const pdfBuf = await renderRechnungPdfFromHtml(html);
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `inline; filename="Auftragsbestaetigung-${auftrag.nr || id}.pdf"`);
       res.send(pdfBuf);
