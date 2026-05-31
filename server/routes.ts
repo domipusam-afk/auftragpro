@@ -1158,11 +1158,9 @@ export async function registerRoutes(
     const anredeText = (() => {
       const anrede = data.anrede || "";
       const name = data.empfaenger || "";
-      if (!name) return "Sehr geehrte Damen und Herren";
-      if (/^herr/i.test(anrede)) return `Sehr geehrter Herr ${name}`;
-      if (/^frau/i.test(anrede)) return `Sehr geehrte Frau ${name}`;
-      if (!anrede && name) return `Sehr geehrte/r ${name}`;
-      return "Sehr geehrte Damen und Herren";
+      if (/^herr/i.test(anrede) && name) return `Sehr geehrter Herr ${name}`;
+      if (/^frau/i.test(anrede) && name) return `Sehr geehrte Frau ${name}`;
+      return "";
     })();
     // Nummer des Dokuments für die Zeile oberhalb Sehr geehrte
     const docNrLine = data.nummer ? `${data.titel} Nr. ${data.nummer}` : "";
@@ -1178,11 +1176,11 @@ export async function registerRoutes(
             apTelefon ? `<br><span style="font-weight:normal;">Telefon Direkt: ${apTelefon}</span>` : ""
           }
           <div style="margin-top:4px;">${metaHtml}</div>
-          <div style="margin-top:18px;font-size:10pt;font-weight:600;color:#222;">${anredeText}</div>
+          ${anredeText ? `<div style="margin-top:18px;font-size:10pt;font-weight:600;color:#222;">${anredeText}</div>` : ""}
         </div>`
       : `<div style="font-size:9pt;color:#444;margin-bottom:0;${_apMaxW}">
           <div>${metaHtml}</div>
-          <div style="margin-top:18px;font-size:10pt;font-weight:600;color:#222;">${anredeText}</div>
+          ${anredeText ? `<div style="margin-top:18px;font-size:10pt;font-weight:600;color:#222;">${anredeText}</div>` : ""}
         </div>`;
 
     // Positionstexte (Spaltenbezeichnungen)
