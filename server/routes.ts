@@ -1287,17 +1287,15 @@ export async function registerRoutes(
     // Diese Methode ist zuverlässiger als position:fixed (kein Overlap, korrekte Seitenzahlen)
     // WICHTIG: headerTemplate/footerTemplate müssen vollständig inline-styled sein
     // Logos als base64-DataURL funktionieren, externe URLs nicht
-    const pptrHeaderHtml = `<div style="width:100%;font-family:Arial,Helvetica,sans-serif;font-size:0;box-sizing:border-box;">
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;padding:4px 40px 3px;">
-        <div style="font-size:8pt;color:#555;line-height:1.5;">
+    const pptrHeaderHtml = `<div style="width:100%;font-family:Arial,Helvetica,sans-serif;font-size:0;box-sizing:border-box;overflow:hidden;">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:2px 40px 2px;">
+        <div style="font-size:8pt;color:#555;line-height:1.4;">
           <div style="font-weight:700;font-size:9pt;color:#222;">${data.firma}</div>
-          <div style="font-size:8pt;">${data.firmaAdresse}</div>
-          <div style="font-size:8pt;">${data.firmaPlzOrt}</div>
-          <div style="font-size:8pt;">${data.firmaTel}</div>
+          <div style="font-size:7.5pt;">${data.firmaAdresse}, ${data.firmaPlzOrt} · ${data.firmaTel}</div>
         </div>
         <div style="text-align:right;flex-shrink:0;">
-          ${logoUrl ? `<img src="${logoUrl}" style="max-width:${Math.round(70*logoScale/100)}px;max-height:${Math.round(45*logoScale/100)}px;object-fit:contain;display:block;margin-left:auto;">` : ""}
-          ${slogan ? `<div style="font-size:7.5pt;color:#aaa;margin-top:2px;">${slogan}</div>` : ""}
+          ${logoUrl ? `<img src="${logoUrl}" style="max-width:${Math.round(60*logoScale/100)}px;max-height:${Math.round(34*logoScale/100)}px;object-fit:contain;display:block;margin-left:auto;">` : ""}
+          ${slogan ? `<div style="font-size:7pt;color:#aaa;margin-top:1px;">${slogan}</div>` : ""}
         </div>
       </div>
       <div style="height:2px;background:${hc};margin:0 40px;"></div>
@@ -1683,10 +1681,10 @@ export async function registerRoutes(
 
       // QR-Bill — Header/Footer wird durch Puppeteer displayHeaderFooter des Hauptdokuments übernommen
       // QR-Bill als inline HTML-Block (wird als extraHtmlFullWidth in buildPdfHtml übergeben)
-      // page-break-before:always → QR startet immer auf einer neuen Seite
       // Kein separates HTML-Dokument, kein pdf-lib Merge — alles ein Puppeteer-Render
+      // page-break-inside:avoid → QR bleibt auf aktueller Seite wenn Platz, sonst nächste Seite
       const qrInlineBlock = `
-<div style="page-break-before:always;font-family:Arial,Helvetica,sans-serif;">
+<div style="page-break-inside:avoid;font-family:Arial,Helvetica,sans-serif;margin-top:8mm;">
   ${(ibanMissing || qrIbanError) ? `<div style="background:#fff3cd;border:1px solid #ffc107;padding:6px 10px;margin-bottom:5mm;font-size:8pt;color:#856404;">&#9888; ${qrIbanError || "Bitte IBAN in Einstellungen hinterlegen."}</div>` : ""}
   <div style="display:flex;align-items:center;margin-bottom:3mm;">
     <div style="flex:1;border-top:1px dashed #000;"></div>
