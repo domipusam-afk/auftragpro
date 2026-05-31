@@ -1158,9 +1158,10 @@ export async function registerRoutes(
     const anredeText = (() => {
       const anrede = data.anrede || "";
       const name = data.empfaenger || "";
-      if (/^herr/i.test(anrede) && name) return `Sehr geehrter Herr ${name}`;
-      if (/^frau/i.test(anrede) && name) return `Sehr geehrte Frau ${name}`;
-      return "";
+      if (!name) return "";
+      if (/^herr/i.test(anrede)) return `Sehr geehrter Herr ${name}`;
+      if (/^frau/i.test(anrede)) return `Sehr geehrte Frau ${name}`;
+      return `Sehr geehrte/r ${name}`;
     })();
     // Nummer des Dokuments für die Zeile oberhalb Sehr geehrte
     const docNrLine = data.nummer ? `${data.titel} Nr. ${data.nummer}` : "";
