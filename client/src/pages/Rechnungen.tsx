@@ -494,6 +494,16 @@ Schneggenburger GmbH`,
                       <Download className="w-3 h-3" />
                       {pdfLoading === r.id ? "…" : "PDF"}
                     </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 w-7 p-0 text-red-500 border-red-200 hover:bg-red-50"
+                      disabled={deleteRechnungMutation.isPending}
+                      onClick={() => { if (window.confirm(`Rechnung ${r.nr} wirklich löschen?`)) deleteRechnungMutation.mutate(r.id); }}
+                      title="Rechnung löschen"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
                   </div>
                 </div>
               </Card>
