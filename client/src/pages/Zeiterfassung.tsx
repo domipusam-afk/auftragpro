@@ -986,14 +986,14 @@ export default function Zeiterfassung() {
       ) : (
         <Tabs defaultValue="stempeluhr">
           <TabsList className="w-full grid grid-cols-3">
-            <TabsTrigger value="stempeluhr" className="flex items-center gap-1.5">
-              <LogIn className="h-3.5 w-3.5" />Stempeluhr
+            <TabsTrigger value="stempeluhr" className="flex flex-col sm:flex-row items-center gap-1 text-xs h-auto py-2">
+              <LogIn className="h-3.5 w-3.5" /><span>Stempeluhr</span>
             </TabsTrigger>
-            <TabsTrigger value="manuell" className="flex items-center gap-1.5">
-              <Plus className="h-3.5 w-3.5" />Manuell buchen
+            <TabsTrigger value="manuell" className="flex flex-col sm:flex-row items-center gap-1 text-xs h-auto py-2">
+              <Plus className="h-3.5 w-3.5" /><span>Manuell</span>
             </TabsTrigger>
-            <TabsTrigger value="auswertung" className="flex items-center gap-1.5">
-              <CalendarDays className="h-3.5 w-3.5" />Monatsauswertung
+            <TabsTrigger value="auswertung" className="flex flex-col sm:flex-row items-center gap-1 text-xs h-auto py-2">
+              <CalendarDays className="h-3.5 w-3.5" /><span>Auswertung</span>
             </TabsTrigger>
           </TabsList>
 
