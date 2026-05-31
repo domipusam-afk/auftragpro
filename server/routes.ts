@@ -957,10 +957,10 @@ export async function registerRoutes(
     // Meta-Zeilen (VOR headerHtml, da Design A metaHtml im Header braucht)
     const datumLabel = data.titel === "RECHNUNG" ? "Rechnungsdatum:" : data.titel === "OFFERTE" ? "Offertendatum:" : data.titel === "MAHNUNG" ? "Mahndatum:" : "Datum:";
     const metaRows: string[] = [];
-    if (data.kundenNr) metaRows.push(`<tr><td style="color:#999;font-weight:400;padding:1px 14px 1px 0;white-space:nowrap;font-size:8.5pt;">Ihre Kundennummer:</td><td style="font-size:8.5pt;">${data.kundenNr}</td></tr>`);
-    metaRows.push(`<tr><td style="color:#999;font-weight:400;padding:1px 14px 1px 0;white-space:nowrap;font-size:8.5pt;">${datumLabel}</td><td style="font-size:8.5pt;">${data.datum}</td></tr>`);
-    if (data.faelligDatum) metaRows.push(`<tr><td style="color:#999;font-weight:400;padding:1px 14px 1px 0;white-space:nowrap;font-size:8.5pt;">Zahlbar bis:</td><td style="font-size:8.5pt;">${data.faelligDatum}</td></tr>`);
-    if (data.gueltigBis)  metaRows.push(`<tr><td style="color:#999;font-weight:400;padding:1px 14px 1px 0;white-space:nowrap;font-size:8.5pt;">Gültig bis:</td><td style="font-size:8.5pt;">${data.gueltigBis}</td></tr>`);
+    if (data.kundenNr) metaRows.push(`<tr><td style="color:#999;font-weight:400;padding:1px 6px 1px 0;white-space:nowrap;font-size:8.5pt;">Ihre Kundennummer:</td><td style="font-size:8.5pt;">${data.kundenNr}</td></tr>`);
+    metaRows.push(`<tr><td style="color:#999;font-weight:400;padding:1px 6px 1px 0;white-space:nowrap;font-size:8.5pt;">${datumLabel}</td><td style="font-size:8.5pt;">${data.datum}</td></tr>`);
+    if (data.faelligDatum) metaRows.push(`<tr><td style="color:#999;font-weight:400;padding:1px 6px 1px 0;white-space:nowrap;font-size:8.5pt;">Zahlbar bis:</td><td style="font-size:8.5pt;">${data.faelligDatum}</td></tr>`);
+    if (data.gueltigBis)  metaRows.push(`<tr><td style="color:#999;font-weight:400;padding:1px 6px 1px 0;white-space:nowrap;font-size:8.5pt;">Gültig bis:</td><td style="font-size:8.5pt;">${data.gueltigBis}</td></tr>`);
     // "Unsere Referenz" entfernt (per User-Anfrage)
     const metaHtml = `<table style="border-collapse:collapse;">${metaRows.join("")}</table>`;
 
@@ -1713,9 +1713,9 @@ export async function registerRoutes(
       const qrLogoHtml = qrLogoUrl ? `<img src="${qrLogoUrl}" style="max-width:80px;max-height:40px;object-fit:contain;" alt="Logo"/>` : `<div style="font-size:20pt;font-weight:700;color:${qrHdrColor};">SG</div>`;
       // Meta-Tabelle für QR-Header (gleich wie Seite 1)
       const qrMetaRows = [
-        rechnung.kunde_nr || auftrag?.kunde ? `<tr><td style="color:#999;padding:1px 14px 1px 0;white-space:nowrap;font-size:8.5pt;">Ihre Kundennummer:</td><td style="font-size:8.5pt;font-weight:600;">${await getKundenNr(auftrag?.kunde || "")}</td></tr>` : "",
-        `<tr><td style="color:#999;padding:1px 14px 1px 0;white-space:nowrap;font-size:8.5pt;">Rechnungsdatum:</td><td style="font-size:8.5pt;font-weight:600;">${datumStr}</td></tr>`,
-        faelligStr ? `<tr><td style="color:#999;padding:1px 14px 1px 0;white-space:nowrap;font-size:8.5pt;">Zahlbar bis:</td><td style="font-size:8.5pt;font-weight:600;">${faelligStr}</td></tr>` : "",
+        rechnung.kunde_nr || auftrag?.kunde ? `<tr><td style="color:#999;padding:1px 6px 1px 0;white-space:nowrap;font-size:8.5pt;">Ihre Kundennummer:</td><td style="font-size:8.5pt;font-weight:600;">${await getKundenNr(auftrag?.kunde || "")}</td></tr>` : "",
+        `<tr><td style="color:#999;padding:1px 6px 1px 0;white-space:nowrap;font-size:8.5pt;">Rechnungsdatum:</td><td style="font-size:8.5pt;font-weight:600;">${datumStr}</td></tr>`,
+        faelligStr ? `<tr><td style="color:#999;padding:1px 6px 1px 0;white-space:nowrap;font-size:8.5pt;">Zahlbar bis:</td><td style="font-size:8.5pt;font-weight:600;">${faelligStr}</td></tr>` : "",
       ].join("");
       // QR-Seite Header: nur Logo rechts + Slogan (wie Referenzbild)
       const qrHeaderHtml = `<div style="padding:10px 40px 6px;display:flex;align-items:flex-start;justify-content:flex-end;font-family:Arial,sans-serif;">
