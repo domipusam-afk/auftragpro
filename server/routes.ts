@@ -989,7 +989,7 @@ export async function registerRoutes(
       <div style="height:3px;background:linear-gradient(90deg,${hc},${fc});margin:0 40px 0;border-radius:2px;"></div>`;
     } else {
       // Design A: Header = Firmendaten links + Logo rechts (Swiss-Norm Bild-2-Layout)
-      headerHtml = `<div style="padding:8px 40px 5px;display:flex;align-items:center;justify-content:space-between;">
+      headerHtml = `<div style="padding:2px 40px 2px;display:flex;align-items:flex-start;justify-content:space-between;">
         <div style="flex:1;font-size:8pt;color:#555;line-height:1.5;">
           <div style="font-weight:700;font-size:9pt;color:#222;">${data.firma}</div>
           <div>${data.firmaAdresse}</div>
@@ -1061,18 +1061,20 @@ export async function registerRoutes(
       </div>` : "";
 
     // Footer — farbiger Balken wie in der Vorschau
+    // Seitennummer: statisch übergeben (CSS counter in Puppeteer unzuverlässig)
+    // footerHtml wird mit Platzhalter ##PAGE## gebaut — beim Mergen ersetzen
     const footerHtml = design === "E"
       ? `<div>
           <div style="height:2px;background:linear-gradient(90deg,${fc},${hc});margin:0 40px;border-radius:2px;"></div>
           <div style="padding:8px 40px 14px;font-size:8pt;color:#999;font-style:italic;display:flex;justify-content:space-between;">
             ${showContact ? `<div>${data.firma} · ${data.firmaTel} · ${data.firmaEmail}</div>` : "<div></div>"}
-            ${showPageNum ? `<div></div>` : ""}
+            ${showPageNum ? `<div style="font-size:8pt;"></div>` : ""}
           </div>
         </div>`
       : `<div>
           <div style="background:${fc};color:${fcText};padding:6px 40px;font-size:8pt;display:flex;justify-content:space-between;align-items:center;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
-            ${showContact ? `<div>${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt} · ${data.firmaTel} · ${data.firmaEmail}</div>` : "<div></div>"}
-            ${showPageNum ? `<div></div>` : ""}
+            ${showContact ? `<div>${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt} · ${data.firmaTel}</div>` : "<div></div>"}
+            <div style="font-size:8pt;opacity:0.85;" class="page-num-holder"></div>
           </div>
         </div>`;
 
@@ -1081,7 +1083,7 @@ export async function registerRoutes(
                : (design === "C") ? (logoUrl ? 18 : 10)
                : (design === "E") ? (logoUrl ? 22 : 14)
                : (design === "G") ? (logoUrl ? 26 : 18)
-               : 22; // Design A — Firma links + Logo rechts (kompakt, kein Leerraum oben)
+               : 22; // Design A — Firma links + Logo rechts (hdrH=22 → @page margin-top=26mm, kein Overlap auf Seite 2)
     const ftrH = (design === "E") ? 16 : 12;
     const padMm = 10; // Seitenrand in mm
 
@@ -1110,7 +1112,8 @@ export async function registerRoutes(
         -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;
       }
       .pdf-content { position: relative; z-index: 1; }
-      thead { display: table-header-group; }
+      /* thead einmalig (kein Wiederholungs-Header auf Seite 2) um Overlap mit fixed Header zu vermeiden */
+      thead { display: table-row-group; }
       tbody { display: table-row-group; }
       tr { page-break-inside: avoid; }
       * { box-sizing:border-box; -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
@@ -1270,42 +1273,95 @@ export async function registerRoutes(
     // ── Design A (default) + Fallback für B/C/E ──
     // Swiss-Norm SN 010130 Empfänger-Position (Fenstercouvert C5/C6):
     // Adressfenster: top=52mm vom Blattrand, left=118mm vom Blattrand (Rechtsadressierung)
-    // @page margin: top=(hdrH+4)=34mm, left=padMm=10mm
-    // Im body (position:absolute relativ zu body): top=52mm, left=118mm
-    const empfTopAbs  = 52;   // mm ab Seitenanfang (absolut auf Blatt)
-    const empfLeftAbs = 118;  // mm ab linkem Blattrand
-    // Content-Padding-Top: Empfänger endet bei ca. 52+22=74mm ab Blattrand → minus @page-top (hdrH+4)
-    const contentPadTopMm = Math.max(95, 74 - (hdrH + 4));
+    // @page margin: top=(hdrH+4)mm, left=padMm=10mm
+    // position:absolute ist relativ zum body (der NACH dem @page-margin startet)
+    // Swiss-Norm: Empfänger bei 52mm ab Blattrand → im body = 52-(hdrH+4)mm
+    const empfTopAbs  = 52 - (hdrH + 4); // mm relativ zu body-Anfang
+    const empfLeftAbs = 118 - padMm;     // mm relativ zu body-Anfang (118mm ab Blatt - 10mm margin)
+    // Content-Padding-Top: Empfänger bei 52mm ab Blatt, Höhe ~14mm = endet ~66mm
+    // body startet nach @page margin-top = (hdrH+4)mm
+    // Abstand: 66mm - (hdrH+4)mm = 66-26 = 40mm
+    const contentPadTopMm = 66 - (hdrH + 4);
+
+    // ─── Puppeteer displayHeaderFooter Templates (Design A) ───────────────────
+    // Diese Methode ist zuverlässiger als position:fixed (kein Overlap, korrekte Seitenzahlen)
+    // WICHTIG: headerTemplate/footerTemplate müssen vollständig inline-styled sein
+    // Logos als base64-DataURL funktionieren, externe URLs nicht
+    const pptrHeaderHtml = `<div style="width:100%;font-family:Arial,Helvetica,sans-serif;font-size:0;box-sizing:border-box;">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;padding:4px 40px 3px;">
+        <div style="font-size:8pt;color:#555;line-height:1.5;">
+          <div style="font-weight:700;font-size:9pt;color:#222;">${data.firma}</div>
+          <div style="font-size:8pt;">${data.firmaAdresse}</div>
+          <div style="font-size:8pt;">${data.firmaPlzOrt}</div>
+          <div style="font-size:8pt;">${data.firmaTel}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;">
+          ${logoUrl ? `<img src="${logoUrl}" style="max-width:${Math.round(70*logoScale/100)}px;max-height:${Math.round(45*logoScale/100)}px;object-fit:contain;display:block;margin-left:auto;">` : ""}
+          ${slogan ? `<div style="font-size:7.5pt;color:#aaa;margin-top:2px;">${slogan}</div>` : ""}
+        </div>
+      </div>
+      <div style="height:2px;background:${hc};margin:0 40px;"></div>
+    </div>`;
+    const pptrFooterHtml = `<div style="width:100%;font-family:Arial,Helvetica,sans-serif;box-sizing:border-box;">
+      <div style="background:${fc};color:${fcText};padding:5px 40px;font-size:8pt;display:flex;justify-content:space-between;align-items:center;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+        ${showContact ? `<span>${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt} · ${data.firmaTel}</span>` : "<span></span>"}
+        <span style="font-size:8pt;opacity:0.9;"></span>
+      </div>
+    </div>`;
+    // URL-encode für Meta content="..."
+    const pptrHeaderEnc = encodeURIComponent(pptrHeaderHtml);
+    const pptrFooterEnc = encodeURIComponent(pptrFooterHtml);
+    // Margins: top = Höhe des Header-Templates (~22mm), bottom = Höhe Footer (~12mm)
+    const pptrMarginTop = `${hdrH + 4}mm`; // = 26mm
+    const pptrMarginBot = `${ftrH + 4}mm`; // = 16mm
+
+    // Empfänger-Position: Im displayHeaderFooter-Modus startet body NACH dem margin-top
+    // Swiss-Norm: 52mm ab Blatt = (hdrH+4)mm (margin) + empfTopAbs mm body
+    // empfTopAbs = 52 - (hdrH+4) = gleich wie vorher
 
     const aHtml = `<!DOCTYPE html><html><head><meta charset="utf-8">
+    <meta name="pptr-header" content="${pptrHeaderEnc}">
+    <meta name="pptr-footer" content="${pptrFooterEnc}">
+    <meta name="pptr-margin-top" content="${pptrMarginTop}">
+    <meta name="pptr-margin-bottom" content="${pptrMarginBot}">
     <style>
-      ${sharedFixedCss}
+      /* Kein @page margin nötig — Puppeteer margin wird über pptr-meta gesetzt */
+      body { font-family:Arial,sans-serif;font-size:10pt;color:#222;margin:0;padding:0; }
+      table { width:100%;border-collapse:collapse; }
       th { background:${hc};color:${hcText};padding:8px 4px;text-align:left;font-size:8.5pt; }
       td { font-size:9pt; }
       .intro,.schluss { font-size:9pt;color:#444;white-space:pre-line; }
+      tr { page-break-inside: avoid; }
+      * { box-sizing:border-box; -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; }
     </style></head>
-    <body style="position:relative;">
+    <body>
       ${wmHtml}
-      <div class="pdf-header">${headerHtml}</div>
-      <div class="pdf-footer">${footerHtml}</div>
 
-      <!-- Empfänger Swiss-Norm SN 010130: position:absolute auf Blatt fixiert -->
-      <!-- top=52mm, left=118mm ab Blattrand; im Puppeteer-body = exakt diese Pixel -->
-      <div style="position:absolute;top:${empfTopAbs}mm;left:${empfLeftAbs}mm;width:76mm;font-size:9.5pt;color:#222;line-height:1.55;z-index:50;">
+      <!-- Empfänger Swiss-Norm SN 010130: nur auf Seite 1 -->
+      <!-- Im displayHeaderFooter-Modus startet body bei margin-top = ${hdrH+4}mm vom Blatt -->
+      <!-- 52mm ab Blatt - ${hdrH+4}mm margin = ${empfTopAbs}mm vom body-top -->
+      <div style="position:relative;height:0;overflow:visible;">
+      <div style="position:absolute;top:${empfTopAbs}mm;left:${empfLeftAbs}mm;width:76mm;font-size:9.5pt;color:#222;line-height:1.55;">
         <div style="font-size:7pt;color:#888;margin-bottom:2px;white-space:nowrap;border-bottom:0.5px solid #bbb;padding-bottom:2px;">${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
         <div style="font-weight:700;margin-top:2px;">${data.empfaenger}</div>
         ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
         ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
       </div>
+      </div><!-- /empfaenger-wrapper -->
 
-      <div class="pdf-content" style="padding:${contentPadTopMm}mm ${pad}px ${ftrH + 8}mm;">
-        <!-- Titel gross + mehr Abstand nach unten -->
-        <div style="margin-bottom:18px;">
-          <div style="font-size:20pt;font-weight:700;color:#111;">${data.titel}</div>
+      <div style="padding:${contentPadTopMm}mm ${pad}px 8mm;">
+        <!-- Titel gross (Rechnung / Offerte) -->
+        <div style="margin-bottom:4px;">
+          <div style="font-size:22pt;font-weight:700;color:#111;">${data.titel}</div>
+          <div style="font-size:9pt;color:#888;margin-top:1px;">${data.nummer || ""}</div>
         </div>
-        ${apBlock}
+        <!-- Ansprechpartner + Meta + Anrede -->
+        <div style="margin-top:14px;margin-bottom:14px;">
+          ${apBlock}
+        </div>
         ${einl ? `<div class="intro" style="margin-bottom:12px;">${einl}</div>` : ""}
-        <table>
+        <!-- Positionen Tabelle -->
+        <table style="page-break-inside:auto;">
           <thead><tr>
             <th style="width:28px">${ptPos}</th><th>${ptBeschr}</th>
             <th style="width:65px;text-align:right">${ptMenge}</th>
@@ -1315,7 +1371,8 @@ export async function registerRoutes(
           <tbody>${posHtml}</tbody>
         </table>
         ${totalsHtml}
-        ${schl ? `<div class="schluss" style="margin-top:14px;">${schl}</div>` : ""}
+        <!-- Grussformel nach Positionen (immer nach der letzten Zeile) -->
+        ${schl ? `<div class="schluss" style="margin-top:20px;">${schl}</div>` : `<div style="margin-top:20px;font-size:9pt;color:#444;">Wir freuen uns auf Ihre Rückmeldung.<br><br>Mit freundlichen Grüssen<br><strong>${data.firma}</strong></div>`}
         ${data.extraHtml || ""}
       </div>
       ${data.extraHtmlFullWidth ? `<div style="font-family:Arial,Helvetica,sans-serif;">${data.extraHtmlFullWidth}</div>` : ""}
@@ -1418,18 +1475,20 @@ export async function registerRoutes(
   }
 
   // Rendert eine HTML-Seite zu PDF — mit Retry bei Browser-Crash
-  async function renderPageToPdf(html: string, waitUntil: "domcontentloaded" | "networkidle0" = "domcontentloaded"): Promise<Buffer> {
+  async function renderPageToPdf(html: string, waitUntil: "domcontentloaded" | "networkidle0" = "domcontentloaded", pdfOptions?: any): Promise<Buffer> {
     for (let attempt = 0; attempt < 3; attempt++) {
       let page: any = null;
       try {
         const browser = await getBrowser();
         page = await browser.newPage();
         await page.setContent(html, { waitUntil });
-        const pdfBuf = await page.pdf({
+        const opts = {
           format: "A4",
           printBackground: true,
-          margin: { top: "0", bottom: "0", left: "0", right: "0" }
-        });
+          margin: { top: "0", bottom: "0", left: "0", right: "0" },
+          ...(pdfOptions || {})
+        };
+        const pdfBuf = await page.pdf(opts);
         return Buffer.from(pdfBuf);
       } catch (err: any) {
         // Browser abgestürzt → singleton zurücksetzen, nochmals versuchen
@@ -1448,13 +1507,37 @@ export async function registerRoutes(
   }
 
   // Rechnung PDF: Seiten + QR-Bill sequenziell (separate Pages → weniger RAM-Spike)
-  async function renderRechnungPdfFromHtml(htmlSeiten: string, htmlQR: string): Promise<Buffer> {
-    const { PDFDocument } = await import("pdf-lib") as any;
+  // htmlSeiten kann meta-Tags für Header/Footer enthalten (data-puppeteer-header / data-puppeteer-footer)
+  async function renderRechnungPdfFromHtml(htmlSeiten: string, htmlQR: string, footerColor?: string): Promise<Buffer> {
+    const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib") as any;
+
+    // Puppeteer displayHeaderFooter: Header/Footer aus HTML extrahieren
+    // Die buildPdfHtml-Funktion bettet Header/Footer in <meta data-pptr-header> und <meta data-pptr-footer>
+    // Fallback: kein displayHeaderFooter (benutzt position:fixed)
+    let pdfOptionsA: any = {};
+    const headerMetaMatch = htmlSeiten.match(/<meta\s+name="pptr-header"\s+content="([^"]+)"/);
+    const footerMetaMatch = htmlSeiten.match(/<meta\s+name="pptr-footer"\s+content="([^"]+)"/);
+    const topMarginMatch  = htmlSeiten.match(/<meta\s+name="pptr-margin-top"\s+content="([^"]+)"/);
+    const botMarginMatch  = htmlSeiten.match(/<meta\s+name="pptr-margin-bottom"\s+content="([^"]+)"/);
+    if (headerMetaMatch && footerMetaMatch) {
+      pdfOptionsA = {
+        displayHeaderFooter: true,
+        headerTemplate: decodeURIComponent(headerMetaMatch[1]),
+        footerTemplate: decodeURIComponent(footerMetaMatch[1]),
+        margin: {
+          top: topMarginMatch ? topMarginMatch[1] : "25mm",
+          bottom: botMarginMatch ? botMarginMatch[1] : "15mm",
+          left: "10mm",
+          right: "10mm"
+        }
+      };
+    }
+
     // Seite 1 rendern
-    const pdfA = await renderPageToPdf(htmlSeiten, "domcontentloaded");
+    const pdfA = await renderPageToPdf(htmlSeiten, "domcontentloaded", Object.keys(pdfOptionsA).length ? pdfOptionsA : undefined);
     // Kurz warten damit RAM freigegeben wird
     await new Promise(r => setTimeout(r, 300));
-    // Seite 2 (QR-Bill) rendern
+    // QR-Bill rendern (immer mit position:fixed / keine pptr-meta)
     const pdfB = await renderPageToPdf(htmlQR, "domcontentloaded");
     // Mergen
     const docA = await PDFDocument.load(pdfA);
@@ -1464,6 +1547,25 @@ export async function registerRoutes(
     pagesA.forEach((p: any) => merged.addPage(p));
     const pagesB = await merged.copyPages(docB, docB.getPageIndices());
     pagesB.forEach((p: any) => merged.addPage(p));
+    // Seitenzahlen via pdf-lib auf alle Seiten schreiben
+    // (displayHeaderFooter zählt nur pdfA-Seiten; nach Merge müssen wir alle korrigieren)
+    const font = await merged.embedFont(StandardFonts.Helvetica);
+    const totalPages = merged.getPageCount();
+    const white = rgb(1, 1, 1);
+    for (let i = 0; i < totalPages; i++) {
+      const pg = merged.getPage(i);
+      const { width } = pg.getSize();
+      const pageNumText = `Seite ${i + 1} / ${totalPages}`;
+      const textWidth = font.widthOfTextAtSize(pageNumText, 8);
+      pg.drawText(pageNumText, {
+        x: width - 40 - textWidth,
+        y: 14,
+        size: 8,
+        font,
+        color: white,
+        opacity: 0.9,
+      });
+    }
     return Buffer.from(await merged.save());
   }
 
