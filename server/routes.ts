@@ -871,6 +871,7 @@ export async function registerRoutes(
     ansprechpersonExtern?: string;
     ansprechpersonManuell?: string;
     kundenNr?: string;
+    anrede?: string;
   }): Promise<string> {
     // Vorlage aus DB laden (mit Retry + Logo-Fallback aus Offerte-Vorlage)
     let vd: any = null;
@@ -1155,12 +1156,13 @@ export async function registerRoutes(
 
     // Anrede für "Sehr geehrte/r" Block
     const anredeText = (() => {
-      const anrede = (data as any).anrede || "";
+      const anrede = data.anrede || "";
       const name = data.empfaenger || "";
       if (!name) return "Sehr geehrte Damen und Herren";
       if (/^herr/i.test(anrede)) return `Sehr geehrter Herr ${name}`;
       if (/^frau/i.test(anrede)) return `Sehr geehrte Frau ${name}`;
-      return `Sehr geehrte/r ${name}`;
+      if (!anrede && name) return `Sehr geehrte/r ${name}`;
+      return "Sehr geehrte Damen und Herren";
     })();
     // Nummer des Dokuments für die Zeile oberhalb Sehr geehrte
     const docNrLine = data.nummer ? `${data.titel} Nr. ${data.nummer}` : "";
@@ -1395,6 +1397,21 @@ export async function registerRoutes(
              fullName.split(" ").filter(Boolean).every((w: string) => nameLower.includes(w));
     });
     return found?.nr || "";
+  }
+
+  async function getKundenAnrede(name: string): Promise<string> {
+    if (!name) return "";
+    const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+    const nameLower = norm(name);
+    const { data: knRows } = await supabase.from("kunden").select("anrede,vorname,nachname,firma");
+    const found = (knRows || []).find((k: any) => {
+      const fullName = norm([k.vorname, k.nachname].filter(Boolean).join(" "));
+      const firma = norm(k.firma || "");
+      return fullName === nameLower || firma === nameLower ||
+             nameLower.includes(fullName) || fullName.includes(nameLower) ||
+             fullName.split(" ").filter(Boolean).every((w: string) => nameLower.includes(w));
+    });
+    return found?.anrede || "";
   }
 
   function splitAdresse(adresse: string): { strasse: string; plzOrt: string } {
@@ -1751,6 +1768,7 @@ export async function registerRoutes(
         ansprechpersonInternTelefon: (req.body as any)?.ansprechpersonInternTelefon || "",
         ansprechpersonExtern: (req.body as any)?.ansprechpersonExtern || rechnung.ansprechperson_extern || auftrag?.ansprechperson || "",
         kundenNr: await getKundenNr(auftrag?.kunde || ""),
+        anrede: await getKundenAnrede(auftrag?.kunde || ""),
         extraHtmlFullWidth: qrInlineBlock,
       });
 
@@ -2825,6 +2843,7 @@ export async function registerRoutes(
         extraHtml: mahnung.notiz ? `<div style="margin-top:12px;padding:8px 12px;background:#fff3cd;border-left:3px solid #f0ad4e;font-size:8.5pt;color:#444;white-space:pre-line;">${mahnung.notiz}</div>` : "",
         ansprechpersonIntern: (req.body as any)?.ansprechpersonIntern || rechnung?.ansprechperson_intern || auftrag?.verantwortlicher || "",
         kundenNr: await getKundenNr(empfaenger),
+        anrede: await getKundenAnrede(empfaenger),
       });
 
       const pdfBuf = await renderRechnungPdfFromHtml(html);
@@ -3147,6 +3166,7 @@ export async function registerRoutes(
         ansprechpersonInternTelefon: (req.body as any)?.ansprechpersonInternTelefon || "",
         ansprechpersonExtern: bodyExtern || offerte.ansprechperson_extern || auftrag?.ansprechperson || "",
         kundenNr: await getKundenNr(offerte.empfaenger_name || offerte.anrede || auftrag?.kunde || ""),
+        anrede: await getKundenAnrede(offerte.empfaenger_name || offerte.anrede || auftrag?.kunde || ""),
       });
 
       const pdfBuf = await renderRechnungPdfFromHtml(html);
@@ -3211,6 +3231,7 @@ export async function registerRoutes(
         ansprechpersonIntern: offerte.ansprechperson_intern || auftrag?.verantwortlicher || "",
         ansprechpersonExtern: offerte.ansprechperson_extern || auftrag?.ansprechperson || "",
         kundenNr: await getKundenNr(offerte.empfaenger_name || offerte.anrede || auftrag?.kunde || ""),
+        anrede: await getKundenAnrede(offerte.empfaenger_name || offerte.anrede || auftrag?.kunde || ""),
       });
 
       const pdfBuf = await renderRechnungPdfFromHtml(html);
@@ -4960,6 +4981,7 @@ export async function registerRoutes(
         extraHtml,
         ansprechpersonIntern: ansprechpersonInternLS,
         kundenNr: await getKundenNr(auftrag.kunde_name || auftrag.kunde || ""),
+        anrede: await getKundenAnrede(auftrag.kunde_name || auftrag.kunde || ""),
       });
 
       const pdfBuf = await renderRechnungPdfFromHtml(html);
@@ -5023,6 +5045,7 @@ export async function registerRoutes(
         schluss: "Wir danken Ihnen fuer Ihren Auftrag und stehen fuer Rueckfragen gerne zur Verfuegung.\n\nFreundliche Gruesse\nSchneggenburger GmbH",
         ansprechpersonIntern: ansprechpersonInternAB,
         kundenNr: await getKundenNr(auftrag.kunde_name || auftrag.kunde || ""),
+        anrede: await getKundenAnrede(auftrag.kunde_name || auftrag.kunde || ""),
       });
 
       const pdfBuf = await renderRechnungPdfFromHtml(html);

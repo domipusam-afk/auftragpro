@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -25,6 +26,7 @@ interface Kunde {
   id: string;
   nr: string;
   firma: string;
+  anrede?: string;
   vorname: string;
   nachname: string;
   email: string;
@@ -36,7 +38,7 @@ interface Kunde {
 }
 
 const emptyForm = {
-  nr: "", firma: "", vorname: "", nachname: "", email: "",
+  nr: "", firma: "", anrede: "", vorname: "", nachname: "", email: "",
   telefon: "", adresse: "", plz: "", ort: "", notiz: "",
 };
 
@@ -333,6 +335,17 @@ export default function Kundendatencenter() {
               <div>
                 <Label className="text-xs">Firma (optional)</Label>
                 <Input value={form.firma} onChange={(e) => setForm({ ...form, firma: e.target.value })} placeholder="Firmenname" />
+              </div>
+              <div>
+                <Label className="text-xs">Anrede</Label>
+                <Select value={form.anrede || ""} onValueChange={(v) => setForm({ ...form, anrede: v })}>
+                  <SelectTrigger><SelectValue placeholder="— keine —" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">— keine —</SelectItem>
+                    <SelectItem value="Herr">Herr</SelectItem>
+                    <SelectItem value="Frau">Frau</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
