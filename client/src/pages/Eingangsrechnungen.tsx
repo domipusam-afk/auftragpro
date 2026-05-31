@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Receipt, Plus, Trash2, CheckCircle2, Upload } from "lucide-react";
+import { Receipt, Plus, Trash2, CheckCircle2, Upload, Ban } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { formatCHF, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -237,8 +237,17 @@ export default function Eingangsrechnungen() {
                         <CheckCircle2 className="h-4 w-4" />
                       </button>
                     )}
+                    {r.status !== "storniert" && (
+                      <button
+                        onClick={() => { if (window.confirm(`Eingangsrechnung von "${r.lieferant}" wirklich stornieren?`)) updateMutation.mutate({ id: r.id, status: "storniert" }); }}
+                        className="p-1.5 rounded hover:bg-orange-50 text-muted-foreground hover:text-orange-600 transition-colors"
+                        title="Stornieren"
+                      >
+                        <Ban className="h-4 w-4" />
+                      </button>
+                    )}
                     <button
-                      onClick={() => delMutation.mutate(r.id)}
+                      onClick={() => { if (window.confirm(`Eingangsrechnung von "${r.lieferant}" wirklich löschen?`)) delMutation.mutate(r.id); }}
                       className="p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors"
                       title="Löschen"
                     >
