@@ -1353,7 +1353,6 @@ export async function registerRoutes(
         <!-- Titel gross (Rechnung / Offerte) -->
         <div style="margin-bottom:4px;">
           <div style="font-size:22pt;font-weight:700;color:#111;">${data.titel}</div>
-          <div style="font-size:9pt;color:#888;margin-top:1px;">${data.nummer || ""}</div>
         </div>
         <!-- Ansprechpartner + Meta + Anrede -->
         <div style="margin-top:14px;margin-bottom:14px;">
