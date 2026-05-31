@@ -1505,21 +1505,19 @@ export async function registerRoutes(
     return renderPageToPdf(html, "domcontentloaded");
   }
 
-  // Rechnung PDF: Seiten + QR-Bill sequenziell (separate Pages → weniger RAM-Spike)
-  // htmlSeiten kann meta-Tags für Header/Footer enthalten (data-puppeteer-header / data-puppeteer-footer)
-  async function renderRechnungPdfFromHtml(htmlSeiten: string, htmlQR: string, footerColor?: string): Promise<Buffer> {
+  // Rechnung PDF: Ein einziger Puppeteer-Render — QR-Bill ist inline via extraHtmlFullWidth eingebettet
+  // htmlSeiten enthält meta-Tags für Header/Footer (pptr-header / pptr-footer)
+  async function renderRechnungPdfFromHtml(htmlSeiten: string): Promise<Buffer> {
     const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib") as any;
 
     // Puppeteer displayHeaderFooter: Header/Footer aus HTML extrahieren
-    // Die buildPdfHtml-Funktion bettet Header/Footer in <meta data-pptr-header> und <meta data-pptr-footer>
-    // Fallback: kein displayHeaderFooter (benutzt position:fixed)
-    let pdfOptionsA: any = {};
+    let pdfOptions: any = {};
     const headerMetaMatch = htmlSeiten.match(/<meta\s+name="pptr-header"\s+content="([^"]+)"/);
     const footerMetaMatch = htmlSeiten.match(/<meta\s+name="pptr-footer"\s+content="([^"]+)"/);
     const topMarginMatch  = htmlSeiten.match(/<meta\s+name="pptr-margin-top"\s+content="([^"]+)"/);
     const botMarginMatch  = htmlSeiten.match(/<meta\s+name="pptr-margin-bottom"\s+content="([^"]+)"/);
     if (headerMetaMatch && footerMetaMatch) {
-      pdfOptionsA = {
+      pdfOptions = {
         displayHeaderFooter: true,
         headerTemplate: decodeURIComponent(headerMetaMatch[1]),
         footerTemplate: decodeURIComponent(footerMetaMatch[1]),
@@ -1532,27 +1530,16 @@ export async function registerRoutes(
       };
     }
 
-    // Seite 1 rendern
-    const pdfA = await renderPageToPdf(htmlSeiten, "domcontentloaded", Object.keys(pdfOptionsA).length ? pdfOptionsA : undefined);
-    // Kurz warten damit RAM freigegeben wird
-    await new Promise(r => setTimeout(r, 300));
-    // QR-Bill rendern (immer mit position:fixed / keine pptr-meta)
-    const pdfB = await renderPageToPdf(htmlQR, "domcontentloaded");
-    // Mergen
-    const docA = await PDFDocument.load(pdfA);
-    const docB = await PDFDocument.load(pdfB);
-    const merged = await PDFDocument.create();
-    const pagesA = await merged.copyPages(docA, docA.getPageIndices());
-    pagesA.forEach((p: any) => merged.addPage(p));
-    const pagesB = await merged.copyPages(docB, docB.getPageIndices());
-    pagesB.forEach((p: any) => merged.addPage(p));
-    // Seitenzahlen via pdf-lib auf alle Seiten schreiben
-    // (displayHeaderFooter zählt nur pdfA-Seiten; nach Merge müssen wir alle korrigieren)
-    const font = await merged.embedFont(StandardFonts.Helvetica);
-    const totalPages = merged.getPageCount();
+    // Einziger Render — alle Seiten inkl. QR-Bill in einem HTML-Dokument
+    const pdfBuf = await renderPageToPdf(htmlSeiten, "domcontentloaded", Object.keys(pdfOptions).length ? pdfOptions : undefined);
+
+    // Seitenzahlen via pdf-lib auf alle Seiten schreiben (weisser Text auf Footer-Balken)
+    const doc = await PDFDocument.load(pdfBuf);
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const totalPages = doc.getPageCount();
     const white = rgb(1, 1, 1);
     for (let i = 0; i < totalPages; i++) {
-      const pg = merged.getPage(i);
+      const pg = doc.getPage(i);
       const { width } = pg.getSize();
       const pageNumText = `Seite ${i + 1} / ${totalPages}`;
       const textWidth = font.widthOfTextAtSize(pageNumText, 8);
@@ -1565,7 +1552,7 @@ export async function registerRoutes(
         opacity: 0.9,
       });
     }
-    return Buffer.from(await merged.save());
+    return Buffer.from(await doc.save());
   }
 
   // ─── Rechnung PDF (Vorlage aus DB) ──────────────────────────────────────────
@@ -1694,56 +1681,18 @@ export async function registerRoutes(
       // IBAN formatiert für Anzeige: Gruppen à 4 Zeichen
       const ibanFormatted = ibanClean.replace(/(.{4})/g, "$1 ").trim();
 
-      // Swiss QR Bill — eigenstaendige HTML-Seite mit Header + Footer (inline gebaut)
-      // hdrH/headerHtml/footerHtml nicht im Scope — direkt aus sMap aufbauen
-      const qrVorlage = await supabase.from("pdf_vorlagen").select("*").eq("doc_typ", "rechnung").single();
-      const qrV = qrVorlage.data || {};
-      const qrHdrColor = qrV.header_color || "#6b4c2a";
-      const qrFtrColor = qrV.footer_color || "#6b4c2a";
-      const qrLogoUrl  = qrV.logo_data_url || sMap.logo_data_url || "";
-      const qrSlogan   = qrV.slogan || "";
-      const qrHdrH     = qrLogoUrl ? 22 : 14; // Nur Logo rechts (wie Referenzbild)
-      const qrFtrH     = 12;
-      const qrPadMm    = 10;
-      const qrFirma    = sMap.firmenname || "Schneggenburger GmbH";
-      const qrAdr      = sMap.adresse || "Hefenhoferstrasse 7";
-      const qrPlzOrt   = sMap.plz_ort || "8580 Sommeri";
-      const qrTel      = sMap.telefon || "071 411 16 87";
-      const qrFcText   = "#ffffff";
-      const qrLogoHtml = qrLogoUrl ? `<img src="${qrLogoUrl}" style="max-width:80px;max-height:40px;object-fit:contain;" alt="Logo"/>` : `<div style="font-size:20pt;font-weight:700;color:${qrHdrColor};">SG</div>`;
-      // Meta-Tabelle für QR-Header (gleich wie Seite 1)
-      const qrMetaRows = [
-        rechnung.kunde_nr || auftrag?.kunde ? `<tr><td style="color:#999;padding:1px 6px 1px 0;white-space:nowrap;font-size:8.5pt;">Ihre Kundennummer:</td><td style="font-size:8.5pt;font-weight:600;">${await getKundenNr(auftrag?.kunde || "")}</td></tr>` : "",
-        `<tr><td style="color:#999;padding:1px 6px 1px 0;white-space:nowrap;font-size:8.5pt;">Rechnungsdatum:</td><td style="font-size:8.5pt;font-weight:600;">${datumStr}</td></tr>`,
-        faelligStr ? `<tr><td style="color:#999;padding:1px 6px 1px 0;white-space:nowrap;font-size:8.5pt;">Zahlbar bis:</td><td style="font-size:8.5pt;font-weight:600;">${faelligStr}</td></tr>` : "",
-      ].join("");
-      // QR-Seite Header: nur Logo rechts + Slogan (wie Referenzbild)
-      const qrHeaderHtml = `<div style="padding:10px 40px 6px;display:flex;align-items:flex-start;justify-content:flex-end;font-family:Arial,sans-serif;">
-        <div style="flex-shrink:0;text-align:right;">
-          ${qrLogoHtml}
-          ${qrSlogan ? `<div style="font-size:7.5pt;color:#aaa;margin-top:2px;">${qrSlogan}</div>` : ""}
-        </div>
-      </div><div style="height:2px;background:${qrHdrColor};margin:0 40px 0;"></div>`;
-      const qrFooterHtml = `<div style="background:${qrFtrColor};color:${qrFcText};padding:6px 40px;font-size:8pt;display:flex;justify-content:space-between;align-items:center;-webkit-print-color-adjust:exact;print-color-adjust:exact;font-family:Arial,sans-serif;"><span>${qrFirma} · ${qrAdr} · ${qrPlzOrt} · ${qrTel}</span><span>Seite 2 / 2</span></div>`;
-
-      const qrZahlscheinHtml = `<!DOCTYPE html><html><head><meta charset="utf-8">
-<style>
-  * { box-sizing:border-box; -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; }
-  @page { margin: ${qrHdrH+4}mm ${qrPadMm}mm ${qrFtrH+4}mm ${qrPadMm}mm; size: A4; }
-  body { font-family:Arial,Helvetica,sans-serif;font-size:10pt;color:#000;margin:0;padding:0; }
-  .pdf-header { position:fixed; top:0; left:0; right:0; height:${qrHdrH+4}mm; overflow:hidden; background:white; z-index:100; }
-  .pdf-footer { position:fixed; bottom:0; left:0; right:0; height:${qrFtrH+4}mm; overflow:hidden; background:white; z-index:100; }
-</style></head>
-<body>
-<div class="pdf-header">${qrHeaderHtml}</div>
-<div class="pdf-footer">${qrFooterHtml}</div>
-${(ibanMissing || qrIbanError) ? `<div style="background:#fff3cd;border:1px solid #ffc107;padding:6px 10px;margin:5mm 5mm 0 5mm;font-size:8pt;color:#856404;">&#9888; ${qrIbanError || "Bitte IBAN in Einstellungen hinterlegen."}</div>` : ""}
-<div style="padding-top:35mm;">
+      // QR-Bill — Header/Footer wird durch Puppeteer displayHeaderFooter des Hauptdokuments übernommen
+      // QR-Bill als inline HTML-Block (wird als extraHtmlFullWidth in buildPdfHtml übergeben)
+      // page-break-before:always → QR startet immer auf einer neuen Seite
+      // Kein separates HTML-Dokument, kein pdf-lib Merge — alles ein Puppeteer-Render
+      const qrInlineBlock = `
+<div style="page-break-before:always;font-family:Arial,Helvetica,sans-serif;">
+  ${(ibanMissing || qrIbanError) ? `<div style="background:#fff3cd;border:1px solid #ffc107;padding:6px 10px;margin-bottom:5mm;font-size:8pt;color:#856404;">&#9888; ${qrIbanError || "Bitte IBAN in Einstellungen hinterlegen."}</div>` : ""}
   <div style="display:flex;align-items:center;margin-bottom:3mm;">
     <div style="flex:1;border-top:1px dashed #000;"></div>
     <div style="padding:0 2mm;font-size:11pt;line-height:1;">&#9986;</div>
   </div>
-  <div style="display:flex;align-items:flex-start;width:210mm;min-height:85mm;">
+  <div style="display:flex;align-items:flex-start;width:100%;min-height:85mm;">
     <div style="width:62mm;flex-shrink:0;padding:0 4mm;border-right:1px solid #000;min-height:85mm;display:flex;flex-direction:column;">
       <div style="font-size:11pt;font-weight:700;margin-bottom:4mm;">Empfangsschein</div>
       <div style="font-size:6pt;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;">Konto / Zahlbar an</div>
@@ -1781,8 +1730,7 @@ ${(ibanMissing || qrIbanError) ? `<div style="background:#fff3cd;border:1px soli
     <div style="padding:0 2mm;font-size:11pt;line-height:1;">&#9986;</div>
     <div style="flex:1;border-top:1px dashed #000;"></div>
   </div>
-</div>
-</body></html>`;
+</div>`;
 
       const html = await buildPdfHtml("rechnung", {
         titel: "RECHNUNG",
@@ -1806,9 +1754,10 @@ ${(ibanMissing || qrIbanError) ? `<div style="background:#fff3cd;border:1px soli
         ansprechpersonInternTelefon: (req.body as any)?.ansprechpersonInternTelefon || "",
         ansprechpersonExtern: (req.body as any)?.ansprechpersonExtern || rechnung.ansprechperson_extern || auftrag?.ansprechperson || "",
         kundenNr: await getKundenNr(auftrag?.kunde || ""),
+        extraHtmlFullWidth: qrInlineBlock,
       });
 
-      const pdfBuf = await renderRechnungPdfFromHtml(html, qrZahlscheinHtml);
+      const pdfBuf = await renderRechnungPdfFromHtml(html);
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `inline; filename="Rechnung-${rechnung.nr || rid}.pdf"`);
       res.send(pdfBuf);
