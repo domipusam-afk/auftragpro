@@ -274,7 +274,7 @@ export default function Kundendatencenter() {
   });
 
   const openEdit = (k: Kunde) => {
-    setEditId(k.id); setForm({ ...k }); setOpen(true);
+    setEditId(k.id); setForm({ ...emptyForm, ...k, anrede: k.anrede || "" }); setOpen(true);
   };
 
   const filtered = kunden.filter((k) => {
