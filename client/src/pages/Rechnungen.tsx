@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { cn } from "@/lib/utils";
 import type { Rechnung, Auftrag } from "@shared/schema";
 import { formatCHF, formatDate } from "@/lib/format";
 import { Download, FileSpreadsheet, FileText, AlertCircle, CheckCircle2, Clock, Mail, Banknote, RotateCcw, Trash2 } from "lucide-react";
@@ -65,6 +66,7 @@ export default function Rechnungen() {
   const [exportZeitraum, setExportZeitraum] = useState("jahr");
   const [exportLoading, setExportLoading] = useState(false);
   const [pdfLoading, setPdfLoading] = useState<string | null>(null);
+  const [filterStatus, setFilterStatus] = useState("alle");
   const [emailModal, setEmailModal] = useState<{ open: boolean; to: string; subject: string; body: string; refId: string } | null>(null);
   const [pdfDialog, setPdfDialog] = useState<{ open: boolean; rechnung: any; auftragId: string; intern: string; internEmail: string; internTelefon: string; extern: string } | null>(null);
 
@@ -295,7 +297,12 @@ export default function Rechnungen() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {rechnungen.map((r) => {
+                {(filterStatus === "alle" ? rechnungen : rechnungen.filter((r) => {
+                    if (filterStatus === "bezahlt") return !!(r as any).bezahlt_am;
+                    if (filterStatus === "offen") return !(r as any).bezahlt_am && !(r as any).storniert_am;
+                    if (filterStatus === "storniert") return !!(r as any).storniert_am;
+                    return true;
+                  })).map((r) => {
                   const a = aMap.get(r.auftrag_id);
                   return (
                     <tr key={r.id} className="hover:bg-muted/30 transition-colors" data-testid={`row-rechnung-${r.id}`}>
@@ -422,6 +429,24 @@ Schneggenburger GmbH`,
         )}
       </Card>
 
+      {/* Filter-Tabs (Mobile + Desktop) */}
+      <div className="flex gap-2 flex-wrap">
+        {["alle", "offen", "bezahlt", "storniert"].map((s) => (
+          <button
+            key={s}
+            onClick={() => setFilterStatus(s)}
+            className={cn(
+              "px-3 py-1 rounded-full text-xs font-medium border transition-colors",
+              filterStatus === s
+                ? "bg-[#1a3a6b] text-white border-[#1a3a6b]"
+                : "text-muted-foreground border-border hover:border-[#1a3a6b]"
+            )}
+          >
+            {s.charAt(0).toUpperCase() + s.slice(1)}
+          </button>
+        ))}
+      </div>
+
       {/* Mobile Cards */}
       <div className="md:hidden space-y-3">
         {isLoading ? (
@@ -432,7 +457,12 @@ Schneggenburger GmbH`,
             Noch keine Rechnungen erstellt.
           </Card>
         ) : (
-          rechnungen.map((r) => {
+          (filterStatus === "alle" ? rechnungen : rechnungen.filter((r) => {
+            if (filterStatus === "bezahlt") return !!(r as any).bezahlt_am;
+            if (filterStatus === "offen") return !(r as any).bezahlt_am && !(r as any).storniert_am;
+            if (filterStatus === "storniert") return !!(r as any).storniert_am;
+            return true;
+          })).map((r) => {
             const a = aMap.get(r.auftrag_id);
             return (
               <Card key={r.id} className="p-4 space-y-2" data-testid={`card-rechnung-${r.id}`}>
