@@ -1090,9 +1090,9 @@ export async function registerRoutes(
     // Swiss-Norm Empfänger-Position (wird später in aHtml genutzt)
     // Vorberechnung hier damit apBlock max-width nutzen kann
     const _empfTopBody  = Math.max(0, 52 - (hdrH + 4));
-    const _empfLeftBody = 118 - padMm; // 108mm
+    const _empfLeftBody = 145 - padMm; // 120mm (Empfänger bei 130mm ab Blatt)
     // apBlock darf nur bis links vom Empfänger reichen (11mm Sicherheitsabstand)
-    const apBlockMaxWidth = _empfLeftBody - 11; // ca. 97mm
+    const apBlockMaxWidth = _empfLeftBody - 11; // ca. 109mm
 
     // Gemeinsames CSS für alle Designs: fixed header/footer wiederholt sich auf jeder Seite
     const sharedFixedCss = `
@@ -1272,12 +1272,11 @@ export async function registerRoutes(
 
     // ── Design A (default) + Fallback für B/C/E ──
     // Swiss-Norm SN 010130 Empfänger-Position (Fenstercouvert C5/C6):
-    // Adressfenster: top=52mm vom Blattrand, left=118mm vom Blattrand (Rechtsadressierung)
+    // Adressfenster: top=52mm vom Blattrand, left=100mm vom Blattrand
     // @page margin: top=(hdrH+4)mm, left=padMm=10mm
     // position:absolute ist relativ zum body (der NACH dem @page-margin startet)
-    // Swiss-Norm: Empfänger bei 52mm ab Blattrand → im body = 52-(hdrH+4)mm
     const empfTopAbs  = 52 - (hdrH + 4); // mm relativ zu body-Anfang
-    const empfLeftAbs = 118 - padMm;     // mm relativ zu body-Anfang (118mm ab Blatt - 10mm margin)
+    const empfLeftAbs = 145 - padMm;     // mm relativ zu body-Anfang (130mm ab Blatt - 10mm margin = 120mm)
     // Content-Padding-Top: Empfänger bei 52mm ab Blatt, Höhe ~14mm = endet ~66mm
     // body startet nach @page margin-top = (hdrH+4)mm
     // Abstand: 66mm - (hdrH+4)mm = 66-26 = 40mm
