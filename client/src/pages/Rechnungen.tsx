@@ -19,12 +19,14 @@ import { useToast } from "@/hooks/use-toast";
 const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
 
 function statusBadge(r: Rechnung) {
-  // Wenn bezahlt_am gesetzt → immer grünes "Bezahlt" Badge
+  // Wenn bezahlt_am gesetzt → immer grünes "Bezahlt" Badge mit Datum
   if ((r as any).bezahlt_am) {
+    const d = new Date((r as any).bezahlt_am);
+    const dateStr = d.toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "numeric" });
     return (
-      <Badge className="text-xs gap-1 bg-green-100 text-green-800 border-green-300 hover:bg-green-100">
+      <Badge className="text-xs gap-1 bg-green-100 text-green-800 border-green-300 hover:bg-green-100" title={`Bezahlt am ${dateStr}`}>
         <CheckCircle2 className="w-3 h-3" />
-        Bezahlt
+        Bezahlt {dateStr}
       </Badge>
     );
   }
@@ -69,6 +71,7 @@ export default function Rechnungen() {
   const [filterStatus, setFilterStatus] = useState("alle");
   const [emailModal, setEmailModal] = useState<{ open: boolean; to: string; subject: string; body: string; refId: string } | null>(null);
   const [pdfDialog, setPdfDialog] = useState<{ open: boolean; rechnung: any; auftragId: string; intern: string; internEmail: string; internTelefon: string; extern: string } | null>(null);
+  const [bezahltPending, setBezahltPending] = useState<string | null>(null);
 
   // Bezahlt / Offen markieren
   const deleteRechnungMutation = useMutation({
@@ -86,6 +89,7 @@ export default function Rechnungen() {
 
   const bezahltMutation = useMutation({
     mutationFn: async ({ id, bezahlt }: { id: string; bezahlt: boolean }) => {
+      setBezahltPending(id);
       const body = bezahlt
         ? { bezahlt_am: new Date().toISOString().slice(0, 10) }
         : { bezahlt_am: null };
@@ -93,13 +97,16 @@ export default function Rechnungen() {
       return res.json();
     },
     onSuccess: (_, vars) => {
+      setBezahltPending(null);
       queryClient.invalidateQueries({ queryKey: ["/api/rechnungen"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
       toast({
-        title: vars.bezahlt ? "Als bezahlt markiert" : "Als offen markiert",
-        description: vars.bezahlt ? "Rechnung wurde als bezahlt gespeichert." : "Rechnung wurde wieder auf offen gesetzt.",
+        title: vars.bezahlt ? "✓ Als bezahlt markiert" : "Zurück auf offen gesetzt",
+        description: vars.bezahlt ? `Rechnung als bezahlt am ${new Date().toLocaleDateString("de-CH")} gespeichert.` : "Rechnung wurde wieder auf offen gesetzt.",
       });
     },
     onError: () => {
+      setBezahltPending(null);
       toast({ title: "Fehler", description: "Status konnte nicht gespeichert werden.", variant: "destructive" });
     },
   });
@@ -186,8 +193,16 @@ export default function Rechnungen() {
     }
   };
 
-  const total = (rechnungen || []).reduce((s, r) => s + (Number(r.betrag) || 0), 0);
+  const filteredRechnungen = (rechnungen || []).filter((r) => {
+    if (filterStatus === "bezahlt") return !!(r as any).bezahlt_am;
+    if (filterStatus === "offen") return !(r as any).bezahlt_am && !(r as any).storniert_am;
+    if (filterStatus === "storniert") return !!(r as any).storniert_am;
+    return true;
+  });
+  const total = filteredRechnungen.reduce((s, r) => s + (Number(r.betrag) || 0), 0);
   const ueberfaellig = (rechnungen || []).filter(r => {
+    if ((r as any).bezahlt_am) return false; // bezahlte nicht als überfällig zählen
+    if ((r as any).storniert_am) return false;
     if (!r.faellig_datum) return false;
     return new Date(r.faellig_datum) < new Date();
   });
@@ -200,7 +215,7 @@ export default function Rechnungen() {
           Rechnungen
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          {rechnungen?.length ?? 0} Rechnungen · Gesamt {formatCHF(total, "CHF")}
+          {filteredRechnungen.length} {filterStatus === "alle" ? "Rechnungen" : filterStatus === "bezahlt" ? "bezahlte Rechnungen" : filterStatus === "offen" ? "offene Rechnungen" : "stornierte Rechnungen"} · Gesamt {formatCHF(total, "CHF")}
           {ueberfaellig.length > 0 && (
             <span className="ml-2 text-red-600 font-medium">
               · {ueberfaellig.length} überfällig
@@ -297,12 +312,7 @@ export default function Rechnungen() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {(filterStatus === "alle" ? rechnungen : rechnungen.filter((r) => {
-                    if (filterStatus === "bezahlt") return !!(r as any).bezahlt_am;
-                    if (filterStatus === "offen") return !(r as any).bezahlt_am && !(r as any).storniert_am;
-                    if (filterStatus === "storniert") return !!(r as any).storniert_am;
-                    return true;
-                  })).map((r) => {
+                {filteredRechnungen.map((r) => {
                   const a = aMap.get(r.auftrag_id);
                   return (
                     <tr key={r.id} className="hover:bg-muted/30 transition-colors" data-testid={`row-rechnung-${r.id}`}>
@@ -338,13 +348,14 @@ export default function Rechnungen() {
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="h-7 px-2 text-xs text-green-700 hover:text-red-600 hover:bg-red-50"
-                              title="Als offen markieren"
-                              disabled={bezahltMutation.isPending}
+                              className="h-7 px-2 text-xs text-green-700 hover:text-orange-600 hover:bg-orange-50"
+                              title={`Bezahlt am ${new Date((r as any).bezahlt_am).toLocaleDateString("de-CH")} — Klicken zum Zurücksetzen`}
+                              disabled={bezahltPending === r.id}
                               onClick={() => bezahltMutation.mutate({ id: r.id, bezahlt: false })}
                             >
-                              <RotateCcw className="w-3 h-3 mr-1" />
-                              Offen
+                              {bezahltPending === r.id
+                                ? <span className="animate-pulse">…</span>
+                                : <><CheckCircle2 className="w-3 h-3 mr-1" />Bezahlt</>}
                             </Button>
                           ) : (
                             <Button
@@ -352,11 +363,12 @@ export default function Rechnungen() {
                               variant="ghost"
                               className="h-7 px-2 text-xs text-muted-foreground hover:text-green-700 hover:bg-green-50"
                               title="Als bezahlt markieren"
-                              disabled={bezahltMutation.isPending}
+                              disabled={bezahltPending === r.id}
                               onClick={() => bezahltMutation.mutate({ id: r.id, bezahlt: true })}
                             >
-                              <Banknote className="w-3 h-3 mr-1" />
-                              Bezahlt
+                              {bezahltPending === r.id
+                                ? <span className="animate-pulse">…</span>
+                                : <><Banknote className="w-3 h-3 mr-1" />Bezahlt</>}
                             </Button>
                           )}
                           <Button
@@ -416,7 +428,7 @@ Schneggenburger GmbH`,
               <tfoot className="border-t bg-muted/30">
                 <tr>
                   <td colSpan={3} className="px-4 py-3 text-sm font-semibold">
-                    Total ({rechnungen.length} Rechnungen)
+                    Total ({filteredRechnungen.length} {filterStatus === "alle" ? "Rechnungen" : filterStatus})
                   </td>
                   <td className="px-4 py-3 text-right font-bold tabular-nums" style={{ color: "#6b4c2a" }}>
                     {formatCHF(total, "CHF")}
@@ -457,12 +469,7 @@ Schneggenburger GmbH`,
             Noch keine Rechnungen erstellt.
           </Card>
         ) : (
-          (filterStatus === "alle" ? rechnungen : rechnungen.filter((r) => {
-            if (filterStatus === "bezahlt") return !!(r as any).bezahlt_am;
-            if (filterStatus === "offen") return !(r as any).bezahlt_am && !(r as any).storniert_am;
-            if (filterStatus === "storniert") return !!(r as any).storniert_am;
-            return true;
-          })).map((r) => {
+          filteredRechnungen.map((r) => {
             const a = aMap.get(r.auftrag_id);
             return (
               <Card key={r.id} className="p-4 space-y-2" data-testid={`card-rechnung-${r.id}`}>
@@ -494,23 +501,26 @@ Schneggenburger GmbH`,
                       <Button
                         size="sm"
                         variant="outline"
-                        className="h-7 text-xs gap-1 border-green-300 text-green-700"
-                        disabled={bezahltMutation.isPending}
+                        className="h-7 text-xs gap-1 border-green-300 bg-green-50 text-green-700"
+                        disabled={bezahltPending === r.id}
                         onClick={() => bezahltMutation.mutate({ id: r.id, bezahlt: false })}
+                        title={`Bezahlt am ${new Date((r as any).bezahlt_am).toLocaleDateString("de-CH")} — Tippen zum Zurücksetzen`}
                       >
-                        <RotateCcw className="w-3 h-3" />
-                        Offen
+                        {bezahltPending === r.id
+                          ? <span className="animate-pulse">…</span>
+                          : <><CheckCircle2 className="w-3 h-3" />Bezahlt</>}
                       </Button>
                     ) : (
                       <Button
                         size="sm"
                         variant="outline"
                         className="h-7 text-xs gap-1"
-                        disabled={bezahltMutation.isPending}
+                        disabled={bezahltPending === r.id}
                         onClick={() => bezahltMutation.mutate({ id: r.id, bezahlt: true })}
                       >
-                        <Banknote className="w-3 h-3" />
-                        Bezahlt
+                        {bezahltPending === r.id
+                          ? <span className="animate-pulse">…</span>
+                          : <><Banknote className="w-3 h-3" />Bezahlt</>}
                       </Button>
                     )}
                     <Button

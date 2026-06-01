@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -6,9 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Mail, Send } from "lucide-react";
+import { Mail, Send, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { useQuery } from "@tanstack/react-query";
 
 interface EmailModalProps {
   open: boolean;
@@ -25,11 +26,23 @@ export function EmailModal({ open, onClose, to = "", subject = "", body = "", ty
   const [form, setForm] = useState({ to, subject, body });
   const [loading, setLoading] = useState(false);
 
-  // Update form when props change
-  const handleOpen = (isOpen: boolean) => {
-    if (isOpen) {
+  // SMTP-Konfiguration prüfen
+  const { data: einstellungen = [] } = useQuery<any[]>({
+    queryKey: ["/api/einstellungen"],
+    enabled: open,
+  });
+  const sm: Record<string, string> = {};
+  for (const e of einstellungen) sm[e.schluessel] = e.wert;
+  const smtpKonfiguriert = !!(sm.smtp_host && sm.smtp_user && (sm.smtp_passwort || sm.smtp_pass));
+
+  // Props beim Öffnen synchronisieren (wichtig wenn Modal mehrmals geöffnet wird)
+  useEffect(() => {
+    if (open) {
       setForm({ to, subject, body });
     }
+  }, [open, to, subject, body]);
+
+  const handleOpen = (isOpen: boolean) => {
     if (!isOpen) onClose();
   };
 
@@ -74,6 +87,21 @@ export function EmailModal({ open, onClose, to = "", subject = "", body = "", ty
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-3 mt-2">
+          {/* SMTP-Warnung wenn nicht konfiguriert */}
+          {!smtpKonfiguriert && (
+            <div className="flex items-start gap-2 p-3 rounded-md bg-amber-50 border border-amber-200 text-xs text-amber-800">
+              <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-600" />
+              <span>
+                SMTP nicht konfiguriert. E-Mail-Versand funktioniert nicht.
+                {" "}<a href="/#/einstellungen" className="underline font-medium" onClick={onClose}>Jetzt einrichten →</a>
+              </span>
+            </div>
+          )}
+          {smtpKonfiguriert && sm.smtp_von && (
+            <div className="text-xs text-muted-foreground">
+              Von: <span className="font-medium">{sm.smtp_von}</span>
+            </div>
+          )}
           <div>
             <Label className="text-xs">An (E-Mail) *</Label>
             <Input

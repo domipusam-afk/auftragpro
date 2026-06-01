@@ -163,20 +163,20 @@ export default function Dashboard() {
   // Finanzen Übersicht
   const now = new Date();
   const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  // Monatsumsatz: bezahlte Rechnungen im aktuellen Monat (nach bezahlt_am)
-  // Fallback auf erstellt falls bezahlt_am nicht gesetzt
+  // Monatsumsatz: nur Rechnungen die diesen Monat BEZAHLT wurden (vereinnahmte Entgelte)
   const monatsumsatz = (rechnungen as any[])
-    .filter((r: any) => {
-      const d = r.bezahlt_am || r.erstellt;
-      return d && d.startsWith(thisMonth);
-    })
+    .filter((r: any) => r.bezahlt_am && r.bezahlt_am.startsWith(thisMonth))
     .reduce((s: number, r: any) => s + (Number(r.betrag) || 0), 0);
+  // Offene Posten: unbezahlte, nicht stornierte Rechnungen
   const offenePosten = (rechnungen as any[])
-    .filter((r: any) => !r.bezahlt_am)
+    .filter((r: any) => !r.bezahlt_am && !r.storniert_am)
     .reduce((s: number, r: any) => s + (Number(r.betrag) || 0), 0);
+  // Anzahl offene Rechnungen für KPI-Tooltip
+  const offeneRechnungenAnzahl = (rechnungen as any[]).filter((r: any) => !r.bezahlt_am && !r.storniert_am).length;
   const bezahlt = (rechnungen as any[])
     .filter((r: any) => !!r.bezahlt_am)
     .reduce((s: number, r: any) => s + (Number(r.betrag) || 0), 0);
+  const bezahltAnzahl = (rechnungen as any[]).filter((r: any) => !!r.bezahlt_am).length;
 
   const { data: offerten = [] } = useQuery<any[]>({
     queryKey: ["/api/offerten"],
@@ -212,13 +212,13 @@ export default function Dashboard() {
     return new Date(a.naechste_faelligkeit) <= today;
   });
 
-  // Last 6 months for chart
+  // Last 6 months for chart — nur bezahlte Rechnungen (vereinnahmte Entgelte)
   const last6Months = Array.from({ length: 6 }, (_, i) => {
     const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1);
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
     const label = d.toLocaleString("de-CH", { month: "short" });
     const total = (rechnungen as any[])
-      .filter((r: any) => r.datum && r.datum.startsWith(key))
+      .filter((r: any) => r.bezahlt_am && r.bezahlt_am.startsWith(key))
       .reduce((s: number, r: any) => s + (Number(r.betrag) || 0), 0);
     return { key, label, total };
   });
@@ -342,9 +342,24 @@ export default function Dashboard() {
           </a>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-          <KpiCard label="Monatsumsatz" value={formatCHF(monatsumsatz)} icon={TrendingUp} tone="green" />
-          <KpiCard label="Offene Posten" value={formatCHF(offenePosten)} icon={AlertTriangle} tone="amber" />
-          <KpiCard label="Bezahlt" value={formatCHF(bezahlt)} icon={CheckSquare} tone="primary" />
+          <KpiCard
+            label={`Monatsumsatz ${now.toLocaleString("de-CH", { month: "long" })}`}
+            value={monatsumsatz > 0 ? formatCHF(monatsumsatz) : "CHF 0"}
+            icon={TrendingUp}
+            tone="green"
+          />
+          <KpiCard
+            label={`Offene Posten (${offeneRechnungenAnzahl})`}
+            value={formatCHF(offenePosten)}
+            icon={AlertTriangle}
+            tone="amber"
+          />
+          <KpiCard
+            label={`Bezahlt (${bezahltAnzahl})`}
+            value={formatCHF(bezahlt)}
+            icon={CheckSquare}
+            tone="green"
+          />
         </div>
         {/* Bar chart last 6 months */}
         <div className="bg-card rounded-lg border p-4">
