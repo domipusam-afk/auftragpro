@@ -5653,11 +5653,15 @@ export async function registerRoutes(
   app.get("/api/public/auftrag/:token", async (req, res) => {
     try {
       const { data, error } = await supabase.from("auftraege")
-        .select("nr,titel,status,beschreibung,start_datum,end_datum,public_token")
+        .select("id,nr,titel,status,beschreibung,start_datum,end_datum,public_token,kunden_nachricht")
         .eq("public_token", req.params.token)
         .single();
       if (error || !data) return res.status(404).json({ message: "Nicht gefunden" });
-      res.json(data);
+      // Arbeitsschritte laden
+      const { data: schritte } = await supabase.from("auftrag_schritte")
+        .select("id,titel,status,reihenfolge").eq("auftrag_id", data.id)
+        .order("reihenfolge", { ascending: true });
+      res.json({ ...data, schritte: schritte || [] });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
@@ -5689,6 +5693,59 @@ export async function registerRoutes(
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
+  // ─── Arbeitsschritte (Kundenportal) ────────────────────────────────────────
+  app.get("/api/auftraege/:id/schritte", async (req, res) => {
+    try {
+      const { data, error } = await supabase.from("auftrag_schritte")
+        .select("*").eq("auftrag_id", req.params.id).order("reihenfolge", { ascending: true });
+      if (error) return res.status(500).json({ message: error.message });
+      res.json(data || []);
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+  app.post("/api/auftraege/:id/schritte", async (req, res) => {
+    try {
+      const { titel, status, reihenfolge } = req.body;
+      const { data, error } = await supabase.from("auftrag_schritte").insert({
+        id: uid(), auftrag_id: req.params.id,
+        titel: titel || "", status: status || "offen", reihenfolge: reihenfolge ?? 0
+      }).select().single();
+      if (error) return res.status(500).json({ message: error.message });
+      res.json(data);
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+  app.patch("/api/auftraege/:id/schritte/:sid", async (req, res) => {
+    try {
+      const { titel, status, reihenfolge } = req.body;
+      const updates: any = {};
+      if (titel !== undefined) updates.titel = titel;
+      if (status !== undefined) updates.status = status;
+      if (reihenfolge !== undefined) updates.reihenfolge = reihenfolge;
+      const { data, error } = await supabase.from("auftrag_schritte")
+        .update(updates).eq("id", req.params.sid).select().single();
+      if (error) return res.status(500).json({ message: error.message });
+      res.json(data);
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+  app.delete("/api/auftraege/:id/schritte/:sid", async (req, res) => {
+    try {
+      await supabase.from("auftrag_schritte").delete().eq("id", req.params.sid);
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+  // Kunden-Nachricht speichern
+  app.patch("/api/auftraege/:id/kunden-nachricht", async (req, res) => {
+    try {
+      const { kunden_nachricht } = req.body;
+      const { error } = await supabase.from("auftraege")
+        .update({ kunden_nachricht: kunden_nachricht ?? "" }).eq("id", req.params.id);
+      if (error) return res.status(500).json({ message: error.message });
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
 
   return httpServer;
 }

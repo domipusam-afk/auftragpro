@@ -1,30 +1,40 @@
 import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { CheckCircle2, Clock, AlertTriangle, Hammer, Briefcase } from "lucide-react";
+import { CheckCircle2, Clock, AlertTriangle, Hammer, Briefcase, Circle, CircleDot, MessageSquare } from "lucide-react";
 
 const STATUS_MAP: Record<string, { label: string; color: string; icon: any }> = {
-  anfrage:        { label: "Anfrage eingegangen",  color: "bg-blue-100 text-blue-700",   icon: Clock },
-  angebot:        { label: "Angebot erstellt",     color: "bg-blue-100 text-blue-700",   icon: Briefcase },
-  bestaetigt:     { label: "Auftrag bestätigt",    color: "bg-green-100 text-green-700", icon: CheckCircle2 },
-  in_arbeit:      { label: "In Arbeit",            color: "bg-amber-100 text-amber-700", icon: Hammer },
-  in_bearbeitung: { label: "In Bearbeitung",       color: "bg-amber-100 text-amber-700", icon: Hammer },
-  qualitaet:      { label: "Qualitätsprüfung",     color: "bg-purple-100 text-purple-700", icon: CheckCircle2 },
-  rechnung:       { label: "Rechnung gestellt",    color: "bg-indigo-100 text-indigo-700", icon: Briefcase },
-  abgeschlossen:  { label: "Abgeschlossen",        color: "bg-green-100 text-green-700", icon: CheckCircle2 },
-  storniert:      { label: "Storniert",            color: "bg-red-100 text-red-700",     icon: AlertTriangle },
+  anfrage:        { label: "Anfrage eingegangen",  color: "bg-blue-100 text-blue-700",     icon: Clock },
+  angebot:        { label: "Angebot erstellt",      color: "bg-blue-100 text-blue-700",     icon: Briefcase },
+  bestaetigt:     { label: "Auftrag bestätigt",     color: "bg-green-100 text-green-700",   icon: CheckCircle2 },
+  in_arbeit:      { label: "In Arbeit",             color: "bg-amber-100 text-amber-700",   icon: Hammer },
+  in_bearbeitung: { label: "In Bearbeitung",        color: "bg-amber-100 text-amber-700",   icon: Hammer },
+  qualitaet:      { label: "Qualitätsprüfung",      color: "bg-purple-100 text-purple-700", icon: CheckCircle2 },
+  rechnung:       { label: "Rechnung gestellt",     color: "bg-indigo-100 text-indigo-700", icon: Briefcase },
+  abgeschlossen:  { label: "Abgeschlossen",         color: "bg-green-100 text-green-700",   icon: CheckCircle2 },
+  storniert:      { label: "Storniert",             color: "bg-red-100 text-red-700",       icon: AlertTriangle },
 };
 
-// Normalize Auftragsnummer: A-2026-0001 → A260001
+const SCHRITT_CFG: Record<string, { icon: any; color: string; bg: string; label: string }> = {
+  offen:    { icon: Circle,        color: "text-gray-400",   bg: "bg-gray-100",   label: "Ausstehend" },
+  aktiv:    { icon: CircleDot,     color: "text-amber-500",  bg: "bg-amber-50",   label: "In Arbeit" },
+  erledigt: { icon: CheckCircle2,  color: "text-green-500",  bg: "bg-green-50",   label: "Erledigt" },
+};
+
 function normalizeNr(nr: string): string {
-  // Old format: A-2026-0001 or R-2026-0001 etc.
   const m = nr.match(/^([A-Z])-(\d{4})-(\d+)$/);
   if (m) {
-    const yy = m[2].slice(2); // "2026" -> "26"
+    const yy = m[2].slice(2);
     return m[1] + yy + m[3].padStart(4, "0");
   }
   return nr;
+}
+
+function formatDate(d: string): string {
+  if (!d) return "";
+  try {
+    return new Date(d).toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "numeric" });
+  } catch { return d; }
 }
 
 const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
@@ -41,10 +51,14 @@ export default function ProjektStatus({ token }: { token: string }) {
   });
 
   const statusCfg = data ? (STATUS_MAP[data.status] || { label: data.status, color: "bg-gray-100 text-gray-600", icon: Clock }) : null;
+  const schritte: any[] = data?.schritte || [];
+  const total = schritte.length;
+  const erledigt = schritte.filter((s: any) => s.status === "erledigt").length;
+  const fortschritt = total > 0 ? Math.round((erledigt / total) * 100) : 0;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#f5f0e8] to-[#e8e0d0] dark:from-gray-900 dark:to-gray-800 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen bg-gradient-to-br from-[#f5f0e8] to-[#e8e0d0] flex items-start justify-center p-4 py-8">
+      <div className="w-full max-w-lg">
         {/* Header */}
         <div className="text-center mb-6">
           <div className="flex items-center justify-center gap-3 mb-3">
@@ -73,6 +87,7 @@ export default function ProjektStatus({ token }: { token: string }) {
             </div>
           ) : (
             <div className="space-y-5">
+              {/* Auftragsnummer + Titel */}
               <div>
                 <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">Auftragsnummer</p>
                 <p className="font-mono font-bold text-lg text-[#6b4c2a]">{normalizeNr(data.nr || "")}</p>
@@ -86,6 +101,7 @@ export default function ProjektStatus({ token }: { token: string }) {
                 )}
               </div>
 
+              {/* Aktueller Status */}
               <div>
                 <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-2">Aktueller Status</p>
                 {statusCfg && (() => {
@@ -93,26 +109,85 @@ export default function ProjektStatus({ token }: { token: string }) {
                   return (
                     <div className={`flex items-center gap-3 rounded-xl px-4 py-3 ${statusCfg.color}`}>
                       <Icon className="h-6 w-6 shrink-0" />
-                      <div>
-                        <p className="font-semibold">{statusCfg.label}</p>
-                      </div>
+                      <p className="font-semibold">{statusCfg.label}</p>
                     </div>
                   );
                 })()}
               </div>
 
+              {/* Fortschrittsbalken (nur wenn Schritte vorhanden) */}
+              {total > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Fortschritt</p>
+                    <span className="text-sm font-semibold text-[#6b4c2a]">{fortschritt}%</span>
+                  </div>
+                  <div className="h-2.5 bg-gray-200 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all duration-700"
+                      style={{ width: `${fortschritt}%`, background: "linear-gradient(90deg, #8b6234, #6b4c2a)" }}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">{erledigt} von {total} Schritten abgeschlossen</p>
+                </div>
+              )}
+
+              {/* Arbeitsschritte-Timeline */}
+              {schritte.length > 0 && (
+                <div>
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-3">Arbeitsschritte</p>
+                  <div className="relative">
+                    {/* Vertikale Linie */}
+                    <div className="absolute left-[18px] top-3 bottom-3 w-px bg-gray-200" />
+                    <div className="space-y-2">
+                      {schritte.map((s: any, idx: number) => {
+                        const cfg = SCHRITT_CFG[s.status] || SCHRITT_CFG.offen;
+                        const Icon = cfg.icon;
+                        return (
+                          <div key={s.id || idx} className="flex items-center gap-3 relative">
+                            <div className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center z-10 ${cfg.bg} border-2 ${s.status === "erledigt" ? "border-green-300" : s.status === "aktiv" ? "border-amber-300" : "border-gray-200"}`}>
+                              <Icon className={`h-4 w-4 ${cfg.color}`} />
+                            </div>
+                            <div className={`flex-1 flex items-center justify-between rounded-lg px-3 py-2 ${s.status === "aktiv" ? "bg-amber-50 border border-amber-200" : s.status === "erledigt" ? "bg-green-50 border border-green-200" : "bg-gray-50 border border-gray-200"}`}>
+                              <span className={`text-sm font-medium ${s.status === "erledigt" ? "line-through text-gray-400" : s.status === "aktiv" ? "text-amber-800" : "text-gray-600"}`}>
+                                {s.titel}
+                              </span>
+                              <span className={`text-[11px] ml-2 shrink-0 font-medium ${s.status === "erledigt" ? "text-green-600" : s.status === "aktiv" ? "text-amber-600" : "text-gray-400"}`}>
+                                {cfg.label}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Kunden-Nachricht */}
+              {data.kunden_nachricht && (
+                <div className="bg-[#6b4c2a]/8 border border-[#6b4c2a]/20 rounded-xl p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <MessageSquare className="h-4 w-4 text-[#6b4c2a]" />
+                    <p className="text-xs font-semibold text-[#6b4c2a] uppercase tracking-wider">Mitteilung</p>
+                  </div>
+                  <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">{data.kunden_nachricht}</p>
+                </div>
+              )}
+
+              {/* Daten */}
               {(data.start_datum || data.end_datum) && (
                 <div className="grid grid-cols-2 gap-3">
                   {data.start_datum && (
                     <div>
                       <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">Beginn</p>
-                      <p className="text-sm font-medium">{data.start_datum}</p>
+                      <p className="text-sm font-medium">{formatDate(data.start_datum)}</p>
                     </div>
                   )}
                   {data.end_datum && (
                     <div>
                       <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">Voraussichtliche Fertigstellung</p>
-                      <p className="text-sm font-semibold text-[#6b4c2a]">{data.end_datum}</p>
+                      <p className="text-sm font-semibold text-[#6b4c2a]">{formatDate(data.end_datum)}</p>
                     </div>
                   )}
                 </div>

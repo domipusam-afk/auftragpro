@@ -63,6 +63,13 @@ import {
   ArrowDown,
   ArrowUp,
   RefreshCw,
+  Users,
+  GripVertical,
+  CircleCheck,
+  CircleDot,
+  Circle,
+  MessageSquare,
+  Save,
 } from "lucide-react";
 import type {
   Auftrag,
@@ -2005,6 +2012,198 @@ function WiederkehrendBlock({ auftragId, interval, naechste, refetch }: {
   );
 }
 
+// ─── Kundenportal Tab ────────────────────────────────────────────────────────────────────────────────
+function KundenportalTab({ id }: { id: string }) {
+  const { toast } = useToast();
+  const [neuerTitel, setNeuerTitel] = useState("");
+  const [nachricht, setNachricht] = useState("");
+  const [nachrichtGeladen, setNachrichtGeladen] = useState(false);
+  const [nachrichtSaving, setNachrichtSaving] = useState(false);
+
+  // Schritte laden
+  const { data: schritte = [], isLoading, refetch } = useQuery<any[]>({
+    queryKey: ["/api/auftraege/schritte", id],
+    queryFn: () => apiRequest("GET", `/api/auftraege/${id}/schritte`).then(r => r.json()),
+  });
+
+  // Kunden-Nachricht laden (aus Auftrag-Daten)
+  const { data: auftragData } = useQuery<any>({
+    queryKey: ["/api/auftraege", id],
+    queryFn: () => apiRequest("GET", `/api/auftraege/${id}`).then(r => r.json()),
+    staleTime: 30000,
+  });
+
+  // Nachricht synchronisieren wenn Daten geladen
+  if (auftragData && !nachrichtGeladen) {
+    setNachricht(auftragData.kunden_nachricht || "");
+    setNachrichtGeladen(true);
+  }
+
+  // Fortschritt berechnen
+  const total = schritte.length;
+  const erledigt = schritte.filter((s: any) => s.status === "erledigt").length;
+  const fortschritt = total > 0 ? Math.round((erledigt / total) * 100) : 0;
+
+  const addSchritt = async () => {
+    if (!neuerTitel.trim()) return;
+    try {
+      await apiRequest("POST", `/api/auftraege/${id}/schritte`, {
+        titel: neuerTitel.trim(), status: "offen", reihenfolge: schritte.length
+      });
+      setNeuerTitel("");
+      refetch();
+      queryClient.invalidateQueries({ queryKey: ["/api/auftraege/schritte", id] });
+    } catch (e: any) {
+      toast({ title: "Fehler", description: e.message, variant: "destructive" });
+    }
+  };
+
+  const updateStatus = async (schritt: any, newStatus: string) => {
+    try {
+      await apiRequest("PATCH", `/api/auftraege/${id}/schritte/${schritt.id}`, { status: newStatus });
+      refetch();
+    } catch (e: any) {
+      toast({ title: "Fehler", description: e.message, variant: "destructive" });
+    }
+  };
+
+  const deleteSchritt = async (schritt: any) => {
+    try {
+      await apiRequest("DELETE", `/api/auftraege/${id}/schritte/${schritt.id}`);
+      refetch();
+    } catch (e: any) {
+      toast({ title: "Fehler", description: e.message, variant: "destructive" });
+    }
+  };
+
+  const saveNachricht = async () => {
+    setNachrichtSaving(true);
+    try {
+      await apiRequest("PATCH", `/api/auftraege/${id}/kunden-nachricht`, { kunden_nachricht: nachricht });
+      queryClient.invalidateQueries({ queryKey: ["/api/auftraege", id] });
+      toast({ title: "Gespeichert", description: "Kunden-Nachricht aktualisiert." });
+    } catch (e: any) {
+      toast({ title: "Fehler", description: e.message, variant: "destructive" });
+    } finally {
+      setNachrichtSaving(false);
+    }
+  };
+
+  const SCHRITT_STATUS: Record<string, { label: string; icon: any; color: string }> = {
+    offen:    { label: "Offen",      icon: Circle,      color: "text-gray-400" },
+    aktiv:    { label: "In Arbeit",  icon: CircleDot,   color: "text-amber-500" },
+    erledigt: { label: "Erledigt",   icon: CircleCheck, color: "text-green-500" },
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Fortschrittsbalken */}
+      {total > 0 && (
+        <div className="bg-muted/40 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium">Gesamtfortschritt</span>
+            <span className="text-sm font-semibold" style={{ color: "#6b4c2a" }}>{fortschritt}%</span>
+          </div>
+          <div className="h-2.5 bg-muted rounded-full overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all duration-500"
+              style={{ width: `${fortschritt}%`, background: "linear-gradient(90deg, #8b6234, #6b4c2a)" }}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground mt-1.5">{erledigt} von {total} Schritten abgeschlossen</p>
+        </div>
+      )}
+
+      {/* Arbeitsschritte */}
+      <div>
+        <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+          <GripVertical className="h-4 w-4 text-muted-foreground" />
+          Arbeitsschritte
+        </h3>
+        {isLoading ? (
+          <div className="space-y-2">
+            <div className="h-10 bg-muted/40 rounded animate-pulse" />
+            <div className="h-10 bg-muted/40 rounded animate-pulse" />
+          </div>
+        ) : schritte.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-2">Noch keine Schritte erfasst.</p>
+        ) : (
+          <div className="space-y-1.5">
+            {schritte.map((s: any) => {
+              const cfg = SCHRITT_STATUS[s.status] || SCHRITT_STATUS.offen;
+              const Icon = cfg.icon;
+              return (
+                <div key={s.id} className="flex items-center gap-2 p-2.5 rounded-lg border bg-card hover:bg-muted/30 transition-colors group">
+                  <button
+                    className={`shrink-0 transition-colors hover:opacity-70 ${cfg.color}`}
+                    title="Status wechseln"
+                    onClick={() => {
+                      const next = s.status === "offen" ? "aktiv" : s.status === "aktiv" ? "erledigt" : "offen";
+                      updateStatus(s, next);
+                    }}
+                  >
+                    <Icon className="h-5 w-5" />
+                  </button>
+                  <span className={`flex-1 text-sm ${s.status === "erledigt" ? "line-through text-muted-foreground" : ""}`}>{s.titel}</span>
+                  <span className="text-[11px] text-muted-foreground shrink-0">{cfg.label}</span>
+                  <button
+                    className="opacity-0 group-hover:opacity-100 transition-opacity text-red-400 hover:text-red-600"
+                    onClick={() => deleteSchritt(s)}
+                    title="Löschen"
+                  >
+                    <Trash className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Neuer Schritt hinzufügen */}
+        <div className="flex gap-2 mt-3">
+          <Input
+            placeholder="Neuer Schritt, z.B. 'Holz zuschneiden'..."
+            value={neuerTitel}
+            onChange={e => setNeuerTitel(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && addSchritt()}
+            className="h-8 text-sm"
+          />
+          <Button size="sm" onClick={addSchritt} style={{ background: "#6b4c2a", color: "white" }}>
+            <Plus className="h-4 w-4" />
+          </Button>
+        </div>
+        <p className="text-[11px] text-muted-foreground mt-1">
+          Klick auf das Symbol wechselt: Offen → In Arbeit → Erledigt
+        </p>
+      </div>
+
+      {/* Kunden-Nachricht */}
+      <div>
+        <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+          <MessageSquare className="h-4 w-4 text-muted-foreground" />
+          Nachricht an den Kunden
+        </h3>
+        <Textarea
+          placeholder="z.B. 'Ihr Auftrag wird planmässig fertig. Lieferung nächste Woche Dienstag.'..."
+          value={nachricht}
+          onChange={e => setNachricht(e.target.value)}
+          rows={3}
+          className="text-sm resize-none"
+        />
+        <div className="flex justify-end mt-2">
+          <Button size="sm" onClick={saveNachricht} disabled={nachrichtSaving} style={{ background: "#6b4c2a", color: "white" }}>
+            <Save className="h-3.5 w-3.5 mr-1" />
+            {nachrichtSaving ? "Speichere..." : "Speichern"}
+          </Button>
+        </div>
+        <p className="text-[11px] text-muted-foreground mt-1">
+          Diese Nachricht sieht der Kunde auf seiner Status-Seite.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function AuftragDetail({ id }: Props) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -2348,6 +2547,11 @@ export default function AuftragDetail({ id }: Props) {
                   <span className="hidden sm:inline">Liefertermine</span>
                   <span className="sm:hidden">Lieferung</span>
                 </TabsTrigger>
+                <TabsTrigger value="kundenportal" data-testid="tab-kundenportal" className="flex flex-col sm:flex-row items-center gap-1 text-xs p-2 sm:px-3 sm:py-1.5 h-auto">
+                  <Users className="h-3.5 w-3.5 shrink-0" />
+                  <span className="hidden sm:inline">Kundenportal</span>
+                  <span className="sm:hidden">Kunde</span>
+                </TabsTrigger>
               </TabsList>
 
               <TabsContent value="verlauf" className="mt-4">
@@ -2409,6 +2613,9 @@ export default function AuftragDetail({ id }: Props) {
               </TabsContent>
               <TabsContent value="liefertermine" className="mt-4">
                 <LiefertermineTab id={id} />
+              </TabsContent>
+              <TabsContent value="kundenportal" className="mt-4">
+                <KundenportalTab id={id} />
               </TabsContent>
             </Tabs>
           </Card>
