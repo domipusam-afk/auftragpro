@@ -869,7 +869,13 @@ export default function Layout({ children }: { children: ReactNode }) {
           : undefined
         }
       >
-        {children}
+        {/* Weisser Overlay damit Inhalt immer lesbar ist */}
+        <div
+          className="min-h-full"
+          style={appBg ? { backgroundColor: "rgba(255,255,255,0.88)" } : undefined}
+        >
+          {children}
+        </div>
       </main>
     </div>
   );

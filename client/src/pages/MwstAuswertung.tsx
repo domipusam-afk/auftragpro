@@ -277,7 +277,7 @@ export default function MwstAuswertung() {
           </Card>
 
           {/* MWST-Zahllast */}
-          <Card className={`p-5 border-2 ${data.zahllast > 0 ? "border-primary/40 bg-primary/5" : "border-green-500/40 bg-green-500/5"}`}>
+          <Card className={`p-5 border-2 ${data.zahllast > 0 ? "border-primary/60" : "border-green-500/60"}`} style={{ backgroundColor: "white" }}>
             <div className="flex items-center justify-between flex-wrap gap-4">
               <div>
                 <p className="font-bold text-base">MWST-Zahllast {QUARTAL_LABELS[quartal]} {jahr}</p>
