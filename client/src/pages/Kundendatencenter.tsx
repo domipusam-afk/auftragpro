@@ -338,10 +338,10 @@ export default function Kundendatencenter() {
               </div>
               <div>
                 <Label className="text-xs">Anrede</Label>
-                <Select value={form.anrede || ""} onValueChange={(v) => setForm({ ...form, anrede: v })}>
+                <Select value={form.anrede || "keine"} onValueChange={(v) => setForm({ ...form, anrede: v === "keine" ? "" : v })}>
                   <SelectTrigger><SelectValue placeholder="— keine —" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">— keine —</SelectItem>
+                    <SelectItem value="keine">— keine —</SelectItem>
                     <SelectItem value="Herr">Herr</SelectItem>
                     <SelectItem value="Frau">Frau</SelectItem>
                   </SelectContent>
