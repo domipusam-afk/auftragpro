@@ -67,6 +67,7 @@ const AUFTRAEGE_SUB_NAV = [
 
 const FINANZ_NAV = [
   { href: "/mahnwesen", label: "Mahnwesen", icon: AlertTriangle },
+  { href: "/mwst", label: "MWST-Abrechnung", icon: ReceiptText },
   { href: "/eingangsrechnungen", label: "Eingangsrechnungen", icon: Receipt },
   { href: "/garantien", label: "Garantieübersicht", icon: BadgeCheck },
 ];

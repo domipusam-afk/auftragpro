@@ -5453,6 +5453,91 @@ export async function registerRoutes(
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
+
+  // ─── MWST-AUSWERTUNG ─────────────────────────────────────────────────────────
+  app.get("/api/mwst/auswertung", async (req, res) => {
+    try {
+      const { jahr, quartal } = req.query as Record<string, string>;
+      const y = parseInt(jahr) || new Date().getFullYear();
+      const q = parseInt(quartal) || Math.floor(new Date().getMonth() / 3) + 1;
+
+      const vonDate = new Date(y, (q - 1) * 3, 1);
+      const bisDate = new Date(y, q * 3, 0);
+      const von = vonDate.toISOString().slice(0, 10);
+      const bis = bisDate.toISOString().slice(0, 10);
+
+      const { data: settingsArr } = await supabase.from("einstellungen").select("schluessel,wert");
+      const sMap: Record<string, string> = {};
+      for (const s of (settingsArr || [])) sMap[s.schluessel] = s.wert;
+      const mwstSatz = parseFloat(sMap.mwst_satz || "8.1");
+
+      // Ausgangsrechnungen — nur bezahlte (vereinnahmte Entgelte)
+      const { data: ausgang } = await supabase
+        .from("rechnungen")
+        .select("nr,betrag,bezahlt_am,auftrag_id")
+        .not("bezahlt_am", "is", null)
+        .gte("bezahlt_am", von)
+        .lte("bezahlt_am", bis)
+        .order("bezahlt_am");
+
+      const auftragIds = [...new Set((ausgang || []).map((r: any) => r.auftrag_id).filter(Boolean))];
+      let auftraegeMap: Record<string, any> = {};
+      if (auftragIds.length > 0) {
+        const { data: auftraege } = await supabase.from("auftraege").select("id,nr,kunde").in("id", auftragIds);
+        for (const a of (auftraege || [])) auftraegeMap[a.id] = a;
+      }
+
+      // Eingangsrechnungen — alle im Quartal (Vorsteuer nach Belegdatum)
+      const { data: eingang } = await supabase
+        .from("eingangsrechnungen")
+        .select("nr,betrag,datum,lieferant,mwst_betrag,mwst_prozent,status")
+        .gte("datum", von)
+        .lte("datum", bis)
+        .order("datum");
+
+      const ausgangDetails = (ausgang || []).map((r: any) => {
+        const brutto = Number(r.betrag) || 0;
+        const netto  = Math.round(brutto / (1 + mwstSatz / 100) * 100) / 100;
+        const mwst   = Math.round((brutto - netto) * 100) / 100;
+        return { nr: r.nr, datum: r.bezahlt_am, kunde: (auftraegeMap[r.auftrag_id]?.kunde || ""), brutto, netto, mwst };
+      });
+
+      const eingangDetails = (eingang || []).map((e: any) => {
+        const brutto = Number(e.betrag) || 0;
+        const vorsteuer = e.mwst_betrag
+          ? Number(e.mwst_betrag)
+          : Math.round(brutto / (1 + mwstSatz / 100) * (mwstSatz / 100) * 100) / 100;
+        const netto = Math.round((brutto - vorsteuer) * 100) / 100;
+        return { nr: e.nr, datum: e.datum, lieferant: e.lieferant || "", brutto, netto, vorsteuer, status: e.status || "offen" };
+      });
+
+      const ausgangBrutto   = ausgangDetails.reduce((s: number, r: any) => s + r.brutto, 0);
+      const ausgangNetto    = ausgangDetails.reduce((s: number, r: any) => s + r.netto, 0);
+      const ausgangMwst     = ausgangDetails.reduce((s: number, r: any) => s + r.mwst, 0);
+      const eingangBrutto   = eingangDetails.reduce((s: number, e: any) => s + e.brutto, 0);
+      const eingangNetto    = eingangDetails.reduce((s: number, e: any) => s + e.netto, 0);
+      const eingangVorsteuer = eingangDetails.reduce((s: number, e: any) => s + e.vorsteuer, 0);
+      const zahllast = Math.round((ausgangMwst - eingangVorsteuer) * 100) / 100;
+
+      res.json({
+        jahr: y, quartal: q, von, bis, mwstSatz,
+        ausgang: {
+          details: ausgangDetails,
+          totalBrutto: Math.round(ausgangBrutto * 100) / 100,
+          totalNetto:  Math.round(ausgangNetto * 100) / 100,
+          totalMwst:   Math.round(ausgangMwst * 100) / 100,
+        },
+        eingang: {
+          details: eingangDetails,
+          totalBrutto:    Math.round(eingangBrutto * 100) / 100,
+          totalNetto:     Math.round(eingangNetto * 100) / 100,
+          totalVorsteuer: Math.round(eingangVorsteuer * 100) / 100,
+        },
+        zahllast,
+      });
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
   // ─── FIBU-EXPORT ──────────────────────────────────────────────────────────────
   app.get("/api/export/fibu", async (req, res) => {
     try {

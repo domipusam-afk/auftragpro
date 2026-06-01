@@ -22,6 +22,7 @@ import Rechnungen from "@/pages/Rechnungen";
 import Einstellungen from "@/pages/Einstellungen";
 import Zeiterfassung from "@/pages/Zeiterfassung";
 import Mahnwesen from "@/pages/Mahnwesen";
+import MwstAuswertung from "@/pages/MwstAuswertung";
 import Vorkalkulation from "@/pages/Vorkalkulation";
 import Eingangsrechnungen from "@/pages/Eingangsrechnungen";
 import Nachkalkulation from "@/pages/Nachkalkulation";
@@ -66,6 +67,7 @@ function AppRouter() {
       <Route path="/benutzerverwaltung" component={Benutzerverwaltung} />
       <Route path="/2fa" component={ZweiFA} />
       <Route path="/mahnwesen" component={Mahnwesen} />
+      <Route path="/mwst" component={MwstAuswertung} />
       <Route path="/vorkalkulation" component={Vorkalkulation} />
       <Route path="/auftraege/:id/kalkulation" component={Vorkalkulation} />
       <Route path="/eingangsrechnungen" component={Eingangsrechnungen} />
