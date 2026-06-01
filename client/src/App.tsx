@@ -45,11 +45,9 @@ import VorkalkulationDetail from "@/pages/VorkalkulationDetail";
 import NachkalkulationDetail from "@/pages/NachkalkulationDetail";
 import VorkalkulationUebersicht from "@/pages/VorkalkulationUebersicht";
 import NachkalkulationUebersicht from "@/pages/NachkalkulationUebersicht";
-import Liquiditaet from "@/pages/Liquiditaet";
-import Tagesrapporte from "@/pages/Tagesrapporte";
+
 import Lagerverwaltung from "@/pages/Lagerverwaltung";
-import Reklamationen from "@/pages/Reklamationen";
-import SubunternehmerPage from "@/pages/Subunternehmer";
+
 import ProjektStatus from "@/pages/ProjektStatus";
 
 function AppRouter() {
@@ -92,11 +90,9 @@ function AppRouter() {
       <Route path="/vorkalkulation-uebersicht" component={VorkalkulationUebersicht} />
       <Route path="/nachkalkulation-uebersicht" component={NachkalkulationUebersicht} />
       <Route path="/kalkulations-uebersicht" component={KalkulationsUebersicht} />
-      <Route path="/liquiditaet" component={Liquiditaet} />
-      <Route path="/tagesrapporte" component={Tagesrapporte} />
+
       <Route path="/lager" component={Lagerverwaltung} />
-      <Route path="/reklamationen" component={Reklamationen} />
-      <Route path="/subunternehmer" component={SubunternehmerPage} />
+
       <Route path="/projekt/:token">{(params) => <ProjektStatus token={params.token} />}</Route>
       <Route component={NotFound} />
     </Switch>

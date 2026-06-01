@@ -5368,31 +5368,6 @@ export async function registerRoutes(
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
-  // ─── TAGESRAPPORTE ────────────────────────────────────────────────────────────
-  app.get("/api/tagesrapporte", async (req, res) => {
-    try {
-      const { data, error } = await supabase.from("tagesrapporte").select("*").order("datum", { ascending: false });
-      if (error) return res.status(500).json({ message: error.message });
-      res.json(data || []);
-    } catch (e) { res.status(500).json({ message: asError(e) }); }
-  });
-
-  app.post("/api/tagesrapporte", async (req, res) => {
-    try {
-      const { data, error } = await supabase.from("tagesrapporte").insert({ ...req.body, id: uid() }).select().single();
-      if (error) return res.status(500).json({ message: error.message });
-      res.json(data);
-    } catch (e) { res.status(500).json({ message: asError(e) }); }
-  });
-
-  app.delete("/api/tagesrapporte/:id", async (req, res) => {
-    try {
-      const { error } = await supabase.from("tagesrapporte").delete().eq("id", req.params.id);
-      if (error) return res.status(500).json({ message: error.message });
-      res.json({ ok: true });
-    } catch (e) { res.status(500).json({ message: asError(e) }); }
-  });
-
   // ─── LAGERVERWALTUNG ──────────────────────────────────────────────────────────
   app.get("/api/lager", async (req, res) => {
     try {
@@ -5439,72 +5414,6 @@ export async function registerRoutes(
       // Log buchung
       await supabase.from("lager_buchungen").insert({ id: uid(), artikel_id: req.params.id, typ, menge: Number(menge), notiz: req.body.notiz || null, bestand_nach: neuerBestand });
       res.json(data);
-    } catch (e) { res.status(500).json({ message: asError(e) }); }
-  });
-
-  // ─── REKLAMATIONEN ────────────────────────────────────────────────────────────
-  app.get("/api/reklamationen", async (req, res) => {
-    try {
-      const { data, error } = await supabase.from("reklamationen").select("*").order("gemeldet_am", { ascending: false });
-      if (error) return res.status(500).json({ message: error.message });
-      res.json(data || []);
-    } catch (e) { res.status(500).json({ message: asError(e) }); }
-  });
-
-  app.post("/api/reklamationen", async (req, res) => {
-    try {
-      const { data, error } = await supabase.from("reklamationen").insert({ ...req.body, id: uid() }).select().single();
-      if (error) return res.status(500).json({ message: error.message });
-      res.json(data);
-    } catch (e) { res.status(500).json({ message: asError(e) }); }
-  });
-
-  app.put("/api/reklamationen/:id", async (req, res) => {
-    try {
-      const { data, error } = await supabase.from("reklamationen").update(req.body).eq("id", req.params.id).select().single();
-      if (error) return res.status(500).json({ message: error.message });
-      res.json(data);
-    } catch (e) { res.status(500).json({ message: asError(e) }); }
-  });
-
-  app.delete("/api/reklamationen/:id", async (req, res) => {
-    try {
-      const { error } = await supabase.from("reklamationen").delete().eq("id", req.params.id);
-      if (error) return res.status(500).json({ message: error.message });
-      res.json({ ok: true });
-    } catch (e) { res.status(500).json({ message: asError(e) }); }
-  });
-
-  // ─── SUBUNTERNEHMER ───────────────────────────────────────────────────────────
-  app.get("/api/subunternehmer", async (req, res) => {
-    try {
-      const { data, error } = await supabase.from("subunternehmer").select("*").order("firma");
-      if (error) return res.status(500).json({ message: error.message });
-      res.json(data || []);
-    } catch (e) { res.status(500).json({ message: asError(e) }); }
-  });
-
-  app.post("/api/subunternehmer", async (req, res) => {
-    try {
-      const { data, error } = await supabase.from("subunternehmer").insert({ ...req.body, id: uid() }).select().single();
-      if (error) return res.status(500).json({ message: error.message });
-      res.json(data);
-    } catch (e) { res.status(500).json({ message: asError(e) }); }
-  });
-
-  app.put("/api/subunternehmer/:id", async (req, res) => {
-    try {
-      const { data, error } = await supabase.from("subunternehmer").update(req.body).eq("id", req.params.id).select().single();
-      if (error) return res.status(500).json({ message: error.message });
-      res.json(data);
-    } catch (e) { res.status(500).json({ message: asError(e) }); }
-  });
-
-  app.delete("/api/subunternehmer/:id", async (req, res) => {
-    try {
-      const { error } = await supabase.from("subunternehmer").delete().eq("id", req.params.id);
-      if (error) return res.status(500).json({ message: error.message });
-      res.json({ ok: true });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 

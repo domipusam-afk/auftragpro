@@ -43,9 +43,6 @@ import {
   BadgeCheck,
   Package,
   Banknote as Banknote2,
-  FileBarChart2,
-  AlertOctagon,
-  Hammer,
   Wallet2,
   TrendingDown as TrendDown,
   ReceiptText,
@@ -69,11 +66,9 @@ const AUFTRAEGE_SUB_NAV = [
 ];
 
 const FINANZ_NAV = [
-  { href: "/liquiditaet", label: "Liquidität / Budget", icon: Wallet },
   { href: "/mahnwesen", label: "Mahnwesen", icon: AlertTriangle },
   { href: "/eingangsrechnungen", label: "Eingangsrechnungen", icon: Receipt },
   { href: "/garantien", label: "Garantieübersicht", icon: BadgeCheck },
-  { href: "/reklamationen", label: "Reklamationen", icon: AlertOctagon },
 ];
 
 
@@ -91,13 +86,11 @@ const RESSOURCE_NAV = [
   { href: "/ferienplanung", label: "Ferienplanung", icon: Umbrella },
   { href: "/stundenauswertung", label: "Stundenauswertung", icon: BarChart2 },
   { href: "/lohnabrechnung", label: "Lohnabrechnung", icon: Banknote },
-  { href: "/tagesrapporte", label: "Tagesrapporte", icon: FileBarChart2 },
 ];
 
 const EINKAUF_NAV = [
   { href: "/lieferanten", label: "Lieferanten & Material", icon: Package },
   { href: "/lager", label: "Lagerverwaltung", icon: ReceiptText },
-  { href: "/subunternehmer", label: "Subunternehmer", icon: Hammer },
 ];
 
 const DOKUMENT_NAV = [
