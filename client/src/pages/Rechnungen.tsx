@@ -227,7 +227,7 @@ export default function Rechnungen() {
       {/* Export-Bereich: beide Cards nebeneinander, auf Mobile untereinander */}
       <div className="flex flex-col lg:flex-row gap-3">
         {/* FIBU-Export (Abacus/Banana/Bexio) */}
-        <Card className="p-3 flex flex-col gap-2 border-dashed border-2 bg-muted/20 flex-1 min-w-0">
+        <Card className="p-3 flex flex-col gap-2 bg-card flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <FileSpreadsheet className="w-4 h-4 text-muted-foreground shrink-0" />
             <p className="text-sm font-medium">FIBU-Export (Abacus / Banana / Bexio)</p>
@@ -249,7 +249,7 @@ export default function Rechnungen() {
         </Card>
 
         {/* Banana / Q3 Export */}
-        <Card className="p-3 flex flex-col sm:flex-row items-stretch sm:items-center gap-2 border-dashed border-2 bg-muted/20 flex-shrink-0">
+        <Card className="p-3 flex flex-col sm:flex-row items-stretch sm:items-center gap-2 bg-card flex-shrink-0">
           <div className="flex items-center gap-2">
             <FileSpreadsheet className="w-4 h-4 text-muted-foreground shrink-0" />
             <div>
