@@ -418,6 +418,13 @@ export default function Layout({ children }: { children: ReactNode }) {
   const [appBg, setAppBg] = useState<string>(
     () => localStorage.getItem("ap_app_bg") || ""
   );
+  // Kontrast-Overlay-Stärke (0-98), Standard 88
+  const [bgKontrast, setBgKontrast] = useState<number>(
+    () => {
+      const stored = localStorage.getItem("ap_bg_kontrast");
+      return stored !== null ? Number(stored) : 88;
+    }
+  );
   const { data: einstellungenList = [] } = useQuery<{ schluessel: string; wert: string }[]>({
     queryKey: ["/api/einstellungen"],
     queryFn: () => apiRequest("GET", "/api/einstellungen").then((r) => r.json()),
@@ -430,6 +437,12 @@ export default function Layout({ children }: { children: ReactNode }) {
       setAppBg(fresh);
       if (fresh) localStorage.setItem("ap_app_bg", fresh);
       else localStorage.removeItem("ap_app_bg");
+    }
+    const freshK = einstellungenList.find((e) => e.schluessel === "hintergrund_kontrast")?.wert;
+    if (freshK !== undefined) {
+      const n = Number(freshK);
+      setBgKontrast(n);
+      localStorage.setItem("ap_bg_kontrast", String(n));
     }
   }, [einstellungenList]);
 
@@ -869,10 +882,11 @@ export default function Layout({ children }: { children: ReactNode }) {
           : undefined
         }
       >
-        {/* Weisser Overlay damit Inhalt immer lesbar ist */}
+        {/* Weisser Overlay damit Inhalt immer lesbar ist — Stärke per Einstellung */}
         <div
+          id="ap-bg-overlay"
           className="min-h-full"
-          style={appBg ? { backgroundColor: "rgba(255,255,255,0.88)" } : undefined}
+          style={appBg ? { backgroundColor: `rgba(255,255,255,${bgKontrast / 100})` } : undefined}
         >
           {children}
         </div>

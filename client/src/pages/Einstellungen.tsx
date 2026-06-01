@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -770,6 +770,24 @@ function HintergrundTab({ settings }: { settings: EinstellungMap }) {
   const loginInputRef = useRef<HTMLInputElement>(null);
   const appInputRef = useRef<HTMLInputElement>(null);
 
+  // Kontrast: 0 = kein Overlay, 100 = fast komplett weiss. Standard = 88
+  const [kontrast, setKontrast] = useState<number>(
+    settings.hintergrund_kontrast ? Number(settings.hintergrund_kontrast) : 88
+  );
+
+  // Sofort-Vorschau im laufenden Layout anwenden
+  useEffect(() => {
+    const overlay = document.getElementById("ap-bg-overlay");
+    if (overlay) overlay.style.backgroundColor = `rgba(255,255,255,${kontrast / 100})`;
+  }, [kontrast]);
+
+  function saveKontrast(val: number) {
+    setKontrast(val);
+    save.mutate({ key: "hintergrund_kontrast", wert: String(val) });
+    // localStorage für sofortige Wirkung beim nächsten Laden
+    localStorage.setItem("ap_bg_kontrast", String(val));
+  }
+
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>, target: "login" | "app") {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -876,8 +894,89 @@ function HintergrundTab({ settings }: { settings: EinstellungMap }) {
     </Card>
   );
 
+  // Labels für Kontrast-Stufen
+  const kontrastLabel = kontrast <= 20
+    ? "Kaum sichtbar"
+    : kontrast <= 45
+    ? "Transparent"
+    : kontrast <= 65
+    ? "Leicht getönt"
+    : kontrast <= 80
+    ? "Halbdeckend"
+    : kontrast <= 92
+    ? "Standard"
+    : "Fast weiss";
+
   return (
     <div className="space-y-4">
+
+      {/* Kontrast-Regler */}
+      <Card className="p-6 bg-card">
+        <div className="space-y-4">
+          <div>
+            <h3 className="font-semibold text-sm">Hintergrund-Kontrast</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Helligkeit des weissen Überlagerung über dem App-Hintergrundbild. Bei 0 % ist das Bild voll sichtbar, bei 100 % komplett weiss.
+            </p>
+          </div>
+
+          {/* Schieberegler */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">Overlay-Stärke</span>
+              <span className="text-sm font-semibold tabular-nums" style={{ color: "#6b4c2a" }}>
+                {kontrast} % — {kontrastLabel}
+              </span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={98}
+              step={1}
+              value={kontrast}
+              onChange={(e) => setKontrast(Number(e.target.value))}
+              onMouseUp={(e) => saveKontrast(Number((e.target as HTMLInputElement).value))}
+              onTouchEnd={(e) => saveKontrast(Number((e.target as HTMLInputElement).value))}
+              className="w-full h-2 rounded-full appearance-none cursor-pointer"
+              style={{
+                background: `linear-gradient(to right, #6b4c2a ${kontrast}%, #e5e7eb ${kontrast}%)`,
+                accentColor: "#6b4c2a",
+              }}
+            />
+            <div className="flex justify-between text-[10px] text-muted-foreground">
+              <span>Bild sichtbar</span>
+              <span>Standard (88 %)</span>
+              <span>Weiss</span>
+            </div>
+          </div>
+
+          {/* Vorschau-Streifen */}
+          {appBg && (
+            <div
+              className="relative w-full h-16 rounded-lg overflow-hidden border"
+              style={{ backgroundImage: `url(${appBg})`, backgroundSize: "cover", backgroundPosition: "center" }}
+            >
+              <div
+                className="absolute inset-0"
+                style={{ backgroundColor: `rgba(255,255,255,${kontrast / 100})` }}
+              />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-xs font-medium px-2 py-1 rounded bg-black/20 text-white">Vorschau</span>
+              </div>
+            </div>
+          )}
+
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-xs"
+            onClick={() => saveKontrast(88)}
+          >
+            Zurücksetzen (Standard 88 %)
+          </Button>
+        </div>
+      </Card>
+
       <UploadCard
         label="Login-Hintergrund"
         description="Hintergrundbild für die Anmeldeseite"
