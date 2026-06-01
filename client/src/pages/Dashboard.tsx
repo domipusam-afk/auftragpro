@@ -23,6 +23,9 @@ import {
   Download,
   RefreshCw,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  MailWarning,
 } from "lucide-react";
 import type { Auftrag, Stats, Rechnung } from "@shared/schema";
 import { STATUS_LABEL } from "@shared/schema";
@@ -160,9 +163,18 @@ export default function Dashboard() {
     queryKey: ["/api/rechnungen"],
   });
 
+  // Mahnungen
+  const { data: mahnungen = [] } = useQuery<any[]>({
+    queryKey: ["/api/mahnungen"],
+    queryFn: () => apiRequest("GET", "/api/mahnungen").then((r) => r.json()),
+  });
+
   // Finanzen Übersicht
   const now = new Date();
   const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+  // Jahresvergleich: welches Jahr anzeigen
+  const [vergleichsJahr, setVergleichsJahr] = useState(now.getFullYear());
   // Monatsumsatz: nur Rechnungen die diesen Monat BEZAHLT wurden (vereinnahmte Entgelte)
   const monatsumsatz = (rechnungen as any[])
     .filter((r: any) => r.bezahlt_am && r.bezahlt_am.startsWith(thisMonth))
@@ -223,6 +235,31 @@ export default function Dashboard() {
     return { key, label, total };
   });
   const maxMonth = Math.max(...last6Months.map((m) => m.total), 1);
+
+  // Jahresvergleich: 12 Monate des gewählten Jahres vs. Vorjahr
+  const jahresData = Array.from({ length: 12 }, (_, i) => {
+    const monat = String(i + 1).padStart(2, "0");
+    const keyAktuell = `${vergleichsJahr}-${monat}`;
+    const keyVorjahr = `${vergleichsJahr - 1}-${monat}`;
+    const label = new Date(vergleichsJahr, i, 1).toLocaleString("de-CH", { month: "short" });
+    const aktuell = (rechnungen as any[])
+      .filter((r: any) => r.bezahlt_am && r.bezahlt_am.startsWith(keyAktuell))
+      .reduce((s: number, r: any) => s + (Number(r.betrag) || 0), 0);
+    const vorjahr = (rechnungen as any[])
+      .filter((r: any) => r.bezahlt_am && r.bezahlt_am.startsWith(keyVorjahr))
+      .reduce((s: number, r: any) => s + (Number(r.betrag) || 0), 0);
+    return { label, aktuell, vorjahr };
+  });
+  const jahresTotal = jahresData.reduce((s, m) => s + m.aktuell, 0);
+  const jahresVorjahr = jahresData.reduce((s, m) => s + m.vorjahr, 0);
+  const maxJahr = Math.max(...jahresData.map((m) => Math.max(m.aktuell, m.vorjahr)), 1);
+
+  // Mahnungen Kennzahlen
+  const offeneMahnungen = (mahnungen as any[]).filter((m) => m.status !== "bezahlt" && m.status !== "abgeschrieben");
+  const offeneMahnungenBetrag = offeneMahnungen.reduce((s: number, m: any) => {
+    // Betrag aus verknüpfter Rechnung oder direkt
+    return s + (Number(m.betrag) || Number(m.rechnungsbetrag) || 0);
+  }, 0);
 
   const dringend = (auftraege || []).filter(
     (a) => a.prioritaet === "dringend" && a.status !== "abgeschlossen" && a.status !== "storniert"
@@ -341,7 +378,7 @@ export default function Dashboard() {
             FIBU-Export CSV
           </a>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
           <KpiCard
             label={`Monatsumsatz ${now.toLocaleString("de-CH", { month: "long" })}`}
             value={monatsumsatz > 0 ? formatCHF(monatsumsatz) : "CHF 0"}
@@ -360,15 +397,42 @@ export default function Dashboard() {
             icon={CheckSquare}
             tone="green"
           />
+          {/* Offene Mahnungen */}
+          <Link href="/mahnwesen">
+            <a className="block h-full">
+              <Card className={cn(
+                "p-3 md:p-5 bg-card h-full transition-all hover:shadow-md hover:border-foreground/20 cursor-pointer",
+                offeneMahnungen.length > 0 && "border-orange-300"
+              )}>
+                <div className="flex items-start justify-between">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs md:text-sm text-muted-foreground truncate">Offene Mahnungen</div>
+                    <div className="text-xl md:text-3xl font-bold mt-1" style={{ fontFamily: "var(--font-display)", color: offeneMahnungen.length > 0 ? "#e8620a" : undefined }}>
+                      {offeneMahnungen.length}
+                    </div>
+                    {offeneMahnungen.length > 0 && (
+                      <div className="text-xs text-orange-600 font-medium mt-0.5">
+                        ausstehend
+                      </div>
+                    )}
+                  </div>
+                  <div className={cn("h-10 w-10 rounded-md flex items-center justify-center", offeneMahnungen.length > 0 ? "bg-orange-100 text-orange-600" : "bg-muted text-muted-foreground")}>
+                    <MailWarning className="h-5 w-5" />
+                  </div>
+                </div>
+              </Card>
+            </a>
+          </Link>
         </div>
+
         {/* Bar chart last 6 months */}
-        <div className="bg-card rounded-lg border p-4">
+        <div className="bg-card rounded-lg border p-4 mb-4">
           <p className="text-xs text-muted-foreground font-medium mb-3 uppercase tracking-wide">Umsatz letzte 6 Monate</p>
           <div className="overflow-x-auto">
             <div className="flex items-end gap-2 h-28 min-w-[280px]">
               {last6Months.map((m) => (
                 <div key={m.key} className="flex-1 flex flex-col items-center gap-1 min-w-[36px]">
-                  <span className="text-[9px] text-muted-foreground font-medium">{m.total > 0 ? formatCHF(m.total).replace("CHF ","").replace("'","'") : ""}</span>
+                  <span className="text-[9px] text-muted-foreground font-medium">{m.total > 0 ? formatCHF(m.total).replace("CHF ","") : ""}</span>
                   <div
                     className="w-full rounded-sm transition-all"
                     style={{
@@ -384,7 +448,77 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+
+        {/* Jahresvergleich */}
+        <div className="bg-card rounded-lg border p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Jahresvergleich (bezahlte Rechnungen)</p>
+              <div className="flex items-center gap-3 mt-1 text-xs">
+                <span className="flex items-center gap-1">
+                  <span className="inline-block w-3 h-2 rounded-sm" style={{ background: "#1a3a6b" }} />
+                  {vergleichsJahr}: {formatCHF(jahresTotal)}
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="inline-block w-3 h-2 rounded-sm" style={{ background: "#6b4c2a", opacity: 0.45 }} />
+                  {vergleichsJahr - 1}: {formatCHF(jahresVorjahr)}
+                </span>
+                {jahresVorjahr > 0 && (
+                  <span className={cn("font-semibold", jahresTotal >= jahresVorjahr ? "text-green-600" : "text-red-500")}>
+                    {jahresTotal >= jahresVorjahr ? "+" : ""}{((jahresTotal - jahresVorjahr) / jahresVorjahr * 100).toFixed(1)} %
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setVergleichsJahr((y) => y - 1)}
+                className="h-7 w-7 rounded-md flex items-center justify-center hover:bg-muted transition-colors border"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </button>
+              <span className="text-sm font-semibold tabular-nums px-1">{vergleichsJahr}</span>
+              <button
+                onClick={() => setVergleichsJahr((y) => Math.min(y + 1, now.getFullYear()))}
+                className="h-7 w-7 rounded-md flex items-center justify-center hover:bg-muted transition-colors border"
+                disabled={vergleichsJahr >= now.getFullYear()}
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <div className="flex items-end gap-1.5 h-32 min-w-[340px]">
+              {jahresData.map((m, i) => (
+                <div key={i} className="flex-1 flex flex-col items-center gap-0.5 min-w-[20px]">
+                  <div className="w-full flex flex-col items-center gap-0.5">
+                    <div
+                      className="w-full rounded-sm"
+                      style={{
+                        height: `${Math.max((m.aktuell / maxJahr) * 72, m.aktuell > 0 ? 4 : 2)}px`,
+                        background: "#1a3a6b",
+                      }}
+                      title={`${m.label} ${vergleichsJahr}: ${formatCHF(m.aktuell)}`}
+                    />
+                    <div
+                      className="w-full rounded-sm"
+                      style={{
+                        height: `${Math.max((m.vorjahr / maxJahr) * 40, m.vorjahr > 0 ? 3 : 1)}px`,
+                        background: "#6b4c2a",
+                        opacity: 0.45,
+                      }}
+                      title={`${m.label} ${vergleichsJahr - 1}: ${formatCHF(m.vorjahr)}`}
+                    />
+                  </div>
+                  <span className="text-[8px] text-muted-foreground text-center leading-tight mt-0.5">{m.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
+
+
 
       {/* Fälligkeits-Warnungen */}
       {(ueberfaelligeRechnungen.length > 0 || baldFaelligeRechnungen.length > 0 || ablaufendeOfferten.length > 0 || faelligeWiederkehrende.length > 0) && (

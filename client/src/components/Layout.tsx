@@ -158,6 +158,7 @@ function NavItem({
   collapsed,
   indent = false,
   badge,
+  onNavigate,
 }: {
   href: string;
   label: string;
@@ -165,6 +166,7 @@ function NavItem({
   collapsed: boolean;
   indent?: boolean;
   badge?: number;
+  onNavigate?: () => void;
 }) {
   const [location] = useLocation();
   const active =
@@ -175,6 +177,7 @@ function NavItem({
   return (
     <Link href={href}>
       <a
+        onClick={onNavigate}
         className={cn(
           "flex items-center gap-3 py-2 rounded-md text-sm transition-colors",
           collapsed ? "justify-center px-2" : indent ? "px-3 pl-5" : "px-3",
@@ -503,7 +506,7 @@ export default function Layout({ children }: { children: ReactNode }) {
     if (EINKAUF_NAV.some((n) => location === n.href)) setEinkaufOpen(true);
   }, [location]);
 
-  const SidebarContent = ({ mobile = false }: { mobile?: boolean }) => {
+  const SidebarContent = ({ mobile = false, onNavigate }: { mobile?: boolean; onNavigate?: () => void }) => {
     const show = mobile || !collapsed;
     return (
       <div className="flex flex-col h-full">
@@ -864,7 +867,10 @@ export default function Layout({ children }: { children: ReactNode }) {
             >
               <X className="h-5 w-5" />
             </button>
-            <SidebarContent mobile />
+            {/* nav-clicks schliessen die Sidebar auf Mobile */}
+            <div onClick={() => setMobileOpen(false)}>
+              <SidebarContent mobile />
+            </div>
           </aside>
         </div>
       )}

@@ -72,6 +72,8 @@ export default function Rechnungen() {
   const [emailModal, setEmailModal] = useState<{ open: boolean; to: string; subject: string; body: string; refId: string } | null>(null);
   const [pdfDialog, setPdfDialog] = useState<{ open: boolean; rechnung: any; auftragId: string; intern: string; internEmail: string; internTelefon: string; extern: string } | null>(null);
   const [bezahltPending, setBezahltPending] = useState<string | null>(null);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+  const [pdfPreviewLoading, setPdfPreviewLoading] = useState(false);
 
   // Bezahlt / Offen markieren
   const deleteRechnungMutation = useMutation({
@@ -171,9 +173,39 @@ export default function Rechnungen() {
     });
   };
 
+  const handlePdfPreview = async () => {
+    if (!pdfDialog) return;
+    const { rechnung, auftragId, intern, internEmail, internTelefon, extern } = pdfDialog;
+    setPdfPreviewLoading(true);
+    // Alte Preview-URL freigeben
+    if (pdfPreviewUrl) { URL.revokeObjectURL(pdfPreviewUrl); setPdfPreviewUrl(null); }
+    try {
+      const res = await apiRequest(
+        "POST",
+        `/api/auftraege/${auftragId}/rechnungen/${rechnung.id}/pdf`,
+        { ansprechpersonIntern: intern, ansprechpersonInternEmail: internEmail, ansprechpersonInternTelefon: internTelefon, ansprechpersonExtern: extern }
+      );
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      setPdfPreviewUrl(url);
+    } catch (e: any) {
+      toast({ title: "Fehler", description: (e as any).message || "PDF konnte nicht generiert werden.", variant: "destructive" });
+    } finally {
+      setPdfPreviewLoading(false);
+    }
+  };
+
   const handlePdfDownload = async () => {
     if (!pdfDialog) return;
     const { rechnung, auftragId, intern, internEmail, internTelefon, extern } = pdfDialog;
+    // Falls Vorschau bereits geladen, direkt öffnen
+    if (pdfPreviewUrl) {
+      window.open(pdfPreviewUrl, "_blank");
+      setPdfDialog(null);
+      setPdfPreviewUrl(null);
+      toast({ title: "PDF geöffnet", description: `Rechnung ${rechnung.nr} — im Browser-Tab geöffnet` });
+      return;
+    }
     setPdfLoading(rechnung.id);
     try {
       const res = await apiRequest(
@@ -553,10 +585,12 @@ Schneggenburger GmbH`,
       </div>
       {/* PDF Ansprechperson Dialog */}
       {pdfDialog?.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" style={{ padding: '16px' }}>
+          <div className="bg-white rounded-xl shadow-xl p-6 mx-4 flex flex-col" style={{ width: '100%', maxWidth: pdfPreviewUrl ? '900px' : '448px', maxHeight: '92vh', overflowY: 'auto' }}>
             <h2 className="text-base font-semibold mb-4" style={{ color: "#6b4c2a" }}>PDF erstellen – Ansprechperson</h2>
-            <div className="space-y-3 mb-5">
+            <div className={pdfPreviewUrl ? "flex gap-5 flex-col md:flex-row" : ""}>
+              {/* Formular-Spalte */}
+              <div className={`space-y-3 mb-5 ${pdfPreviewUrl ? "md:w-64 flex-shrink-0" : ""}`}>
               <div className="space-y-1">
                 <Label className="text-xs text-gray-600">Intern (Mitarbeiter / Verantwortlicher)</Label>
                 <Select
@@ -574,6 +608,8 @@ Schneggenburger GmbH`,
                         internTelefon: ma?.telefon_direkt || ma?.telefon || "",
                       } : d);
                     }
+                    // Vorschau zurücksetzen wenn Felder geändert
+                    if (pdfPreviewUrl) { URL.revokeObjectURL(pdfPreviewUrl); setPdfPreviewUrl(null); }
                   }}
                 >
                   <SelectTrigger className="h-8 text-sm">
@@ -589,7 +625,10 @@ Schneggenburger GmbH`,
                 </Select>
                 <Input
                   value={pdfDialog.intern}
-                  onChange={(e) => setPdfDialog(d => d ? { ...d, intern: e.target.value } : d)}
+                  onChange={(e) => {
+                    setPdfDialog(d => d ? { ...d, intern: e.target.value } : d);
+                    if (pdfPreviewUrl) { URL.revokeObjectURL(pdfPreviewUrl); setPdfPreviewUrl(null); }
+                  }}
                   placeholder="oder manuell eingeben..."
                   className="h-7 text-xs mt-1"
                 />
@@ -619,7 +658,10 @@ Schneggenburger GmbH`,
                 <Label className="text-xs text-gray-600">Extern (Ansprechperson beim Kunden)</Label>
                 <Select
                   value={pdfDialog.extern}
-                  onValueChange={(v) => setPdfDialog(d => d ? { ...d, extern: v === "__keiner__" ? "" : v } : d)}
+                  onValueChange={(v) => {
+                    setPdfDialog(d => d ? { ...d, extern: v === "__keiner__" ? "" : v } : d);
+                    if (pdfPreviewUrl) { URL.revokeObjectURL(pdfPreviewUrl); setPdfPreviewUrl(null); }
+                  }}
                 >
                   <SelectTrigger className="h-8 text-sm">
                     <SelectValue placeholder="Kontakt wählen..." />
@@ -634,17 +676,52 @@ Schneggenburger GmbH`,
                 </Select>
                 <Input
                   value={pdfDialog.extern}
-                  onChange={(e) => setPdfDialog(d => d ? { ...d, extern: e.target.value } : d)}
+                  onChange={(e) => {
+                    setPdfDialog(d => d ? { ...d, extern: e.target.value } : d);
+                    if (pdfPreviewUrl) { URL.revokeObjectURL(pdfPreviewUrl); setPdfPreviewUrl(null); }
+                  }}
                   placeholder="oder manuell eingeben..."
                   className="h-7 text-xs mt-1"
                 />
               </div>
-            </div>
-            <div className="flex gap-2 justify-end">
-              <Button variant="outline" size="sm" onClick={() => setPdfDialog(null)}>Abbrechen</Button>
-              <Button size="sm" style={{ background: "#6b4c2a", color: "white" }} onClick={handlePdfDownload}>
-                PDF erstellen
-              </Button>
+              {/* Buttons */}
+              <div className="flex gap-2 justify-end pt-2">
+                <Button variant="outline" size="sm" onClick={() => { if (pdfPreviewUrl) { URL.revokeObjectURL(pdfPreviewUrl); setPdfPreviewUrl(null); } setPdfDialog(null); }}>Abbrechen</Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  style={{ borderColor: "#6b4c2a", color: "#6b4c2a" }}
+                  onClick={handlePdfPreview}
+                  disabled={pdfPreviewLoading}
+                >
+                  {pdfPreviewLoading ? "Lade..." : "Vorschau"}
+                </Button>
+                <Button size="sm" style={{ background: "#6b4c2a", color: "white" }} onClick={handlePdfDownload} disabled={pdfLoading === pdfDialog?.rechnung?.id}>
+                  {pdfLoading === pdfDialog?.rechnung?.id ? "Erstelle..." : (pdfPreviewUrl ? "Öffnen" : "PDF erstellen")}
+                </Button>
+              </div>
+              </div>
+              {/* Vorschau-Spalte */}
+              {(pdfPreviewUrl || pdfPreviewLoading) && (
+                <div className="flex-1 min-w-0 flex flex-col">
+                  <div className="text-xs font-medium text-gray-500 mb-2">Vorschau</div>
+                  {pdfPreviewLoading ? (
+                    <div className="flex items-center justify-center h-64 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+                      <div className="text-center">
+                        <div className="w-8 h-8 border-2 border-[#6b4c2a] border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                        <p className="text-xs text-gray-500">PDF wird generiert...</p>
+                      </div>
+                    </div>
+                  ) : pdfPreviewUrl ? (
+                    <iframe
+                      src={pdfPreviewUrl}
+                      className="w-full rounded-lg border border-gray-200 shadow-sm"
+                      style={{ height: '520px', minHeight: '300px' }}
+                      title="PDF Vorschau"
+                    />
+                  ) : null}
+                </div>
+              )}
             </div>
           </div>
         </div>
