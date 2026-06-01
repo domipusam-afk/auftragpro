@@ -144,17 +144,38 @@ export default function ProjektStatus({ token }: { token: string }) {
                         const cfg = SCHRITT_CFG[s.status] || SCHRITT_CFG.offen;
                         const Icon = cfg.icon;
                         return (
-                          <div key={s.id || idx} className="flex items-center gap-3 relative">
-                            <div className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center z-10 ${cfg.bg} border-2 ${s.status === "erledigt" ? "border-green-300" : s.status === "aktiv" ? "border-amber-300" : "border-gray-200"}`}>
+                          <div key={s.id || idx} className="flex items-start gap-3 relative">
+                            <div className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center z-10 mt-0.5 ${cfg.bg} border-2 ${s.status === "erledigt" ? "border-green-300" : s.status === "aktiv" ? "border-amber-300" : "border-gray-200"}`}>
                               <Icon className={`h-4 w-4 ${cfg.color}`} />
                             </div>
-                            <div className={`flex-1 flex items-center justify-between rounded-lg px-3 py-2 ${s.status === "aktiv" ? "bg-amber-50 border border-amber-200" : s.status === "erledigt" ? "bg-green-50 border border-green-200" : "bg-gray-50 border border-gray-200"}`}>
-                              <span className={`text-sm font-medium ${s.status === "erledigt" ? "line-through text-gray-400" : s.status === "aktiv" ? "text-amber-800" : "text-gray-600"}`}>
-                                {s.titel}
-                              </span>
-                              <span className={`text-[11px] ml-2 shrink-0 font-medium ${s.status === "erledigt" ? "text-green-600" : s.status === "aktiv" ? "text-amber-600" : "text-gray-400"}`}>
-                                {cfg.label}
-                              </span>
+                            <div className={`flex-1 rounded-lg px-3 py-2 ${s.status === "aktiv" ? "bg-amber-50 border border-amber-200" : s.status === "erledigt" ? "bg-green-50 border border-green-200" : "bg-gray-50 border border-gray-200"}`}>
+                              <div className="flex items-center justify-between gap-2">
+                                <span className={`text-sm font-medium ${s.status === "erledigt" ? "line-through text-gray-400" : s.status === "aktiv" ? "text-amber-800" : "text-gray-600"}`}>
+                                  {s.titel}
+                                </span>
+                                <div className="text-right shrink-0">
+                                  <span className={`text-[11px] font-medium ${s.status === "erledigt" ? "text-green-600" : s.status === "aktiv" ? "text-amber-600" : "text-gray-400"}`}>
+                                    {cfg.label}
+                                  </span>
+                                  {s.erledigt_am && (
+                                    <div className="text-[10px] text-green-500">{formatDate(s.erledigt_am)}</div>
+                                  )}
+                                </div>
+                              </div>
+                              {/* Fotos */}
+                              {s.fotos && s.fotos.length > 0 && (
+                                <div className="flex flex-wrap gap-1.5 mt-2">
+                                  {s.fotos.map((f: any) => (
+                                    <a key={f.id} href={f.url} target="_blank" rel="noopener noreferrer">
+                                      <img
+                                        src={f.url}
+                                        alt={f.dateiname || "Foto"}
+                                        className="w-16 h-16 object-cover rounded-md border border-gray-200 hover:opacity-90 transition-opacity"
+                                      />
+                                    </a>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           </div>
                         );

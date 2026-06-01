@@ -5657,11 +5657,25 @@ export async function registerRoutes(
         .eq("public_token", req.params.token)
         .single();
       if (error || !data) return res.status(404).json({ message: "Nicht gefunden" });
-      // Arbeitsschritte laden
+      // Arbeitsschritte inkl. Fotos laden
       const { data: schritte } = await supabase.from("auftrag_schritte")
-        .select("id,titel,status,reihenfolge").eq("auftrag_id", data.id)
+        .select("id,titel,status,reihenfolge,erledigt_am").eq("auftrag_id", data.id)
         .order("reihenfolge", { ascending: true });
-      res.json({ ...data, schritte: schritte || [] });
+      // Fotos für alle Schritte laden
+      const schrittIds = (schritte || []).map((s: any) => s.id);
+      let fotosMap: Record<string, any[]> = {};
+      if (schrittIds.length > 0) {
+        const { data: fotos } = await supabase.from("auftrag_schritt_fotos")
+          .select("id,schritt_id,url,dateiname,erstellt_am")
+          .in("schritt_id", schrittIds)
+          .order("erstellt_am", { ascending: true });
+        for (const f of (fotos || [])) {
+          if (!fotosMap[f.schritt_id]) fotosMap[f.schritt_id] = [];
+          fotosMap[f.schritt_id].push(f);
+        }
+      }
+      const schritteMitFotos = (schritte || []).map((s: any) => ({ ...s, fotos: fotosMap[s.id] || [] }));
+      res.json({ ...data, schritte: schritteMitFotos });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
@@ -5720,7 +5734,15 @@ export async function registerRoutes(
       const { titel, status, reihenfolge } = req.body;
       const updates: any = {};
       if (titel !== undefined) updates.titel = titel;
-      if (status !== undefined) updates.status = status;
+      if (status !== undefined) {
+        updates.status = status;
+        // erledigt_am automatisch setzen/löschen
+        if (status === "erledigt") {
+          updates.erledigt_am = new Date().toISOString();
+        } else {
+          updates.erledigt_am = null;
+        }
+      }
       if (reihenfolge !== undefined) updates.reihenfolge = reihenfolge;
       const { data, error } = await supabase.from("auftrag_schritte")
         .update(updates).eq("id", req.params.sid).select().single();
@@ -5735,6 +5757,56 @@ export async function registerRoutes(
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
+
+  // ─── Schritt-Fotos ───────────────────────────────────────────────────────────
+  // Foto hochladen (base64 → Supabase Storage)
+  app.post("/api/auftraege/:id/schritte/:sid/fotos", async (req, res) => {
+    try {
+      const { base64, dateiname, mimeType } = req.body;
+      if (!base64) return res.status(400).json({ message: "Kein Bild" });
+      const ext = (dateiname || "foto.jpg").split(".").pop() || "jpg";
+      const fname = `${req.params.sid}/${uid()}.${ext}`;
+      const buf = Buffer.from(base64.replace(/^data:[^;]+;base64,/, ""), "base64");
+      const { error: upErr } = await supabase.storage.from("schritt-fotos").upload(fname, buf, {
+        contentType: mimeType || "image/jpeg", upsert: false
+      });
+      if (upErr) return res.status(500).json({ message: upErr.message });
+      const { data: { publicUrl } } = supabase.storage.from("schritt-fotos").getPublicUrl(fname);
+      const { data, error } = await supabase.from("auftrag_schritt_fotos").insert({
+        id: uid(), schritt_id: req.params.sid, auftrag_id: req.params.id,
+        url: publicUrl, dateiname: dateiname || fname
+      }).select().single();
+      if (error) return res.status(500).json({ message: error.message });
+      res.json(data);
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+  // Fotos eines Schritts abrufen
+  app.get("/api/auftraege/:id/schritte/:sid/fotos", async (req, res) => {
+    try {
+      const { data, error } = await supabase.from("auftrag_schritt_fotos")
+        .select("*").eq("schritt_id", req.params.sid).order("erstellt_am", { ascending: true });
+      if (error) return res.status(500).json({ message: error.message });
+      res.json(data || []);
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+  // Foto löschen
+  app.delete("/api/auftraege/:id/schritte/:sid/fotos/:fid", async (req, res) => {
+    try {
+      const { data: foto } = await supabase.from("auftrag_schritt_fotos").select("url").eq("id", req.params.fid).single();
+      if (foto?.url) {
+        // Storage-Pfad aus URL extrahieren und löschen
+        const path = foto.url.split("/schritt-fotos/")[1];
+        if (path) await supabase.storage.from("schritt-fotos").remove([path]);
+      }
+      await supabase.from("auftrag_schritt_fotos").delete().eq("id", req.params.fid);
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+  // Public: Schritte inkl. Fotos (bereits in /api/public/auftrag/:token enthalten – hier separat)
+  // Die /api/public/auftrag/:token Route holt schritte bereits – wir ergänzen dort die Fotos:
 
   // Kunden-Nachricht speichern
   app.patch("/api/auftraege/:id/kunden-nachricht", async (req, res) => {

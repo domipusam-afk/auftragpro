@@ -2012,37 +2012,36 @@ function WiederkehrendBlock({ auftragId, interval, naechste, refetch }: {
   );
 }
 
-// ─── Kundenportal Tab ────────────────────────────────────────────────────────────────────────────────
+// ─── Kundenportal Tab ─────────────────────────────────────────────────────────
 function KundenportalTab({ id }: { id: string }) {
   const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [neuerTitel, setNeuerTitel] = useState("");
   const [nachricht, setNachricht] = useState("");
   const [nachrichtGeladen, setNachrichtGeladen] = useState(false);
   const [nachrichtSaving, setNachrichtSaving] = useState(false);
+  const [uploadingFor, setUploadingFor] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState<string | null>(null);
 
-  // Schritte laden
   const { data: schritte = [], isLoading, refetch } = useQuery<any[]>({
     queryKey: ["/api/auftraege/schritte", id],
     queryFn: () => apiRequest("GET", `/api/auftraege/${id}/schritte`).then(r => r.json()),
   });
 
-  // Kunden-Nachricht laden (aus Auftrag-Daten)
   const { data: auftragData } = useQuery<any>({
     queryKey: ["/api/auftraege", id],
     queryFn: () => apiRequest("GET", `/api/auftraege/${id}`).then(r => r.json()),
     staleTime: 30000,
   });
 
-  // Nachricht synchronisieren wenn Daten geladen
   if (auftragData && !nachrichtGeladen) {
     setNachricht(auftragData.kunden_nachricht || "");
     setNachrichtGeladen(true);
   }
 
-  // Fortschritt berechnen
   const total = schritte.length;
-  const erledigt = schritte.filter((s: any) => s.status === "erledigt").length;
-  const fortschritt = total > 0 ? Math.round((erledigt / total) * 100) : 0;
+  const erledigtCount = schritte.filter((s: any) => s.status === "erledigt").length;
+  const fortschritt = total > 0 ? Math.round((erledigtCount / total) * 100) : 0;
 
   const addSchritt = async () => {
     if (!neuerTitel.trim()) return;
@@ -2052,28 +2051,46 @@ function KundenportalTab({ id }: { id: string }) {
       });
       setNeuerTitel("");
       refetch();
-      queryClient.invalidateQueries({ queryKey: ["/api/auftraege/schritte", id] });
-    } catch (e: any) {
-      toast({ title: "Fehler", description: e.message, variant: "destructive" });
-    }
+    } catch (e: any) { toast({ title: "Fehler", description: e.message, variant: "destructive" }); }
   };
 
   const updateStatus = async (schritt: any, newStatus: string) => {
     try {
       await apiRequest("PATCH", `/api/auftraege/${id}/schritte/${schritt.id}`, { status: newStatus });
       refetch();
-    } catch (e: any) {
-      toast({ title: "Fehler", description: e.message, variant: "destructive" });
-    }
+    } catch (e: any) { toast({ title: "Fehler", description: e.message, variant: "destructive" }); }
   };
 
   const deleteSchritt = async (schritt: any) => {
     try {
       await apiRequest("DELETE", `/api/auftraege/${id}/schritte/${schritt.id}`);
       refetch();
-    } catch (e: any) {
-      toast({ title: "Fehler", description: e.message, variant: "destructive" });
-    }
+    } catch (e: any) { toast({ title: "Fehler", description: e.message, variant: "destructive" }); }
+  };
+
+  const handleFotoUpload = async (schritt: any, file: File) => {
+    setUploadingFor(schritt.id);
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      await apiRequest("POST", `/api/auftraege/${id}/schritte/${schritt.id}/fotos`, {
+        base64, dateiname: file.name, mimeType: file.type
+      });
+      refetch();
+      toast({ title: "Foto hochgeladen" });
+    } catch (e: any) { toast({ title: "Fehler", description: e.message, variant: "destructive" }); }
+    finally { setUploadingFor(null); }
+  };
+
+  const deleteFoto = async (schritt: any, fotoId: string) => {
+    try {
+      await apiRequest("DELETE", `/api/auftraege/${id}/schritte/${schritt.id}/fotos/${fotoId}`);
+      refetch();
+    } catch (e: any) { toast({ title: "Fehler", description: e.message, variant: "destructive" }); }
   };
 
   const saveNachricht = async () => {
@@ -2082,21 +2099,28 @@ function KundenportalTab({ id }: { id: string }) {
       await apiRequest("PATCH", `/api/auftraege/${id}/kunden-nachricht`, { kunden_nachricht: nachricht });
       queryClient.invalidateQueries({ queryKey: ["/api/auftraege", id] });
       toast({ title: "Gespeichert", description: "Kunden-Nachricht aktualisiert." });
-    } catch (e: any) {
-      toast({ title: "Fehler", description: e.message, variant: "destructive" });
-    } finally {
-      setNachrichtSaving(false);
-    }
+    } catch (e: any) { toast({ title: "Fehler", description: e.message, variant: "destructive" }); }
+    finally { setNachrichtSaving(false); }
   };
 
+  const fmt = (d: string) => d ? new Date(d).toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "numeric" }) : "";
+
   const SCHRITT_STATUS: Record<string, { label: string; icon: any; color: string }> = {
-    offen:    { label: "Offen",      icon: Circle,      color: "text-gray-400" },
-    aktiv:    { label: "In Arbeit",  icon: CircleDot,   color: "text-amber-500" },
-    erledigt: { label: "Erledigt",   icon: CircleCheck, color: "text-green-500" },
+    offen:    { label: "Offen",     icon: Circle,      color: "text-gray-400" },
+    aktiv:    { label: "In Arbeit", icon: CircleDot,   color: "text-amber-500" },
+    erledigt: { label: "Erledigt",  icon: CircleCheck, color: "text-green-500" },
   };
 
   return (
     <div className="space-y-6">
+      {/* Lightbox */}
+      {lightbox && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={() => setLightbox(null)}>
+          <img src={lightbox} className="max-w-full max-h-full rounded-lg shadow-2xl" alt="Foto" />
+          <button className="absolute top-4 right-4 text-white text-2xl font-bold" onClick={() => setLightbox(null)}>✕</button>
+        </div>
+      )}
+
       {/* Fortschrittsbalken */}
       {total > 0 && (
         <div className="bg-muted/40 rounded-xl p-4">
@@ -2105,12 +2129,10 @@ function KundenportalTab({ id }: { id: string }) {
             <span className="text-sm font-semibold" style={{ color: "#6b4c2a" }}>{fortschritt}%</span>
           </div>
           <div className="h-2.5 bg-muted rounded-full overflow-hidden">
-            <div
-              className="h-full rounded-full transition-all duration-500"
-              style={{ width: `${fortschritt}%`, background: "linear-gradient(90deg, #8b6234, #6b4c2a)" }}
-            />
+            <div className="h-full rounded-full transition-all duration-500"
+              style={{ width: `${fortschritt}%`, background: "linear-gradient(90deg, #8b6234, #6b4c2a)" }} />
           </div>
-          <p className="text-xs text-muted-foreground mt-1.5">{erledigt} von {total} Schritten abgeschlossen</p>
+          <p className="text-xs text-muted-foreground mt-1.5">{erledigtCount} von {total} Schritten abgeschlossen</p>
         </div>
       )}
 
@@ -2128,38 +2150,78 @@ function KundenportalTab({ id }: { id: string }) {
         ) : schritte.length === 0 ? (
           <p className="text-sm text-muted-foreground py-2">Noch keine Schritte erfasst.</p>
         ) : (
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             {schritte.map((s: any) => {
               const cfg = SCHRITT_STATUS[s.status] || SCHRITT_STATUS.offen;
               const Icon = cfg.icon;
+              const fotos: any[] = s.fotos || [];
               return (
-                <div key={s.id} className="flex items-center gap-2 p-2.5 rounded-lg border bg-card hover:bg-muted/30 transition-colors group">
-                  <button
-                    className={`shrink-0 transition-colors hover:opacity-70 ${cfg.color}`}
-                    title="Status wechseln"
-                    onClick={() => {
-                      const next = s.status === "offen" ? "aktiv" : s.status === "aktiv" ? "erledigt" : "offen";
-                      updateStatus(s, next);
-                    }}
-                  >
-                    <Icon className="h-5 w-5" />
-                  </button>
-                  <span className={`flex-1 text-sm ${s.status === "erledigt" ? "line-through text-muted-foreground" : ""}`}>{s.titel}</span>
-                  <span className="text-[11px] text-muted-foreground shrink-0">{cfg.label}</span>
-                  <button
-                    className="opacity-0 group-hover:opacity-100 transition-opacity text-red-400 hover:text-red-600"
-                    onClick={() => deleteSchritt(s)}
-                    title="Löschen"
-                  >
-                    <Trash className="h-3.5 w-3.5" />
-                  </button>
+                <div key={s.id} className="rounded-lg border bg-card group">
+                  {/* Schritt-Zeile */}
+                  <div className="flex items-center gap-2 p-2.5">
+                    <button
+                      className={`shrink-0 transition-colors hover:opacity-70 ${cfg.color}`}
+                      title="Status wechseln"
+                      onClick={() => {
+                        const next = s.status === "offen" ? "aktiv" : s.status === "aktiv" ? "erledigt" : "offen";
+                        updateStatus(s, next);
+                      }}
+                    >
+                      <Icon className="h-5 w-5" />
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <span className={`text-sm ${s.status === "erledigt" ? "line-through text-muted-foreground" : ""}`}>{s.titel}</span>
+                      {s.erledigt_am && (
+                        <span className="ml-2 text-[11px] text-green-600 font-medium">· {fmt(s.erledigt_am)}</span>
+                      )}
+                    </div>
+                    <span className="text-[11px] text-muted-foreground shrink-0">{cfg.label}</span>
+                    {/* Foto-Upload Button */}
+                    <label
+                      className="cursor-pointer p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-[#6b4c2a]"
+                      title="Foto hochladen"
+                    >
+                      {uploadingFor === s.id ? (
+                        <div className="w-3.5 h-3.5 border-2 border-[#6b4c2a] border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <Upload className="h-3.5 w-3.5" />
+                      )}
+                      <input
+                        type="file" accept="image/*" className="hidden"
+                        onChange={e => { const f = e.target.files?.[0]; if (f) handleFotoUpload(s, f); e.target.value = ""; }}
+                      />
+                    </label>
+                    <button
+                      className="opacity-0 group-hover:opacity-100 transition-opacity text-red-400 hover:text-red-600"
+                      onClick={() => deleteSchritt(s)} title="Löschen"
+                    >
+                      <Trash className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  {/* Foto-Thumbnails */}
+                  {fotos.length > 0 && (
+                    <div className="px-3 pb-2.5 flex flex-wrap gap-1.5">
+                      {fotos.map((f: any) => (
+                        <div key={f.id} className="relative group/foto">
+                          <img
+                            src={f.url}
+                            alt={f.dateiname}
+                            className="w-14 h-14 object-cover rounded-md cursor-pointer border border-gray-200 hover:opacity-90 transition-opacity"
+                            onClick={() => setLightbox(f.url)}
+                          />
+                          <button
+                            className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full text-[10px] opacity-0 group-hover/foto:opacity-100 transition-opacity flex items-center justify-center"
+                            onClick={() => deleteFoto(s, f.id)}
+                          >✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
         )}
-
-        {/* Neuer Schritt hinzufügen */}
         <div className="flex gap-2 mt-3">
           <Input
             placeholder="Neuer Schritt, z.B. 'Holz zuschneiden'..."
@@ -2172,9 +2234,7 @@ function KundenportalTab({ id }: { id: string }) {
             <Plus className="h-4 w-4" />
           </Button>
         </div>
-        <p className="text-[11px] text-muted-foreground mt-1">
-          Klick auf das Symbol wechselt: Offen → In Arbeit → Erledigt
-        </p>
+        <p className="text-[11px] text-muted-foreground mt-1">Klick auf das Symbol wechselt: Offen → In Arbeit → Erledigt · Datum wird automatisch gesetzt</p>
       </div>
 
       {/* Kunden-Nachricht */}
@@ -2196,9 +2256,7 @@ function KundenportalTab({ id }: { id: string }) {
             {nachrichtSaving ? "Speichere..." : "Speichern"}
           </Button>
         </div>
-        <p className="text-[11px] text-muted-foreground mt-1">
-          Diese Nachricht sieht der Kunde auf seiner Status-Seite.
-        </p>
+        <p className="text-[11px] text-muted-foreground mt-1">Diese Nachricht sieht der Kunde auf seiner Status-Seite.</p>
       </div>
     </div>
   );
