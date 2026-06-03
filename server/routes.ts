@@ -123,12 +123,48 @@ export async function registerRoutes(
 
   // ============= AUTH =============
 
+  // ─── Login-Sperre (Brute-Force Schutz) ──────────────────────────────────
+  const loginVersuche = new Map<string, { count: number; gesperrtBis?: number }>();
+  const MAX_VERSUCHE = 5;
+  const SPERRE_MS = 15 * 60 * 1000; // 15 Minuten
+
+  function getLoginKey(req: any, benutzername: string) {
+    const ip = req.headers["x-forwarded-for"]?.toString().split(",")[0] || req.socket.remoteAddress || "unknown";
+    return `${ip}:${benutzername.toLowerCase().trim()}`;
+  }
+
+  function pruefeSperre(key: string): { gesperrt: boolean; minutenNoch?: number; versuche?: number } {
+    const e = loginVersuche.get(key);
+    if (!e) return { gesperrt: false, versuche: 0 };
+    if (e.gesperrtBis && Date.now() < e.gesperrtBis) {
+      return { gesperrt: true, minutenNoch: Math.ceil((e.gesperrtBis - Date.now()) / 60000) };
+    }
+    if (e.gesperrtBis && Date.now() >= e.gesperrtBis) {
+      loginVersuche.delete(key); // Sperre abgelaufen
+      return { gesperrt: false, versuche: 0 };
+    }
+    return { gesperrt: false, versuche: e.count };
+  }
+
+  function registriereFehlversuch(key: string) {
+    const e = loginVersuche.get(key) || { count: 0 };
+    e.count += 1;
+    if (e.count >= MAX_VERSUCHE) e.gesperrtBis = Date.now() + SPERRE_MS;
+    loginVersuche.set(key, e);
+    return e.count;
+  }
+
   // Step 1: Login with username + password
   app.post("/api/auth/login", async (req, res) => {
     try {
-      const { benutzername, passwort } = req.body;
+      const { benutzername, passwort, vertrauensToken } = req.body;
       if (!benutzername || !passwort)
         return res.status(400).json({ ok: false, message: "Benutzername und Passwort erforderlich" });
+
+      const key = getLoginKey(req, benutzername);
+      const sperre = pruefeSperre(key);
+      if (sperre.gesperrt)
+        return res.status(429).json({ ok: false, message: `Zu viele Fehlversuche. Bitte ${sperre.minutenNoch} Minute(n) warten.`, gesperrt: true, minutenNoch: sperre.minutenNoch });
 
       const { data: user, error } = await supabase
         .from("app_benutzer")
@@ -137,15 +173,40 @@ export async function registerRoutes(
         .eq("aktiv", true)
         .single();
 
-      if (error || !user)
-        return res.status(401).json({ ok: false, message: "Benutzername oder Passwort falsch" });
+      if (error || !user) {
+        const count = registriereFehlversuch(key);
+        const verbleibend = MAX_VERSUCHE - count;
+        const msg = verbleibend > 0
+          ? `Benutzername oder Passwort falsch (${verbleibend} Versuch${verbleibend === 1 ? "" : "e"} verbleibend)`
+          : `Konto gesperrt für ${SPERRE_MS / 60000} Minuten.`;
+        return res.status(401).json({ ok: false, message: msg });
+      }
 
       const pwOk = await bcrypt.compare(passwort, user.passwort_hash);
-      if (!pwOk)
-        return res.status(401).json({ ok: false, message: "Benutzername oder Passwort falsch" });
+      if (!pwOk) {
+        const count = registriereFehlversuch(key);
+        const verbleibend = MAX_VERSUCHE - count;
+        const msg = verbleibend > 0
+          ? `Benutzername oder Passwort falsch (${verbleibend} Versuch${verbleibend === 1 ? "" : "e"} verbleibend)`
+          : `Konto gesperrt für ${SPERRE_MS / 60000} Minuten.`;
+        return res.status(401).json({ ok: false, message: msg });
+      }
 
-      // If 2FA is active, require TOTP step
+      // Login erfolgreich → Fehlversuche zurücksetzen
+      loginVersuche.delete(key);
+
+      // 2FA: prüfen ob Gerät vertrauenswürdig ist
       if (user.totp_aktiv) {
+        // Vertrauens-Token prüfen
+        if (vertrauensToken && user.vertrauens_tokens) {
+          const tokens: any[] = JSON.parse(user.vertrauens_tokens || "[]");
+          const now = Date.now();
+          const gueltig = tokens.find((t: any) => t.token === vertrauensToken && t.ablauf > now);
+          if (gueltig) {
+            // Gerät bekannt → kein 2FA nötig
+            return res.json({ ok: true, requires2fa: false, user: { id: user.id, benutzername: user.benutzername, rolle: user.rolle } });
+          }
+        }
         return res.json({ ok: true, requires2fa: true, userId: user.id });
       }
 
@@ -162,7 +223,7 @@ export async function registerRoutes(
   // Step 2: Verify TOTP code
   app.post("/api/auth/verify-2fa", async (req, res) => {
     try {
-      const { userId, code } = req.body;
+      const { userId, code, geraetMerken } = req.body;
       if (!userId || !code)
         return res.status(400).json({ ok: false, message: "Fehlende Daten" });
 
@@ -177,7 +238,6 @@ export async function registerRoutes(
 
       // Check backup codes first
       if (user.backup_codes && user.backup_codes.includes(code.toUpperCase())) {
-        // Remove used backup code
         await supabase
           .from("app_benutzer")
           .update({ backup_codes: user.backup_codes.filter((c: string) => c !== code.toUpperCase()) })
@@ -195,9 +255,22 @@ export async function registerRoutes(
       if (delta === null)
         return res.status(401).json({ ok: false, message: "Falscher 2FA Code" });
 
+      // Gerät 30 Tage merken
+      let neuerVertrauensToken: string | undefined;
+      if (geraetMerken) {
+        neuerVertrauensToken = uid();
+        const ablauf = Date.now() + 30 * 24 * 60 * 60 * 1000; // 30 Tage
+        const tokens: any[] = JSON.parse(user.vertrauens_tokens || "[]");
+        // Abgelaufene bereinigen + neuen hinzufügen
+        const aktuell = tokens.filter((t: any) => t.ablauf > Date.now());
+        aktuell.push({ token: neuerVertrauensToken, ablauf, erstellt: Date.now() });
+        await supabase.from("app_benutzer").update({ vertrauens_tokens: JSON.stringify(aktuell) }).eq("id", userId);
+      }
+
       return res.json({
         ok: true,
-        user: { id: user.id, benutzername: user.benutzername, rolle: user.rolle }
+        user: { id: user.id, benutzername: user.benutzername, rolle: user.rolle },
+        ...(neuerVertrauensToken ? { vertrauensToken: neuerVertrauensToken } : {})
       });
     } catch (e) {
       return res.status(500).json({ ok: false, message: asError(e) });
@@ -5688,6 +5761,14 @@ export async function registerRoutes(
         .eq("public_token", req.params.token)
         .single();
       if (error || !data) return res.status(404).json({ message: "Nicht gefunden" });
+      // Ablaufdatum prüfen: Link ungültig nach Auftrag-Enddatum (+ 7 Tage Kulanz)
+      if (data.end_datum) {
+        const ablauf = new Date(data.end_datum);
+        ablauf.setDate(ablauf.getDate() + 7); // 7 Tage Kulanzzeit
+        if (new Date() > ablauf) {
+          return res.status(410).json({ message: "abgelaufen", end_datum: data.end_datum });
+        }
+      }
       // Arbeitsschritte inkl. Fotos laden
       const { data: schritte } = await supabase.from("auftrag_schritte")
         .select("id,titel,status,reihenfolge,erledigt_am").eq("auftrag_id", data.id)

@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { CheckCircle2, Clock, AlertTriangle, Hammer, Briefcase, Circle, CircleDot, MessageSquare } from "lucide-react";
+import { CheckCircle2, Clock, AlertTriangle, Hammer, Briefcase, Circle, CircleDot, MessageSquare, CalendarOff } from "lucide-react";
 
 const STATUS_MAP: Record<string, { label: string; color: string; icon: any }> = {
   anfrage:        { label: "Anfrage eingegangen",  color: "bg-blue-100 text-blue-700",     icon: Clock },
@@ -40,15 +40,25 @@ function formatDate(d: string): string {
 const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
 
 export default function ProjektStatus({ token }: { token: string }) {
-  const { data, isLoading, isError } = useQuery<any>({
+  const { data, isLoading, isError, error } = useQuery<any, any>({
     queryKey: ["/api/public/auftrag", token],
     queryFn: async () => {
       const r = await fetch(`${API_BASE}/api/public/auftrag/${token}`);
+      if (r.status === 410) {
+        const body = await r.json();
+        const err: any = new Error("abgelaufen");
+        err.status = 410;
+        err.end_datum = body.end_datum;
+        throw err;
+      }
       if (!r.ok) throw new Error("Nicht gefunden");
       return r.json();
     },
     retry: false,
   });
+
+  const isAbgelaufen = isError && (error as any)?.status === 410;
+  const abgelaufenDatum = isAbgelaufen ? (error as any)?.end_datum : null;
 
   const statusCfg = data ? (STATUS_MAP[data.status] || { label: data.status, color: "bg-gray-100 text-gray-600", icon: Clock }) : null;
   const schritte: any[] = data?.schritte || [];
@@ -76,6 +86,21 @@ export default function ProjektStatus({ token }: { token: string }) {
               <Skeleton className="h-6 w-3/4" />
               <Skeleton className="h-10" />
               <Skeleton className="h-20" />
+            </div>
+          ) : isAbgelaufen ? (
+            <div className="text-center py-8">
+              <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-4">
+                <CalendarOff className="h-8 w-8 text-amber-600" />
+              </div>
+              <p className="font-bold text-base text-amber-800">Dieser Link ist abgelaufen</p>
+              <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
+                Der Projektstatus-Link war bis zum Abschluss des Auftrags gültig
+                {abgelaufenDatum ? <> (<span className="font-medium">{formatDate(abgelaufenDatum)}</span>)</> : ""}.
+              </p>
+              <p className="text-xs text-muted-foreground mt-3">
+                Bei Fragen wenden Sie sich bitte direkt an Schneggenburger GmbH.<br />
+                Tel: 071 411 16 87
+              </p>
             </div>
           ) : isError || !data ? (
             <div className="text-center py-6">

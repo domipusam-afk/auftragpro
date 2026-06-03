@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Lock, User, ShieldCheck, Eye, EyeOff } from "lucide-react";
+import { Lock, User, ShieldCheck, Eye, EyeOff, ShieldOff } from "lucide-react";
 
 type Step = "credentials" | "totp";
 
@@ -28,6 +28,9 @@ export default function Login() {
   const [userId, setUserId] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [gesperrt, setGesperrt] = useState(false);
+  const [minutenNoch, setMinutenNoch] = useState(0);
+  const [geraetMerken, setGeraetMerken] = useState(true);
 
   const handleCredentials = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,10 +40,17 @@ export default function Login() {
     const result = await login(benutzername, passwort);
     setLoading(false);
     if (!result.ok) {
+      if (result.gesperrt) {
+        setGesperrt(true);
+        setMinutenNoch(result.minutenNoch || 15);
+      } else {
+        setGesperrt(false);
+      }
       setError(result.message || "Benutzername oder Passwort falsch");
       setPasswort("");
       return;
     }
+    setGesperrt(false);
     if (result.requires2fa && result.userId) {
       setUserId(result.userId);
       setStep("totp");
@@ -53,7 +63,7 @@ export default function Login() {
     if (!totpCode) return;
     setLoading(true);
     setError("");
-    const result = await verify2fa(userId, totpCode);
+    const result = await verify2fa(userId, totpCode, geraetMerken, benutzername);
     setLoading(false);
     if (!result.ok) {
       setError(result.message || "Falscher Code");
@@ -140,11 +150,20 @@ export default function Login() {
                     {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
-                {error && <p className="text-sm text-destructive font-medium">{error}</p>}
+                {gesperrt && (
+                  <div className="flex items-start gap-2 rounded-lg bg-destructive/10 border border-destructive/25 px-3 py-2.5">
+                    <ShieldOff className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-semibold text-destructive">Konto vorübergehend gesperrt</p>
+                      <p className="text-xs text-destructive/80 mt-0.5">Zu viele Fehlversuche. Bitte {minutenNoch} Minute{minutenNoch !== 1 ? "n" : ""} warten.</p>
+                    </div>
+                  </div>
+                )}
+                {!gesperrt && error && <p className="text-sm text-destructive font-medium">{error}</p>}
                 <Button
                   type="submit"
                   className="w-full h-11"
-                  disabled={loading || !benutzername || !passwort}
+                  disabled={loading || !benutzername || !passwort || gesperrt}
                   data-testid="button-login"
                 >
                   {loading ? "Wird geprüft…" : "Anmelden"}
@@ -176,6 +195,24 @@ export default function Login() {
                   autoFocus
                   data-testid="input-totp"
                 />
+                {/* Gerät merken Checkbox */}
+                <label className="flex items-center gap-2.5 cursor-pointer select-none group">
+                  <div
+                    onClick={() => setGeraetMerken(v => !v)}
+                    className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-colors ${
+                      geraetMerken ? "bg-primary border-primary" : "border-muted-foreground/40 bg-transparent"
+                    }`}
+                  >
+                    {geraetMerken && (
+                      <svg className="w-2.5 h-2.5 text-primary-foreground" viewBox="0 0 10 8" fill="none">
+                        <path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    )}
+                  </div>
+                  <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">
+                    Dieses Gerät 30 Tage merken
+                  </span>
+                </label>
                 {error && <p className="text-sm text-destructive font-medium">{error}</p>}
                 <Button
                   type="submit"

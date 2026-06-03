@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { lsGet, lsSet, lsRemove } from "@/lib/storage";
 import {
   Upload, Download, Trash, FileText, CheckCircle2, AlertTriangle, Info,
   Lock, Eye, EyeOff, DollarSign, Clock, Save, Building2, Mail, Phone,
@@ -47,12 +48,12 @@ function useSaveEinstellung() {
     onSuccess: (_data, variables) => {
       // Sync localStorage so background shows instantly on next page load
       if (variables.key === "login_hintergrund") {
-        if (variables.wert) localStorage.setItem("ap_login_bg", variables.wert);
-        else localStorage.removeItem("ap_login_bg");
+        if (variables.wert) lsSet("ap_login_bg", variables.wert);
+        else lsRemove("ap_login_bg");
       }
       if (variables.key === "app_hintergrund") {
-        if (variables.wert) localStorage.setItem("ap_app_bg", variables.wert);
-        else localStorage.removeItem("ap_app_bg");
+        if (variables.wert) lsSet("ap_app_bg", variables.wert);
+        else lsRemove("ap_app_bg");
       }
       queryClient.invalidateQueries({ queryKey: ["/api/einstellungen"] });
       toast({ title: "Einstellung gespeichert ✓" });
@@ -773,7 +774,7 @@ function BackupButton() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [letzterBackup, setLetzterBackup] = useState<string | null>(
-    localStorage.getItem("ap_letzter_backup")
+    lsGet("ap_letzter_backup")
   );
 
   const handleBackup = async () => {
@@ -789,7 +790,7 @@ function BackupButton() {
       a.click();
       URL.revokeObjectURL(url);
       const zeitstempel = new Date().toLocaleString("de-CH");
-      localStorage.setItem("ap_letzter_backup", zeitstempel);
+      lsSet("ap_letzter_backup", zeitstempel);
       setLetzterBackup(zeitstempel);
       toast({ title: "✅ Backup heruntergeladen", description: `auftragspro-backup-${now}.json` });
     } catch (e: any) {
@@ -845,7 +846,7 @@ function HintergrundTab({ settings }: { settings: EinstellungMap }) {
     setKontrast(val);
     save.mutate({ key: "hintergrund_kontrast", wert: String(val) });
     // localStorage für sofortige Wirkung beim nächsten Laden
-    localStorage.setItem("ap_bg_kontrast", String(val));
+    lsSet("ap_bg_kontrast", String(val));
   }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>, target: "login" | "app") {

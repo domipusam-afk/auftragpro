@@ -2,6 +2,7 @@ import { Link, useLocation } from "wouter";
 import { ReactNode, useState, useEffect, useRef, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { lsGet, lsSet, lsRemove } from "@/lib/storage";
 import {
   LayoutDashboard,
   Search,
@@ -419,12 +420,12 @@ export default function Layout({ children }: { children: ReactNode }) {
 
   // App-Hintergrundbild — sofort aus localStorage, dann fresh vom Server
   const [appBg, setAppBg] = useState<string>(
-    () => localStorage.getItem("ap_app_bg") || ""
+    () => lsGet("ap_app_bg") || ""
   );
   // Kontrast-Overlay-Stärke (0-98), Standard 88
   const [bgKontrast, setBgKontrast] = useState<number>(
     () => {
-      const stored = localStorage.getItem("ap_bg_kontrast");
+      const stored = lsGet("ap_bg_kontrast");
       return stored !== null ? Number(stored) : 88;
     }
   );
@@ -438,14 +439,14 @@ export default function Layout({ children }: { children: ReactNode }) {
     const fresh = einstellungenList.find((e) => e.schluessel === "app_hintergrund")?.wert || "";
     if (fresh !== appBg) {
       setAppBg(fresh);
-      if (fresh) localStorage.setItem("ap_app_bg", fresh);
-      else localStorage.removeItem("ap_app_bg");
+      if (fresh) lsSet("ap_app_bg", fresh);
+      else lsRemove("ap_app_bg");
     }
     const freshK = einstellungenList.find((e) => e.schluessel === "hintergrund_kontrast")?.wert;
     if (freshK !== undefined) {
       const n = Number(freshK);
       setBgKontrast(n);
-      localStorage.setItem("ap_bg_kontrast", String(n));
+      lsSet("ap_bg_kontrast", String(n));
     }
   }, [einstellungenList]);
 
