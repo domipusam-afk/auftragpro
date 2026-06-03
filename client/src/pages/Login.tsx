@@ -30,6 +30,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [gesperrt, setGesperrt] = useState(false);
   const [minutenNoch, setMinutenNoch] = useState(0);
+  const [verbleibend, setVerbleibend] = useState<number | null>(null);
   const [geraetMerken, setGeraetMerken] = useState(true);
 
   const handleCredentials = async (e: React.FormEvent) => {
@@ -43,14 +44,19 @@ export default function Login() {
       if (result.gesperrt) {
         setGesperrt(true);
         setMinutenNoch(result.minutenNoch || 15);
+        setVerbleibend(null);
       } else {
         setGesperrt(false);
+        // Verbleibende Versuche aus Meldung parsen z.B. "(3 Versuche verbleibend)"
+        const match = result.message?.match(/(\d+) Versuch/);
+        setVerbleibend(match ? parseInt(match[1]) : null);
       }
       setError(result.message || "Benutzername oder Passwort falsch");
       setPasswort("");
       return;
     }
     setGesperrt(false);
+    setVerbleibend(null);
     if (result.requires2fa && result.userId) {
       setUserId(result.userId);
       setStep("totp");
@@ -154,12 +160,23 @@ export default function Login() {
                   <div className="flex items-start gap-2 rounded-lg bg-destructive/10 border border-destructive/25 px-3 py-2.5">
                     <ShieldOff className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
                     <div>
-                      <p className="text-sm font-semibold text-destructive">Konto vorübergehend gesperrt</p>
-                      <p className="text-xs text-destructive/80 mt-0.5">Zu viele Fehlversuche. Bitte {minutenNoch} Minute{minutenNoch !== 1 ? "n" : ""} warten.</p>
+                      <p className="text-sm font-semibold text-destructive">Konto gesperrt für {minutenNoch} Minuten</p>
+                      <p className="text-xs text-destructive/80 mt-0.5">Zu viele Fehlversuche. Bitte warten und es danach erneut versuchen.</p>
                     </div>
                   </div>
                 )}
-                {!gesperrt && error && <p className="text-sm text-destructive font-medium">{error}</p>}
+                {!gesperrt && verbleibend !== null && (
+                  <div className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2.5">
+                    <ShieldOff className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-semibold text-amber-800">Falsches Passwort</p>
+                      <p className="text-xs text-amber-700 mt-0.5">
+                        Noch <span className="font-bold">{verbleibend}</span> {verbleibend === 1 ? "Versuch" : "Versuche"} verbleibend — danach wird das Konto 15 Minuten gesperrt.
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {!gesperrt && verbleibend === null && error && <p className="text-sm text-destructive font-medium">{error}</p>}
                 <Button
                   type="submit"
                   className="w-full h-11"
