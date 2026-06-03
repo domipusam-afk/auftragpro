@@ -5649,7 +5649,38 @@ export async function registerRoutes(
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
-  // ─── PROJEKTSTATUS (public) ───────────────────────────────────────────────────
+  // ─── BACKUP ───────────────────────────────────────────────────────────────────────────
+  app.get("/api/backup", async (req, res) => {
+    try {
+      const tabellen = [
+        "auftraege", "kunden", "rechnungen", "eingangsrechnungen",
+        "zeiteintraege", "mitarbeiter", "kalkulationen", "kalkulation_positionen",
+        "mahnungen", "verlauf", "notizen", "dokumente", "dokument_daten",
+        "rechnungsvorlagen", "lieferanten", "ferien", "einstellungen",
+        "auftrag_schritte", "auftrag_schritt_fotos", "app_benutzer"
+      ];
+      const backup: Record<string, any[]> = {};
+      for (const tabelle of tabellen) {
+        try {
+          const { data } = await supabase.from(tabelle).select("*");
+          backup[tabelle] = data || [];
+        } catch {
+          backup[tabelle] = [];
+        }
+      }
+      const now = new Date().toISOString().slice(0, 10);
+      res.setHeader("Content-Type", "application/json");
+      res.setHeader("Content-Disposition", `attachment; filename="auftragspro-backup-${now}.json"`);
+      res.json({
+        erstellt_am: new Date().toISOString(),
+        version: "1.0",
+        firma: "Schneggenburger GmbH",
+        daten: backup
+      });
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+  // ─── PROJEKTSTATUS (public) ───────────────────────────────────────────────────────────────
   app.get("/api/public/auftrag/:token", async (req, res) => {
     try {
       const { data, error } = await supabase.from("auftraege")

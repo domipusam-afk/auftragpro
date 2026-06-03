@@ -755,6 +755,66 @@ function SicherheitTab({ settings }: { settings: EinstellungMap }) {
           </div>
         )}
       </Card>
+
+      {/* Daten-Backup */}
+      <Card className="p-5">
+        <h2 className="font-semibold text-sm mb-1">Daten-Backup</h2>
+        <p className="text-xs text-muted-foreground mb-4">
+          Exportiert alle Daten (Aufträge, Kunden, Rechnungen, Mitarbeiter, etc.) als JSON-Datei.
+          Empfohlen: regelmässig herunterladen und sicher aufbewahren.
+        </p>
+        <BackupButton />
+      </Card>
+    </div>
+  );
+}
+
+function BackupButton() {
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(false);
+  const [letzterBackup, setLetzterBackup] = useState<string | null>(
+    localStorage.getItem("ap_letzter_backup")
+  );
+
+  const handleBackup = async () => {
+    setLoading(true);
+    try {
+      const res = await apiRequest("GET", "/api/backup");
+      const blob = await res.blob();
+      const now = new Date().toISOString().slice(0, 10);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `auftragspro-backup-${now}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      const zeitstempel = new Date().toLocaleString("de-CH");
+      localStorage.setItem("ap_letzter_backup", zeitstempel);
+      setLetzterBackup(zeitstempel);
+      toast({ title: "✅ Backup heruntergeladen", description: `auftragspro-backup-${now}.json` });
+    } catch (e: any) {
+      toast({ title: "Fehler beim Backup", description: e.message, variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-4 flex-wrap">
+      <Button
+        onClick={handleBackup}
+        disabled={loading}
+        style={{ background: "#6b4c2a", color: "white" }}
+        size="sm"
+      >
+        <Download className="h-4 w-4 mr-2" />
+        {loading ? "Wird erstellt..." : "Backup jetzt herunterladen"}
+      </Button>
+      {letzterBackup && (
+        <p className="text-xs text-muted-foreground">
+          Letzter Backup: {letzterBackup}
+        </p>
+      )}
     </div>
   );
 }
