@@ -31,6 +31,7 @@ import type { Auftrag, Stats, Rechnung } from "@shared/schema";
 import { STATUS_LABEL } from "@shared/schema";
 import { STATUS_BADGE, PRIO_BADGE, formatCHF, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/auth";
 
 function KpiCard({
   label,
@@ -152,6 +153,9 @@ function KpiCard({
 }
 
 export default function Dashboard() {
+  const { hatZugriff } = useAuth();
+  const darf_finanzen = hatZugriff("dashboard_finanzen");
+
   const { data: stats, isLoading: lStats } = useQuery<Stats>({
     queryKey: ["/api/stats"],
   });
@@ -361,7 +365,8 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* Finanzen Übersicht */}
+      {/* Finanzen Übersicht — nur für Benutzer mit dashboard_finanzen Berechtigung */}
+      {darf_finanzen && (
       <div className="mb-6">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-base font-semibold bg-background/80 backdrop-blur-sm rounded px-1 inline-block" style={{ fontFamily: "var(--font-display)" }}>
@@ -517,6 +522,7 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+      )}
 
 
 

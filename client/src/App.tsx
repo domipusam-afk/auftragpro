@@ -50,6 +50,13 @@ import NachkalkulationUebersicht from "@/pages/NachkalkulationUebersicht";
 import Lagerverwaltung from "@/pages/Lagerverwaltung";
 
 import ProjektStatus from "@/pages/ProjektStatus";
+import ZugriffGesperrt from "@/components/ZugriffGesperrt";
+
+function Geschuetzt({ modul, children, label }: { modul: import('@/lib/permissions').ModulKey; children: React.ReactNode; label?: string }) {
+  const { hatZugriff } = useAuth();
+  if (!hatZugriff(modul)) return <ZugriffGesperrt modul={label} />;
+  return <>{children}</>;
+}
 
 function AppRouter() {
   return (
@@ -61,20 +68,20 @@ function AppRouter() {
         {(params) => <AuftragForm id={params.id} />}
       </Route>
       <Route path="/auftraege/:id">{(params) => <AuftragDetail id={params.id} />}</Route>
-      <Route path="/rechnungen" component={Rechnungen} />
-      <Route path="/zeiterfassung" component={Zeiterfassung} />
-      <Route path="/einstellungen" component={Einstellungen} />
-      <Route path="/benutzerverwaltung" component={Benutzerverwaltung} />
+      <Route path="/rechnungen">{() => <Geschuetzt modul="rechnungen" label="Rechnungen"><Rechnungen /></Geschuetzt>}</Route>
+      <Route path="/zeiterfassung">{() => <Geschuetzt modul="zeiterfassung" label="Zeiterfassung"><Zeiterfassung /></Geschuetzt>}</Route>
+      <Route path="/einstellungen">{() => <Geschuetzt modul="einstellungen" label="Einstellungen"><Einstellungen /></Geschuetzt>}</Route>
+      <Route path="/benutzerverwaltung">{() => <Geschuetzt modul="benutzerverwaltung" label="Benutzerverwaltung"><Benutzerverwaltung /></Geschuetzt>}</Route>
       <Route path="/2fa" component={ZweiFA} />
-      <Route path="/mahnwesen" component={Mahnwesen} />
-      <Route path="/mwst" component={MwstAuswertung} />
-      <Route path="/vorkalkulation" component={Vorkalkulation} />
-      <Route path="/auftraege/:id/kalkulation" component={Vorkalkulation} />
-      <Route path="/eingangsrechnungen" component={Eingangsrechnungen} />
-      <Route path="/nachkalkulation" component={NachkalkulationUebersicht} />
-      <Route path="/vorkalkulation/:id" component={VorkalkulationDetail} />
-      <Route path="/nachkalkulation/:id" component={NachkalkulationDetail} />
-      <Route path="/mitarbeiter" component={Mitarbeiterakte} />
+      <Route path="/mahnwesen">{() => <Geschuetzt modul="finanzmanagement" label="Mahnwesen"><Mahnwesen /></Geschuetzt>}</Route>
+      <Route path="/mwst">{() => <Geschuetzt modul="finanzmanagement" label="MWST-Auswertung"><MwstAuswertung /></Geschuetzt>}</Route>
+      <Route path="/vorkalkulation">{() => <Geschuetzt modul="kalkulation" label="Vorkalkulation"><Vorkalkulation /></Geschuetzt>}</Route>
+      <Route path="/auftraege/:id/kalkulation">{() => <Geschuetzt modul="kalkulation" label="Kalkulation"><Vorkalkulation /></Geschuetzt>}</Route>
+      <Route path="/eingangsrechnungen">{() => <Geschuetzt modul="finanzmanagement" label="Eingangsrechnungen"><Eingangsrechnungen /></Geschuetzt>}</Route>
+      <Route path="/nachkalkulation">{() => <Geschuetzt modul="kalkulation" label="Nachkalkulation"><NachkalkulationUebersicht /></Geschuetzt>}</Route>
+      <Route path="/vorkalkulation/:id">{(p) => <Geschuetzt modul="kalkulation" label="Vorkalkulation"><VorkalkulationDetail {...p} /></Geschuetzt>}</Route>
+      <Route path="/nachkalkulation/:id">{(p) => <Geschuetzt modul="kalkulation" label="Nachkalkulation"><NachkalkulationDetail {...p} /></Geschuetzt>}</Route>
+      <Route path="/mitarbeiter">{() => <Geschuetzt modul="ressourcen" label="Mitarbeiterakte"><Mitarbeiterakte /></Geschuetzt>}</Route>
       <Route path="/termine" component={Termine} />
       <Route path="/kalender" component={Kalender} />
       <Route path="/plantafel" component={Plantafel} />
@@ -82,18 +89,18 @@ function AppRouter() {
       <Route path="/formulare" component={Formulare} />
       <Route path="/chat" component={ChatHistorie} />
       <Route path="/kundendatencenter" component={Kundendatencenter} />
-      <Route path="/dokumente" component={DokumenteUebersicht} />
-      <Route path="/offerten" component={Offerten} />
-      <Route path="/lohnabrechnung" component={Lohnabrechnung} />
-      <Route path="/ferienplanung" component={Ferienplanung} />
-      <Route path="/stundenauswertung" component={Stundenauswertung} />
-      <Route path="/lieferanten" component={Lieferanten} />
+      <Route path="/dokumente">{() => <Geschuetzt modul="dokumente" label="Dokumente"><DokumenteUebersicht /></Geschuetzt>}</Route>
+      <Route path="/offerten">{() => <Geschuetzt modul="offerten" label="Offerten"><Offerten /></Geschuetzt>}</Route>
+      <Route path="/lohnabrechnung">{() => <Geschuetzt modul="ressourcen" label="Lohnabrechnung"><Lohnabrechnung /></Geschuetzt>}</Route>
+      <Route path="/ferienplanung">{() => <Geschuetzt modul="ressourcen" label="Ferienplanung"><Ferienplanung /></Geschuetzt>}</Route>
+      <Route path="/stundenauswertung">{() => <Geschuetzt modul="ressourcen" label="Stundenauswertung"><Stundenauswertung /></Geschuetzt>}</Route>
+      <Route path="/lieferanten">{() => <Geschuetzt modul="einkauf" label="Lieferanten"><Lieferanten /></Geschuetzt>}</Route>
       <Route path="/garantien" component={GarantieUebersicht} />
-      <Route path="/vorkalkulation-uebersicht" component={VorkalkulationUebersicht} />
-      <Route path="/nachkalkulation-uebersicht" component={NachkalkulationUebersicht} />
-      <Route path="/kalkulations-uebersicht" component={KalkulationsUebersicht} />
+      <Route path="/vorkalkulation-uebersicht">{() => <Geschuetzt modul="kalkulation" label="Vorkalkulation"><VorkalkulationUebersicht /></Geschuetzt>}</Route>
+      <Route path="/nachkalkulation-uebersicht">{() => <Geschuetzt modul="kalkulation" label="Nachkalkulation"><NachkalkulationUebersicht /></Geschuetzt>}</Route>
+      <Route path="/kalkulations-uebersicht">{() => <Geschuetzt modul="kalkulation" label="Kalkulation"><KalkulationsUebersicht /></Geschuetzt>}</Route>
 
-      <Route path="/lager" component={Lagerverwaltung} />
+      <Route path="/lager">{() => <Geschuetzt modul="einkauf" label="Lagerverwaltung"><Lagerverwaltung /></Geschuetzt>}</Route>
 
       <Route path="/projekt/:token">{(params) => <ProjektStatus token={params.token} />}</Route>
       <Route component={NotFound} />

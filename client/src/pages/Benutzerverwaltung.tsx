@@ -9,8 +9,9 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Users, Plus, Pencil, Trash2, ShieldOff, ShieldCheck, Eye, EyeOff, RefreshCw } from "lucide-react";
+import { Users, Plus, Pencil, Trash2, ShieldOff, ShieldCheck, Eye, EyeOff, SlidersHorizontal, Check } from "lucide-react";
 import { formatDate } from "@/lib/format";
+import { ALLE_MODULE, standardBerechtigungen, ModulKey } from "@/lib/permissions";
 
 interface Benutzer {
   id: string;
@@ -19,13 +20,125 @@ interface Benutzer {
   totp_aktiv: boolean;
   aktiv: boolean;
   erstellt: string;
+  berechtigungen: string | null;
 }
 
+// ─── Berechtigungs-Modal ────────────────────────────────────────────────────
+function BerechtigungenModal({
+  benutzer,
+  onClose,
+}: {
+  benutzer: Benutzer;
+  onClose: () => void;
+}) {
+  const { toast } = useToast();
+
+  // Aktuelle Berechtigungen laden (oder Standard)
+  const initPerms = (): Record<ModulKey, boolean> => {
+    if (!benutzer.berechtigungen) return standardBerechtigungen();
+    try { return JSON.parse(benutzer.berechtigungen); } catch { return standardBerechtigungen(); }
+  };
+
+  const [perms, setPerms] = useState<Record<ModulKey, boolean>>(initPerms);
+
+  const saveMut = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("PATCH", `/api/benutzer/${benutzer.id}`, { berechtigungen: perms });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.message);
+      return d;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/benutzer"] });
+      toast({ title: "✅ Berechtigungen gespeichert" });
+      onClose();
+    },
+    onError: (e: Error) => toast({ title: "Fehler", description: e.message, variant: "destructive" }),
+  });
+
+  const toggle = (key: ModulKey) => setPerms(p => ({ ...p, [key]: !p[key] }));
+
+  const alleAn = () => setPerms(Object.fromEntries(ALLE_MODULE.map(m => [m.key, true])) as Record<ModulKey, boolean>);
+  const alleAus = () => setPerms(Object.fromEntries(ALLE_MODULE.map(m => [m.key, false])) as Record<ModulKey, boolean>);
+  const standard = () => setPerms(standardBerechtigungen());
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <SlidersHorizontal className="h-4 w-4 text-primary" />
+            Berechtigungen — {benutzer.benutzername.split("@")[0]}
+          </DialogTitle>
+        </DialogHeader>
+
+        {benutzer.rolle === "admin" ? (
+          <div className="py-4 text-center text-muted-foreground text-sm">
+            Admins haben automatisch vollen Zugriff auf alle Module.
+          </div>
+        ) : (
+          <div className="space-y-4 pt-2">
+            {/* Schnellaktionen */}
+            <div className="flex gap-2 flex-wrap">
+              <Button size="sm" variant="outline" onClick={alleAn} className="text-xs">Alle aktivieren</Button>
+              <Button size="sm" variant="outline" onClick={alleAus} className="text-xs">Alle deaktivieren</Button>
+              <Button size="sm" variant="outline" onClick={standard} className="text-xs">Standard wiederherstellen</Button>
+            </div>
+
+            {/* Modul-Liste */}
+            <div className="space-y-1.5">
+              {ALLE_MODULE.map((modul) => (
+                <div
+                  key={modul.key}
+                  onClick={() => toggle(modul.key)}
+                  className={`flex items-start gap-3 rounded-lg px-3 py-2.5 cursor-pointer border transition-colors ${
+                    perms[modul.key]
+                      ? "bg-primary/5 border-primary/20 hover:bg-primary/10"
+                      : "bg-muted/30 border-transparent hover:bg-muted/50"
+                  }`}
+                  data-testid={`perm-toggle-${modul.key}`}
+                >
+                  {/* Checkbox */}
+                  <div className={`mt-0.5 w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors ${
+                    perms[modul.key] ? "bg-primary border-primary" : "border-muted-foreground/40"
+                  }`}>
+                    {perms[modul.key] && <Check className="h-2.5 w-2.5 text-primary-foreground" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm font-medium leading-none ${perms[modul.key] ? "text-foreground" : "text-muted-foreground"}`}>
+                      {modul.label}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{modul.beschreibung}</p>
+                  </div>
+                  <Badge variant={perms[modul.key] ? "default" : "secondary"} className="text-[10px] shrink-0 mt-0.5">
+                    {perms[modul.key] ? "Erlaubt" : "Gesperrt"}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+
+            <Button
+              className="w-full"
+              onClick={() => saveMut.mutate()}
+              disabled={saveMut.isPending}
+              data-testid="button-save-perms"
+            >
+              {saveMut.isPending ? "Wird gespeichert…" : "Berechtigungen speichern"}
+            </Button>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Hauptseite ─────────────────────────────────────────────────────────────
 export default function Benutzerverwaltung() {
   const { toast } = useToast();
   const { isAdmin, user: currentUser } = useAuth();
   const [showAdd, setShowAdd] = useState(false);
   const [editUser, setEditUser] = useState<Benutzer | null>(null);
+  const [permUser, setPermUser] = useState<Benutzer | null>(null);
   const [newName, setNewName] = useState("");
   const [newPw, setNewPw] = useState("");
   const [newRolle, setNewRolle] = useState<"admin" | "mitarbeiter">("mitarbeiter");
@@ -92,11 +205,6 @@ export default function Benutzerverwaltung() {
     },
   });
 
-  // Suggest username format
-  const suggestUsername = (val: string) => {
-    setNewName(val);
-  };
-
   if (!isAdmin) return (
     <div className="p-6 text-muted-foreground">Kein Zugriff — nur für Admins.</div>
   );
@@ -119,74 +227,104 @@ export default function Benutzerverwaltung() {
         {!isLoading && benutzer.length === 0 && (
           <div className="p-6 text-muted-foreground text-sm">Noch keine Benutzer.</div>
         )}
-        {benutzer.map((u) => (
-          <div key={u.id} className="flex items-center justify-between px-4 py-3" data-testid={`row-user-${u.id}`}>
-            <div className="flex flex-col gap-0.5">
-              <div className="flex items-center gap-2">
-                <span className="font-medium text-sm">{u.benutzername}</span>
-                {u.id === currentUser?.id && (
-                  <Badge variant="outline" className="text-xs">Du</Badge>
+        {benutzer.map((u) => {
+          // Berechtigungen-Zähler
+          const permCount = u.rolle === "admin" ? null : (() => {
+            const p = u.berechtigungen ? JSON.parse(u.berechtigungen) : standardBerechtigungen();
+            return Object.values(p).filter(Boolean).length;
+          })();
+
+          return (
+            <div key={u.id} className="flex items-center justify-between px-4 py-3 gap-2" data-testid={`row-user-${u.id}`}>
+              <div className="flex flex-col gap-0.5 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-medium text-sm">{u.benutzername}</span>
+                  {u.id === currentUser?.id && (
+                    <Badge variant="outline" className="text-xs">Du</Badge>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+                  <Badge variant={u.rolle === "admin" ? "default" : "secondary"} className="text-xs">
+                    {u.rolle === "admin" ? "Admin" : "Mitarbeiter"}
+                  </Badge>
+                  {u.totp_aktiv
+                    ? <span className="flex items-center gap-1 text-green-600"><ShieldCheck className="h-3 w-3" />2FA aktiv</span>
+                    : <span className="flex items-center gap-1 text-muted-foreground"><ShieldOff className="h-3 w-3" />Kein 2FA</span>
+                  }
+                  {!u.aktiv && <Badge variant="destructive" className="text-xs">Deaktiviert</Badge>}
+                  {permCount !== null && (
+                    <span className="text-muted-foreground">· {permCount} von {ALLE_MODULE.length} Module erlaubt</span>
+                  )}
+                  {u.rolle === "admin" && (
+                    <span className="text-muted-foreground">· Voller Zugriff</span>
+                  )}
+                  <span className="opacity-50">· seit {formatDate(u.erstellt)}</span>
+                </div>
+              </div>
+              <div className="flex gap-2 flex-wrap justify-end shrink-0">
+                {/* Berechtigungen Button (nur für Mitarbeiter) */}
+                {u.rolle === "mitarbeiter" && (
+                  <Button
+                    size="sm" variant="outline"
+                    className="text-primary border-primary/30 hover:bg-primary/5"
+                    onClick={() => setPermUser(u)}
+                    title="Berechtigungen verwalten"
+                    data-testid={`button-perms-${u.id}`}
+                  >
+                    <SlidersHorizontal className="h-3 w-3 mr-1" />
+                    <span className="hidden sm:inline">Berechtigungen</span>
+                  </Button>
+                )}
+                {u.totp_aktiv ? (
+                  <Button
+                    size="sm" variant="outline"
+                    className="text-orange-600 border-orange-300 hover:bg-orange-50 hover:text-orange-700"
+                    onClick={() => {
+                      if (confirm(`2FA für "${u.benutzername}" wirklich deaktivieren?`)) {
+                        reset2faMut.mutate(u.id);
+                      }
+                    }}
+                    title="2FA deaktivieren"
+                    data-testid={`button-disable2fa-${u.id}`}
+                    disabled={reset2faMut.isPending}
+                  >
+                    <ShieldOff className="h-3 w-3 mr-1" />
+                    <span className="hidden sm:inline">2FA deaktiv.</span>
+                  </Button>
+                ) : (
+                  <span
+                    className="inline-flex items-center gap-1 text-xs text-muted-foreground px-2 py-1 rounded border border-dashed"
+                    title="Der Benutzer kann 2FA selbst in Einstellungen → Sicherheit aktivieren"
+                  >
+                    <ShieldOff className="h-3 w-3" />
+                    <span className="hidden sm:inline">Kein 2FA</span>
+                  </span>
+                )}
+                <Button
+                  size="sm" variant="outline"
+                  onClick={() => setEditUser(u)}
+                  data-testid={`button-edit-${u.id}`}
+                >
+                  <Pencil className="h-3 w-3" />
+                </Button>
+                {u.id !== currentUser?.id && (
+                  <Button
+                    size="sm" variant="outline"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => deleteMut.mutate(u.id)}
+                    data-testid={`button-delete-${u.id}`}
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
                 )}
               </div>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <Badge variant={u.rolle === "admin" ? "default" : "secondary"} className="text-xs">
-                  {u.rolle === "admin" ? "Admin" : "Mitarbeiter"}
-                </Badge>
-                {u.totp_aktiv
-                  ? <span className="flex items-center gap-1 text-green-600"><ShieldCheck className="h-3 w-3" />2FA aktiv</span>
-                  : <span className="flex items-center gap-1 text-muted-foreground"><ShieldOff className="h-3 w-3" />Kein 2FA</span>
-                }
-                {!u.aktiv && <Badge variant="destructive" className="text-xs">Deaktiviert</Badge>}
-                <span className="opacity-50">· seit {formatDate(u.erstellt)}</span>
-              </div>
             </div>
-            <div className="flex gap-2 flex-wrap justify-end">
-              {u.totp_aktiv ? (
-                <Button
-                  size="sm" variant="outline"
-                  className="text-orange-600 border-orange-300 hover:bg-orange-50 hover:text-orange-700"
-                  onClick={() => {
-                    if (confirm(`2FA für "${u.benutzername}" wirklich deaktivieren?`)) {
-                      reset2faMut.mutate(u.id);
-                    }
-                  }}
-                  title="2FA deaktivieren"
-                  data-testid={`button-disable2fa-${u.id}`}
-                  disabled={reset2faMut.isPending}
-                >
-                  <ShieldOff className="h-3 w-3 mr-1" />
-                  <span className="hidden sm:inline">2FA deaktiv.</span>
-                </Button>
-              ) : (
-                <span
-                  className="inline-flex items-center gap-1 text-xs text-muted-foreground px-2 py-1 rounded border border-dashed"
-                  title="Der Benutzer kann 2FA selbst in Einstellungen → Sicherheit aktivieren"
-                >
-                  <ShieldOff className="h-3 w-3" />
-                  <span className="hidden sm:inline">Kein 2FA</span>
-                </span>
-              )}
-              <Button
-                size="sm" variant="outline"
-                onClick={() => setEditUser(u)}
-                data-testid={`button-edit-${u.id}`}
-              >
-                <Pencil className="h-3 w-3" />
-              </Button>
-              {u.id !== currentUser?.id && (
-                <Button
-                  size="sm" variant="outline"
-                  className="text-destructive hover:text-destructive"
-                  onClick={() => deleteMut.mutate(u.id)}
-                  data-testid={`button-delete-${u.id}`}
-                >
-                  <Trash2 className="h-3 w-3" />
-                </Button>
-              )}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </Card>
+
+      {/* Berechtigungs-Modal */}
+      {permUser && <BerechtigungenModal benutzer={permUser} onClose={() => setPermUser(null)} />}
 
       {/* Add user dialog */}
       <Dialog open={showAdd} onOpenChange={setShowAdd}>
@@ -200,7 +338,7 @@ export default function Benutzerverwaltung() {
               <Input
                 placeholder="vorname.nachname@schneggenburger.ch"
                 value={newName}
-                onChange={(e) => suggestUsername(e.target.value)}
+                onChange={(e) => setNewName(e.target.value)}
                 data-testid="input-new-username"
               />
               <p className="text-xs text-muted-foreground mt-1">Format: vorname.nachname@schneggenburger.ch</p>

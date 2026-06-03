@@ -414,7 +414,7 @@ function GlobalSearch({ collapsed }: { collapsed: boolean }) {
 export default function Layout({ children }: { children: ReactNode }) {
   const [location] = useLocation();
   const { theme, toggle } = useTheme();
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, hatZugriff } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -532,7 +532,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           <NavItem href="/" label="Dashboard" icon={LayoutDashboard} collapsed={!show} />
 
           {/* Aufträge mit aufklappbarem Untermenü */}
-          {show ? (
+          {hatZugriff("auftraege") && show && (
             <div>
               <button
                 onClick={() => setAuftraegeOpen((o) => !o)}
@@ -556,24 +556,25 @@ export default function Layout({ children }: { children: ReactNode }) {
                 </div>
               )}
             </div>
-          ) : (
-            // Sidebar eingeklappt: nur Icon
+          )}
+          {/* Sidebar eingeklappt: nur Icon */}
+          {hatZugriff("auftraege") && !show && (
             <NavItem href="/auftraege" label="Aufträge" icon={ListChecks} collapsed={true} />
           )}
 
           {/* Zeiterfassung */}
-          <NavItem href="/zeiterfassung" label="Zeiterfassung" icon={Clock} collapsed={!show} />
+          {hatZugriff("zeiterfassung") && <NavItem href="/zeiterfassung" label="Zeiterfassung" icon={Clock} collapsed={!show} />}
 
-          {/* Rechnungen (nur Admin) */}
-          {isAdmin && <NavItem href="/rechnungen" label="Rechnungen" icon={FileText} collapsed={!show} />}
+          {/* Rechnungen (Admin oder mit Berechtigung) */}
+          {(isAdmin || hatZugriff("rechnungen")) && <NavItem href="/rechnungen" label="Rechnungen" icon={FileText} collapsed={!show} />}
 
           {/* Offerten */}
-          <NavItem href="/offerten" label="Offerten" icon={FilePlus} collapsed={!show} />
+          {hatZugriff("offerten") && <NavItem href="/offerten" label="Offerten" icon={FilePlus} collapsed={!show} />}
         </nav>
 
 
         {/* Kalkulation */}
-        {isAdmin && (
+        {(isAdmin || hatZugriff("kalkulation")) && (
         <div className="px-2 mt-1">
           {show ? (
             <>
@@ -600,8 +601,8 @@ export default function Layout({ children }: { children: ReactNode }) {
         </div>
         )}
 
-        {/* Finanzmanagement — nur für Admins */}
-        {isAdmin && (
+        {/* Finanzmanagement — nur für Admins oder mit Berechtigung */}
+        {(isAdmin || hatZugriff("finanzmanagement")) && (
         <div className="px-2 mt-2">
           {show ? (
             <>
@@ -629,7 +630,7 @@ export default function Layout({ children }: { children: ReactNode }) {
         )}
 
         {/* Einkauf Group */}
-        {isAdmin && (
+        {(isAdmin || hatZugriff("einkauf")) && (
         <div className="px-2 mt-1">
           {show ? (
             <>
@@ -657,7 +658,7 @@ export default function Layout({ children }: { children: ReactNode }) {
         )}
 
         {/* Dokumentenmanagement Group */}
-        <div className="px-2 mt-1">
+        {hatZugriff("dokumente") && <div className="px-2 mt-1">
           {show ? (
             <>
               <button
@@ -700,10 +701,10 @@ export default function Layout({ children }: { children: ReactNode }) {
               ))}
             </>
           )}
-        </div>
+        </div>}
 
         {/* Ressourcenmanagement Group */}
-        <div className="px-2 mt-1">
+        {(isAdmin || hatZugriff("ressourcen")) && <div className="px-2 mt-1">
           {show ? (
             <>
               <button
@@ -726,7 +727,7 @@ export default function Layout({ children }: { children: ReactNode }) {
               {RESSOURCE_NAV.map((item) => <NavItem key={item.href} {...item} collapsed={true} />)}
             </>
           )}
-        </div>
+        </div>}
 
         {/* New Order Button */}
         <div className={cn("px-2 mt-4", !show && "px-2")}>
@@ -751,7 +752,8 @@ export default function Layout({ children }: { children: ReactNode }) {
             <NavItem key={item.href} {...item} collapsed={!show} />
           ))}
 
-          {BOTTOM_NAV.map((item) => (
+          {/* Einstellungen — nur Admin oder mit Berechtigung */}
+          {(isAdmin || hatZugriff("einstellungen")) && BOTTOM_NAV.map((item) => (
             <NavItem key={item.href} {...item} collapsed={!show} />
           ))}
 

@@ -204,7 +204,7 @@ export async function registerRoutes(
           const gueltig = tokens.find((t: any) => t.token === vertrauensToken && t.ablauf > now);
           if (gueltig) {
             // Gerät bekannt → kein 2FA nötig
-            return res.json({ ok: true, requires2fa: false, user: { id: user.id, benutzername: user.benutzername, rolle: user.rolle } });
+            return res.json({ ok: true, requires2fa: false, user: { id: user.id, benutzername: user.benutzername, rolle: user.rolle, berechtigungen: user.berechtigungen || null } });
           }
         }
         return res.json({ ok: true, requires2fa: true, userId: user.id });
@@ -213,7 +213,7 @@ export async function registerRoutes(
       return res.json({
         ok: true,
         requires2fa: false,
-        user: { id: user.id, benutzername: user.benutzername, rolle: user.rolle }
+        user: { id: user.id, benutzername: user.benutzername, rolle: user.rolle, berechtigungen: user.berechtigungen || null }
       });
     } catch (e) {
       return res.status(500).json({ ok: false, message: asError(e) });
@@ -242,7 +242,7 @@ export async function registerRoutes(
           .from("app_benutzer")
           .update({ backup_codes: user.backup_codes.filter((c: string) => c !== code.toUpperCase()) })
           .eq("id", userId);
-        return res.json({ ok: true, user: { id: user.id, benutzername: user.benutzername, rolle: user.rolle } });
+        return res.json({ ok: true, user: { id: user.id, benutzername: user.benutzername, rolle: user.rolle, berechtigungen: user.berechtigungen || null } });
       }
 
       // Verify TOTP
@@ -269,7 +269,7 @@ export async function registerRoutes(
 
       return res.json({
         ok: true,
-        user: { id: user.id, benutzername: user.benutzername, rolle: user.rolle },
+        user: { id: user.id, benutzername: user.benutzername, rolle: user.rolle, berechtigungen: user.berechtigungen || null },
         ...(neuerVertrauensToken ? { vertrauensToken: neuerVertrauensToken } : {})
       });
     } catch (e) {
@@ -384,7 +384,7 @@ export async function registerRoutes(
     try {
       const { data } = await supabase
         .from("app_benutzer")
-        .select("id, benutzername, rolle, totp_aktiv, aktiv, erstellt")
+        .select("id, benutzername, rolle, totp_aktiv, aktiv, erstellt, berechtigungen")
         .order("erstellt");
       return res.json(data || []);
     } catch (e) {
@@ -421,11 +421,12 @@ export async function registerRoutes(
   app.patch("/api/benutzer/:id", async (req, res) => {
     try {
       const { id } = req.params;
-      const { benutzername, rolle, aktiv, passwort } = req.body;
+      const { benutzername, rolle, aktiv, passwort, berechtigungen } = req.body;
       const updates: Record<string, unknown> = { aktualisiert: new Date().toISOString() };
       if (benutzername) updates.benutzername = benutzername.toLowerCase().trim();
       if (rolle) updates.rolle = rolle;
       if (aktiv !== undefined) updates.aktiv = aktiv;
+      if (berechtigungen !== undefined) updates.berechtigungen = berechtigungen ? JSON.stringify(berechtigungen) : null;
       if (passwort) {
         if (passwort.length < 6) return res.status(400).json({ message: "Passwort muss mindestens 6 Zeichen haben" });
         updates.passwort_hash = await bcrypt.hash(passwort, 12);
@@ -434,7 +435,7 @@ export async function registerRoutes(
         .from("app_benutzer")
         .update(updates)
         .eq("id", id)
-        .select("id, benutzername, rolle, totp_aktiv, aktiv, erstellt")
+        .select("id, benutzername, rolle, totp_aktiv, aktiv, erstellt, berechtigungen")
         .single();
       if (error) return res.status(400).json({ message: asError(error) });
       return res.json(data);

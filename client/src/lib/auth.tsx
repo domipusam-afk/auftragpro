@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, ReactNode } from "react";
 import { apiRequest } from "./queryClient";
 import { lsGet, lsSet } from "./storage";
+import { hatZugriff as checkZugriff, ModulKey } from "./permissions";
 
 export type Rolle = "admin" | "mitarbeiter";
 
@@ -8,6 +9,7 @@ export interface AppUser {
   id: string;
   benutzername: string;
   rolle: Rolle;
+  berechtigungen: string | null;
 }
 
 interface AuthContextType {
@@ -17,6 +19,7 @@ interface AuthContextType {
   verify2fa: (userId: string, code: string, geraetMerken?: boolean, benutzername?: string) => Promise<{ ok: boolean; message?: string }>;
   logout: () => void;
   isAdmin: boolean;
+  hatZugriff: (modul: import('./permissions').ModulKey) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -24,9 +27,9 @@ const AuthContext = createContext<AuthContextType>({
   isLoggedIn: false,
   login: async () => ({ ok: false }),
   verify2fa: async () => ({ ok: false } as { ok: boolean; message?: string }),
-
   logout: () => {},
   isAdmin: false,
+  hatZugriff: () => false,
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -72,6 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       verify2fa,
       logout,
       isAdmin: user?.rolle === "admin",
+      hatZugriff: (modul: ModulKey) => checkZugriff(user?.rolle || "", user?.berechtigungen || null, modul),
     }}>
       {children}
     </AuthContext.Provider>
