@@ -1730,6 +1730,23 @@ export async function registerRoutes(
       if (!qrIbanError) {
         try {
           const { SwissQRCode } = await import("swissqrbill/svg") as any;
+
+          // Prüfen ob QR-IBAN (IID 30000–31999) → braucht QR-Referenz
+          const iidNum = parseInt(ibanClean.substring(4, 9));
+          const isQrIban = iidNum >= 30000 && iidNum <= 31999;
+
+          // QR-Referenz aus Rechnungsnummer generieren (Modulo-10 rekursiv)
+          function genQrRef(nr: string): string {
+            const digits = nr.replace(/\D/g, "").padStart(26, "0").slice(0, 26);
+            const table = [0,9,4,6,8,2,7,1,3,5];
+            let carry = 0;
+            for (const d of digits) carry = table[(carry + parseInt(d)) % 10];
+            return digits + ((10 - carry) % 10);
+          }
+
+          const rechnungsNr = rechnung.nr || rid.substring(0, 8);
+          const qrRef = isQrIban ? genQrRef(rechnungsNr) : undefined;
+
           const qrBillData: any = {
             currency: "CHF" as const,
             amount: totalInkl,
@@ -1741,8 +1758,13 @@ export async function registerRoutes(
               city: firmaOrt,
               country: "CH"
             },
-            message: "Rechnung " + (rechnung.nr || rid.substring(0, 8)),
           };
+          // Referenz oder Mitteilung setzen
+          if (qrRef) {
+            qrBillData.reference = qrRef;
+          } else {
+            qrBillData.message = "Rechnung " + rechnungsNr;
+          }
           if (empfaenger && empPlzNum && empOrtOnly) {
             qrBillData.debtor = {
               name: empfaenger,
