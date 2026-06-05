@@ -479,7 +479,15 @@ export default function Layout({ children }: { children: ReactNode }) {
     EINKAUF_NAV.some((n) => location === n.href || location.startsWith(n.href + "/"))
   );
 
-  useEffect(() => { setMobileOpen(false); }, [location]);
+  // Mobile Drawer schliesst sich nur bei echter Navigation (location-Wechsel),
+  // NICHT beim Klick auf Accordion-Gruppen im Menü.
+  const prevLocation = useRef(location);
+  useEffect(() => {
+    if (prevLocation.current !== location) {
+      prevLocation.current = location;
+      setMobileOpen(false);
+    }
+  }, [location]);
 
   useEffect(() => {
     const handleResize = () => { if (window.innerWidth >= 768) setMobileOpen(false); };
@@ -870,10 +878,7 @@ export default function Layout({ children }: { children: ReactNode }) {
             >
               <X className="h-5 w-5" />
             </button>
-            {/* nav-clicks schliessen die Sidebar auf Mobile */}
-            <div onClick={() => setMobileOpen(false)}>
-              <SidebarContent mobile />
-            </div>
+            <SidebarContent mobile />
           </aside>
         </div>
       )}
