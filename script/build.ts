@@ -33,7 +33,7 @@ const allowlist = [
 ];
 
 async function buildAll() {
-  await rm("dist", { recursive: true, force: true });
+  try { await rm("dist", { recursive: true, force: true }); } catch (_) { /* ignore permission errors on existing dist */ }
 
   console.log("building client...");
   await viteBuild();

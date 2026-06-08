@@ -5943,6 +5943,95 @@ export async function registerRoutes(
   // Public: Schritte inkl. Fotos (bereits in /api/public/auftrag/:token enthalten – hier separat)
   // Die /api/public/auftrag/:token Route holt schritte bereits – wir ergänzen dort die Fotos:
 
+  // ─── Positionsliste ────────────────────────────────────────────────────────
+
+  // GET alle Positionen eines Auftrags
+  app.get("/api/auftraege/:id/positionen", async (req, res) => {
+    try {
+      const { data, error } = await supabase
+        .from("auftrag_positionen")
+        .select("*")
+        .eq("auftrag_id", req.params.id)
+        .order("position", { ascending: true });
+      if (error) return res.status(500).json({ message: error.message });
+      res.json(data ?? []);
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+  // POST neue Position
+  app.post("/api/auftraege/:id/positionen", async (req, res) => {
+    try {
+      const { bezeichnung, beschreibung, kategorie, menge, einheit, einzelpreis } = req.body;
+      if (!bezeichnung) return res.status(400).json({ message: "Bezeichnung fehlt" });
+
+      // Nächste Positionsnummer ermitteln
+      const { data: existing } = await supabase
+        .from("auftrag_positionen")
+        .select("position")
+        .eq("auftrag_id", req.params.id)
+        .order("position", { ascending: false })
+        .limit(1);
+      const naechstePos = existing && existing.length > 0 ? existing[0].position + 1 : 1;
+
+      const { data, error } = await supabase
+        .from("auftrag_positionen")
+        .insert({
+          auftrag_id: req.params.id,
+          position: naechstePos,
+          bezeichnung: bezeichnung.trim(),
+          beschreibung: beschreibung?.trim() ?? null,
+          kategorie: kategorie ?? "material",
+          menge: parseFloat(menge) || 0,
+          einheit: einheit ?? "Stk",
+          einzelpreis: parseFloat(einzelpreis) || 0,
+        })
+        .select()
+        .single();
+      if (error) return res.status(500).json({ message: error.message });
+      res.json(data);
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+  // PATCH Position bearbeiten
+  app.patch("/api/auftraege/:id/positionen/:pid", async (req, res) => {
+    try {
+      const felder: any = {};
+      const erlaubt = ["bezeichnung","beschreibung","kategorie","menge","einheit","einzelpreis","position"];
+      for (const k of erlaubt) {
+        if (req.body[k] !== undefined) {
+          felder[k] = ["menge","einzelpreis","position"].includes(k)
+            ? parseFloat(req.body[k])
+            : req.body[k];
+        }
+      }
+      felder.aktualisiert_am = new Date().toISOString();
+      const { data, error } = await supabase
+        .from("auftrag_positionen")
+        .update(felder)
+        .eq("id", req.params.pid)
+        .eq("auftrag_id", req.params.id)
+        .select()
+        .single();
+      if (error) return res.status(500).json({ message: error.message });
+      res.json(data);
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+  // DELETE Position löschen
+  app.delete("/api/auftraege/:id/positionen/:pid", async (req, res) => {
+    try {
+      const { error } = await supabase
+        .from("auftrag_positionen")
+        .delete()
+        .eq("id", req.params.pid)
+        .eq("auftrag_id", req.params.id);
+      if (error) return res.status(500).json({ message: error.message });
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+
   // Kunden-Nachricht speichern
   app.patch("/api/auftraege/:id/kunden-nachricht", async (req, res) => {
     try {

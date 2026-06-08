@@ -71,6 +71,7 @@ import {
   MessageSquare,
   Save,
 } from "lucide-react";
+import PositionenTab from "@/components/PositionenTab";
 import type {
   Auftrag,
   VerlaufEintrag,
@@ -2590,6 +2591,11 @@ export default function AuftragDetail({ id }: Props) {
                 <TabsTrigger value="offerte" data-testid="tab-offerte" className="flex flex-col sm:flex-row items-center gap-1 text-xs p-2 sm:px-3 sm:py-1.5 h-auto">
                   Offerte
                 </TabsTrigger>
+                <TabsTrigger value="positionen" data-testid="tab-positionen" className="flex flex-col sm:flex-row items-center gap-1 text-xs p-2 sm:px-3 sm:py-1.5 h-auto">
+                  <Package className="h-3.5 w-3.5 shrink-0" />
+                  <span className="hidden sm:inline">Positionen</span>
+                  <span className="sm:hidden">Pos.</span>
+                </TabsTrigger>
                 <TabsTrigger value="kommentare" data-testid="tab-kommentare" className="flex flex-col sm:flex-row items-center gap-1 text-xs p-2 sm:px-3 sm:py-1.5 h-auto">
                   <MessageCircle className="h-3.5 w-3.5 shrink-0" />
                   <span className="hidden sm:inline">Kommentare</span>
@@ -2663,6 +2669,10 @@ export default function AuftragDetail({ id }: Props) {
               <TabsContent value="offerte" className="mt-4">
                 <OffertenTab id={id} auftrag={data} />
               </TabsContent>
+              <TabsContent value="positionen" className="mt-4">
+                <PositionenTab auftragId={data.id} />
+              </TabsContent>
+
               <TabsContent value="kommentare" className="mt-4">
                 <KommentareTab id={id} />
               </TabsContent>
