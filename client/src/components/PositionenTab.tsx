@@ -632,7 +632,7 @@ export default function PositionenTab({ auftragId }: { auftragId: string }) {
                 data-testid="btn-kalkulation-link"
                 className="text-xs"
                 onClick={() => {
-                  window.location.hash = `/kalkulation/vorkalkulation`;
+                  window.location.hash = `/auftraege/${auftragId}/kalkulation`;
                 }}
               >
                 <TrendingUp className="h-3.5 w-3.5 mr-1.5" />
