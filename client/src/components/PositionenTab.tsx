@@ -100,6 +100,7 @@ export default function PositionenTab({ auftragId }: { auftragId: string }) {
   const [neuesFormular, setNeuesFormular] = useState(LEER_FORM);
   const [zeigeForm, setZeigeForm] = useState(false);
   const [loescheId, setLoescheId] = useState<string | null>(null);
+  const [importLaeuft, setImportLaeuft] = useState(false);
 
   // ─── Daten laden ─────────────────────────────────────────────────────────
 
@@ -257,7 +258,7 @@ export default function PositionenTab({ auftragId }: { auftragId: string }) {
       {positionen.length > 0 && (
         <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2 mb-3">
           <Calculator className="h-3.5 w-3.5 shrink-0" />
-          <span>Diese Positionen fliessen automatisch in die <strong>Vorkalkulation</strong> ein — kein doppeltes Erfassen.</span>
+          <span>Mit <strong>"In Vorkalkulation übernehmen"</strong> werden Material &amp; Fremdleistungen direkt in die Vorkalkulation übertragen — kein doppeltes Erfassen.</span>
         </div>
       )}
 
@@ -628,15 +629,39 @@ export default function PositionenTab({ auftragId }: { auftragId: string }) {
               </Button>
               <Button
                 size="sm"
-                variant="outline"
+                variant="default"
                 data-testid="btn-kalkulation-link"
-                className="text-xs"
-                onClick={() => {
-                  window.location.hash = `/auftraege/${auftragId}/kalkulation`;
+                className="text-xs bg-amber-600 hover:bg-amber-700 text-white"
+                disabled={importLaeuft || positionen.length === 0}
+                onClick={async () => {
+                  setImportLaeuft(true);
+                  try {
+                    const r = await apiRequest(
+                      "POST",
+                      `/api/auftraege/${auftragId}/positionen/import-vorkalkulation`,
+                      { modus: "replace" }
+                    );
+                    const json = await r.json();
+                    if (!r.ok) throw new Error(json.message || "Import fehlgeschlagen");
+                    const { importiert, uebersprungen } = json;
+                    toast({
+                      title: "Vorkalkulation aktualisiert",
+                      description:
+                        `${importiert.material} Material, ${importiert.fremdleistungen} Fremdleistung(en) übertragen.` +
+                        (uebersprungen.lohn > 0
+                          ? ` (${uebersprungen.lohn} Lohn-Position(en) bitte manuell in VK-Stunden erfassen)`
+                          : ""),
+                    });
+                    window.location.hash = `/auftraege/${auftragId}/kalkulation`;
+                  } catch (err: any) {
+                    toast({ title: "Fehler beim Import", description: err.message, variant: "destructive" });
+                  } finally {
+                    setImportLaeuft(false);
+                  }
                 }}
               >
                 <TrendingUp className="h-3.5 w-3.5 mr-1.5" />
-                Zur Vorkalkulation
+                {importLaeuft ? "Wird übertragen…" : "In Vorkalkulation übernehmen"}
               </Button>
             </div>
           </div>

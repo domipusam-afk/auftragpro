@@ -6030,6 +6030,79 @@ export async function registerRoutes(
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
+  // POST /api/auftraege/:id/positionen/import-vorkalkulation
+  // Importiert auftrag_positionen → vorkalkulation_material / _fremdleistungen
+  // Überschreibt bestehende Einträge (löscht zuerst, dann neu einfügen)
+  app.post("/api/auftraege/:id/positionen/import-vorkalkulation", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { modus } = req.body; // "merge" | "replace" (default: replace)
+
+      // 1. Positionen laden
+      const { data: positionen, error: posErr } = await supabase
+        .from("auftrag_positionen")
+        .select("*")
+        .eq("auftrag_id", id)
+        .order("position", { ascending: true });
+      if (posErr) return res.status(500).json({ message: posErr.message });
+      if (!positionen || positionen.length === 0)
+        return res.status(400).json({ message: "Keine Positionen vorhanden" });
+
+      const materialPos = positionen.filter((p: any) => p.kategorie === "material");
+      const fremdPos    = positionen.filter((p: any) => p.kategorie === "fremdleistung");
+
+      // 2. Bei "replace" (Standard): bestehende VK-Einträge löschen
+      if (modus !== "merge") {
+        await supabase.from("vorkalkulation_material").delete().eq("auftrag_id", id);
+        await supabase.from("vorkalkulation_fremdleistungen").delete().eq("auftrag_id", id);
+      }
+
+      // 3. Material-Positionen → vorkalkulation_material
+      let matCount = 0;
+      for (const p of materialPos) {
+        const row = {
+          id: uid(),
+          auftrag_id: id,
+          pos: p.position,
+          profil: p.bezeichnung,
+          bemerkung: p.beschreibung || "",
+          stueck: p.menge,
+          laenge_mm: null,
+          kg_pro_m: null,
+          total_kg: null,
+          preis_pro_einheit: p.einzelpreis,
+          total_chf: Math.round(p.menge * p.einzelpreis * 100) / 100,
+        };
+        const { error } = await supabase.from("vorkalkulation_material").insert(row);
+        if (!error) matCount++;
+      }
+
+      // 4. Fremdleistungs-Positionen → vorkalkulation_fremdleistungen
+      let fremdCount = 0;
+      for (const p of fremdPos) {
+        const row = {
+          id: uid(),
+          auftrag_id: id,
+          bezeichnung: p.bezeichnung,
+          anzahl: p.menge,
+          einheit: p.einheit,
+          preis_pro_einheit: p.einzelpreis,
+          total_chf: Math.round(p.menge * p.einzelpreis * 100) / 100,
+        };
+        const { error } = await supabase.from("vorkalkulation_fremdleistungen").insert(row);
+        if (!error) fremdCount++;
+      }
+
+      res.json({
+        ok: true,
+        importiert: { material: matCount, fremdleistungen: fremdCount },
+        uebersprungen: {
+          lohn: positionen.filter((p: any) => p.kategorie === "lohn").length,
+        },
+      });
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
   // ─────────────────────────────────────────────────────────────────────────────
 
   // Kunden-Nachricht speichern
