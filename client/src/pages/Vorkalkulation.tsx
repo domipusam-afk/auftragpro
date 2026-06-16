@@ -366,19 +366,16 @@ function MaterialBlock({ auftragId }: { auftragId: string }) {
 
   const delMut = useMutation({
     mutationFn: (id: string) =>
-      apiRequest("DELETE", `/api/vorkalkulation/${auftragId}/material/${id}`),
-    onMutate: async (id: string) => {
-      await queryClient.cancelQueries({ queryKey: ["/api/vorkalkulation/material", auftragId] });
-      const prev = queryClient.getQueryData(["/api/vorkalkulation/material", auftragId]);
-      queryClient.setQueryData(["/api/vorkalkulation/material", auftragId], (old: any[]) => (old || []).filter(i => i.id !== id));
-      return { prev };
+      apiRequest("DELETE", `/api/vorkalkulation/${auftragId}/material/${id}`).then(r => r.json()),
+    onSuccess: (_data, id) => {
+      queryClient.setQueryData(["/api/vorkalkulation/material", auftragId], (old: any[]) =>
+        (old || []).filter(i => i.id !== id)
+      );
+      queryClient.invalidateQueries({ queryKey: ["/api/vorkalkulation/material", auftragId] });
     },
-    onError: (_e, _id, ctx: any) => {
-      queryClient.setQueryData(["/api/vorkalkulation/material", auftragId], ctx?.prev);
+    onError: () => {
       toast({ title: "Fehler beim Löschen", description: "Position konnte nicht gelöscht werden.", variant: "destructive" });
     },
-    onSettled: () =>
-      queryClient.refetchQueries({ queryKey: ["/api/vorkalkulation/material", auftragId] }),
   });
 
   const updateMut = useMutation({
@@ -620,19 +617,16 @@ function FremdleistungenBlock({ auftragId }: { auftragId: string }) {
 
   const delMut = useMutation({
     mutationFn: (id: string) =>
-      apiRequest("DELETE", `/api/vorkalkulation/${auftragId}/fremdleistungen/${id}`),
-    onMutate: async (id: string) => {
-      await queryClient.cancelQueries({ queryKey: ["/api/vorkalkulation/fremd", auftragId] });
-      const prev = queryClient.getQueryData(["/api/vorkalkulation/fremd", auftragId]);
-      queryClient.setQueryData(["/api/vorkalkulation/fremd", auftragId], (old: any[]) => (old || []).filter(i => i.id !== id));
-      return { prev };
+      apiRequest("DELETE", `/api/vorkalkulation/${auftragId}/fremdleistungen/${id}`).then(r => r.json()),
+    onSuccess: (_data, id) => {
+      queryClient.setQueryData(["/api/vorkalkulation/fremd", auftragId], (old: any[]) =>
+        (old || []).filter(i => i.id !== id)
+      );
+      queryClient.invalidateQueries({ queryKey: ["/api/vorkalkulation/fremd", auftragId] });
     },
-    onError: (_e, _id, ctx: any) => {
-      queryClient.setQueryData(["/api/vorkalkulation/fremd", auftragId], ctx?.prev);
+    onError: () => {
       toast({ title: "Fehler beim Löschen", description: "Position konnte nicht gelöscht werden.", variant: "destructive" });
     },
-    onSettled: () =>
-      queryClient.refetchQueries({ queryKey: ["/api/vorkalkulation/fremd", auftragId] }),
   });
 
   const [nr, setNr] = useState({ bezeichnung: "", anzahl: 1, einheit: "Psch.", preis: 0 });
@@ -816,19 +810,16 @@ function SoekBlock({ auftragId }: { auftragId: string }) {
 
   const delMut = useMutation({
     mutationFn: (id: string) =>
-      apiRequest("DELETE", `/api/vorkalkulation/${auftragId}/soek/${id}`),
-    onMutate: async (id: string) => {
-      await queryClient.cancelQueries({ queryKey: ["/api/vorkalkulation/soek", auftragId] });
-      const prev = queryClient.getQueryData(["/api/vorkalkulation/soek", auftragId]);
-      queryClient.setQueryData(["/api/vorkalkulation/soek", auftragId], (old: any[]) => (old || []).filter(i => i.id !== id));
-      return { prev };
+      apiRequest("DELETE", `/api/vorkalkulation/${auftragId}/soek/${id}`).then(r => r.json()),
+    onSuccess: (_data, id) => {
+      queryClient.setQueryData(["/api/vorkalkulation/soek", auftragId], (old: any[]) =>
+        (old || []).filter(i => i.id !== id)
+      );
+      queryClient.invalidateQueries({ queryKey: ["/api/vorkalkulation/soek", auftragId] });
     },
-    onError: (_e, _id, ctx: any) => {
-      queryClient.setQueryData(["/api/vorkalkulation/soek", auftragId], ctx?.prev);
+    onError: () => {
       toast({ title: "Fehler beim Löschen", description: "Position konnte nicht gelöscht werden.", variant: "destructive" });
     },
-    onSettled: () =>
-      queryClient.refetchQueries({ queryKey: ["/api/vorkalkulation/soek", auftragId] }),
   });
 
   const [nr, setNr] = useState({ bezeichnung: "", anzahl: 1, einheit: "Stk.", preis: 0 });
