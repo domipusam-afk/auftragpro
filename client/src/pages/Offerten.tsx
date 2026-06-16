@@ -14,6 +14,16 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Offerte, OffertePosition, Auftrag } from "@shared/schema";
 
+const openPdfInTab = (url: string) => {
+  const a = document.createElement("a");
+  a.href = url;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+};
+
 const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -95,7 +105,7 @@ export default function Offerten() {
       if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
-      window.open(url, "_blank");
+      openPdfInTab(url);
       setPdfDialog(null);
       toast({ title: "PDF erstellt", description: `Offerte ${nr} — im Browser-Tab geöffnet` });
     } catch (e: any) {

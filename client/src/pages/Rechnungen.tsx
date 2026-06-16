@@ -198,9 +198,20 @@ export default function Rechnungen() {
   const handlePdfDownload = async () => {
     if (!pdfDialog) return;
     const { rechnung, auftragId, intern, internEmail, internTelefon, extern } = pdfDialog;
+    // Hilfsfunktion: öffnet PDF in neuem Tab (kein download-Attribut = kein Browser-Block)
+    const openPdfBlob = (url: string) => {
+      const a = document.createElement("a");
+      a.href = url;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+    };
+
     // Falls Vorschau bereits geladen, direkt öffnen
     if (pdfPreviewUrl) {
-      window.open(pdfPreviewUrl, "_blank");
+      openPdfBlob(pdfPreviewUrl);
       setPdfDialog(null);
       setPdfPreviewUrl(null);
       toast({ title: "PDF geöffnet", description: `Rechnung ${rechnung.nr} — im Browser-Tab geöffnet` });
@@ -215,7 +226,7 @@ export default function Rechnungen() {
       );
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      window.open(url, "_blank");
+      openPdfBlob(url);
       setPdfDialog(null);
       toast({ title: "PDF erstellt", description: `Rechnung ${rechnung.nr} — im Browser-Tab geöffnet` });
     } catch (e: any) {

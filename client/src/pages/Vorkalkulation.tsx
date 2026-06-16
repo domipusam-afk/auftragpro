@@ -44,6 +44,16 @@ import { useToast } from "@/hooks/use-toast";
 import { formatCHF } from "@/lib/format";
 import type { Auftrag } from "@shared/schema";
 
+const openPdfInTab = (url: string) => {
+  const a = document.createElement("a");
+  a.href = url;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+};
+
 const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -184,7 +194,7 @@ async function downloadKalkulationPdf(
     }
     const blob = await r.blob();
     const url = URL.createObjectURL(blob);
-    window.open(url, "_blank");
+    openPdfInTab(url);
     toast({ title: "PDF erstellt ✓ — im Browser-Tab geöffnet" });
   } catch (e: any) {
     toast({ title: "Fehler", description: e.message, variant: "destructive" });

@@ -89,6 +89,16 @@ import { STATUS_BADGE, PRIO_BADGE, formatCHF, formatDate, formatDateTime } from 
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 
+const openPdfInTab = (url: string) => {
+  const a = document.createElement("a");
+  a.href = url;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+};
+
 interface DetailData extends Auftrag {
   verlauf: VerlaufEintrag[];
   notizen: Notiz[];
@@ -523,7 +533,7 @@ function RechnungenTab({
       if (!r.ok) throw new Error(await r.text());
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
-      window.open(url, "_blank");
+      openPdfInTab(url);
       toast({ title: "PDF erstellt", description: `Rechnung ${nr} — im Browser-Tab geöffnet` });
     } catch (e: any) {
       toast({ title: "Fehler", description: e.message, variant: "destructive" });
@@ -847,7 +857,7 @@ function OffertenTab({ id, auftrag }: { id: string; auftrag: Auftrag }) {
       if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
-      window.open(url, "_blank");
+      openPdfInTab(url);
       toast({ title: "PDF erstellt", description: `Offerte ${nr} — im Browser-Tab geöffnet` });
     } catch (e: any) {
       toast({ title: "PDF Fehler", description: e.message, variant: "destructive" });
@@ -1728,7 +1738,7 @@ function GarantienTab({ id, auftrag }: { id: string; auftrag: any }) {
       const r = await apiRequest("POST", `/api/auftraege/${id}/abnahme-pdf`);
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
-      window.open(url, "_blank");
+      openPdfInTab(url);
     } catch (e: any) {
       toast({ title: "Fehler", description: e.message, variant: "destructive" });
     }
@@ -2370,7 +2380,7 @@ export default function AuftragDetail({ id }: Props) {
                   const r = await apiRequest("POST", `/api/auftraege/${id}/lieferschein-pdf`, { ansprechpersonIntern: auftrag.verantwortlicher || "" });
                   const blob = await r.blob();
                   const url = URL.createObjectURL(blob);
-                  window.open(url, "_blank");
+                  openPdfInTab(url);
                 } catch (e: any) {
                   toast({ title: "Fehler", description: e.message, variant: "destructive" });
                 }
@@ -2387,7 +2397,7 @@ export default function AuftragDetail({ id }: Props) {
                   const r = await apiRequest("POST", `/api/auftraege/${id}/auftragsbestaetigung-pdf`, { ansprechpersonIntern: auftrag.verantwortlicher || "" });
                   const blob = await r.blob();
                   const url = URL.createObjectURL(blob);
-                  window.open(url, "_blank");
+                  openPdfInTab(url);
                 } catch (e: any) {
                   toast({ title: "Fehler", description: e.message, variant: "destructive" });
                 }

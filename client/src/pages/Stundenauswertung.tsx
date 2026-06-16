@@ -8,6 +8,16 @@ import { BarChart2, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 
+const openPdfInTab = (url: string) => {
+  const a = document.createElement("a");
+  a.href = url;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+};
+
 interface Mitarbeiter {
   id: string;
   vorname: string;
@@ -121,7 +131,7 @@ export default function Stundenauswertung() {
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
       const mo = new Date(year, month, 1).toLocaleString("de-CH", { month: "long" });
-      window.open(url, "_blank");
+      openPdfInTab(url);
       toast({ title: "PDF erstellt", description: `Stundenabrechnung ${mo} ${year} für ${fullName} — im Browser-Tab geöffnet` });
     } catch (e: any) {
       toast({ title: "Fehler", description: e.message, variant: "destructive" });
