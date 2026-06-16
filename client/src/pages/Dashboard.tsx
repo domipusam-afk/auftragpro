@@ -15,6 +15,7 @@ import {
   AlertTriangle,
   ArrowRight,
   TrendingUp,
+  TrendingDown,
   Banknote,
   CheckSquare,
   Bell,
@@ -202,6 +203,17 @@ export default function Dashboard() {
     },
   });
 
+  // Reingewinn aus VK/NK
+  const { data: reingewinnData, isLoading: reingewinnLoading } = useQuery<{ reingewinn: number; detail: any[] }>({
+    queryKey: ["/api/dashboard/reingewinn"],
+    queryFn: async () => {
+      const r = await apiRequest("GET", "/api/dashboard/reingewinn");
+      return r.json();
+    },
+    staleTime: 60_000, // 1 Min. cachen
+  });
+  const reingewinn = reingewinnData?.reingewinn ?? 0;
+
   // Fälligkeits-Warnungen
   const today = new Date(); today.setHours(0,0,0,0);
   const in7Days = new Date(today); in7Days.setDate(today.getDate() + 7);
@@ -383,7 +395,7 @@ export default function Dashboard() {
             FIBU-Export CSV
           </a>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-4">
           <KpiCard
             label={`Monatsumsatz ${now.toLocaleString("de-CH", { month: "long" })}`}
             value={monatsumsatz > 0 ? formatCHF(monatsumsatz) : "CHF 0"}
@@ -402,6 +414,49 @@ export default function Dashboard() {
             icon={CheckSquare}
             tone="green"
           />
+          {/* Reingewinn aus VK/NK */}
+          <div className="col-span-1">
+            <Card className={cn(
+              "p-3 md:p-5 bg-card h-full transition-all",
+              reingewinn > 0 ? "border-green-300" : reingewinn < 0 ? "border-red-300" : ""
+            )}>
+              <div className="flex items-start justify-between">
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs md:text-sm text-muted-foreground truncate">Reingewinn VK/NK</div>
+                  {reingewinnLoading ? (
+                    <div className="h-8 w-24 bg-muted rounded animate-pulse mt-1" />
+                  ) : (
+                    <div
+                      className="text-xl md:text-2xl font-bold mt-1 tabular-nums"
+                      style={{
+                        fontFamily: "var(--font-display)",
+                        color: reingewinn > 0 ? "#16a34a" : reingewinn < 0 ? "#dc2626" : undefined,
+                      }}
+                    >
+                      {reingewinn < 0 ? "−" : reingewinn > 0 ? "+" : ""}{formatCHF(Math.abs(reingewinn))}
+                    </div>
+                  )}
+                  <div className="text-xs mt-0.5 font-medium"
+                    style={{ color: reingewinn > 0 ? "#16a34a" : reingewinn < 0 ? "#dc2626" : "#6b7280" }}>
+                    {reingewinnLoading ? "" : reingewinn > 0 ? "Gewinn" : reingewinn < 0 ? "Verlust" : "Keine VK/NK Daten"}
+                  </div>
+                </div>
+                <div className={cn(
+                  "h-10 w-10 rounded-md flex items-center justify-center shrink-0",
+                  reingewinn > 0 ? "bg-green-100 text-green-600" : reingewinn < 0 ? "bg-red-100 text-red-600" : "bg-muted text-muted-foreground"
+                )}>
+                  {reingewinn >= 0
+                    ? <TrendingUp className="h-5 w-5" />
+                    : <TrendingDown className="h-5 w-5" />}
+                </div>
+              </div>
+              {!reingewinnLoading && reingewinnData && reingewinnData.detail.length > 0 && (
+                <div className="text-xs text-muted-foreground mt-1">
+                  {reingewinnData.detail.length} Auftrag{reingewinnData.detail.length !== 1 ? "äge" : ""} mit VK/NK
+                </div>
+              )}
+            </Card>
+          </div>
           {/* Offene Mahnungen */}
           <Link href="/mahnwesen">
             <a className="block h-full">

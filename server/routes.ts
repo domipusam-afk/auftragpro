@@ -498,6 +498,110 @@ export async function registerRoutes(
     }
   });
 
+  // ============= DASHBOARD REINGEWINN =============
+  // GET /api/dashboard/reingewinn
+  // Berechnet Gewinn/Verlust aller Aufträge aus VK-Offertpreis minus NK-Ist-Kosten
+  app.get("/api/dashboard/reingewinn", async (_req, res) => {
+    try {
+      // Alle Auftrag-IDs laden
+      const { data: auftraege } = await supabase
+        .from("auftraege")
+        .select("id, nr, titel, status");
+      if (!auftraege || auftraege.length === 0)
+        return res.json({ reingewinn: 0, detail: [] });
+
+      // Stundensaetze laden (einmalig)
+      const { data: saetzeRaw } = await supabase
+        .from("saetze")
+        .select("ort, maschinenpark, satz");
+      const saetze = saetzeRaw || [];
+
+      function getSatz(ort: string, maschine: string | null): number {
+        const m = (saetze as any[]).find((s: any) =>
+          ort === "Werkstatt"
+            ? s.ort === "Werkstatt" && s.maschinenpark === maschine
+            : s.ort === ort && !s.maschinenpark
+        );
+        return m ? Number(m.satz) : 0;
+      }
+
+      const detail: any[] = [];
+      let reingewinnTotal = 0;
+
+      for (const a of auftraege) {
+        const id = a.id;
+
+        // VK laden
+        const [vkStunden, vkMaterial, vkHilfsmat, vkFremd, vkSoek, vkCfgRaw] = await Promise.all([
+          supabase.from("vorkalkulation_stunden").select("soll_stunden,stundensatz").eq("auftrag_id", id),
+          supabase.from("vorkalkulation_material").select("total_chf").eq("auftrag_id", id),
+          supabase.from("vorkalkulation_hilfsmaterial").select("total_chf").eq("auftrag_id", id),
+          supabase.from("vorkalkulation_fremdleistungen").select("total_chf").eq("auftrag_id", id),
+          supabase.from("vorkalkulation_soek").select("total_chf").eq("auftrag_id", id),
+          supabase.from("vorkalkulation_config").select("risiko_gewinn_prozent,rabatt_prozent,mwst_prozent").eq("auftrag_id", id).maybeSingle(),
+        ]);
+
+        const cfg = (vkCfgRaw.data as any) || { risiko_gewinn_prozent: 10, rabatt_prozent: 0, mwst_prozent: 8.1 };
+        const vkSt = ((vkStunden.data || []) as any[]).reduce((s: number, r: any) => s + Number(r.soll_stunden) * Number(r.stundensatz), 0);
+        const vkMat = ((vkMaterial.data || []) as any[]).reduce((s: number, r: any) => s + Number(r.total_chf), 0);
+        const vkHilf = ((vkHilfsmat.data || []) as any[]).reduce((s: number, r: any) => s + Number(r.total_chf), 0);
+        const vkFr = ((vkFremd.data || []) as any[]).reduce((s: number, r: any) => s + Number(r.total_chf), 0);
+        const vkSo = ((vkSoek.data || []) as any[]).reduce((s: number, r: any) => s + Number(r.total_chf), 0);
+        const vkSub = vkSt + vkMat + vkHilf + vkFr + vkSo;
+        const vkRisiko = vkSub * (Number(cfg.risiko_gewinn_prozent) / 100);
+        const vkNorR = vkSub + vkRisiko;
+        const vkRabatt = vkNorR * (Number(cfg.rabatt_prozent) / 100);
+        const vkNetto = vkNorR - vkRabatt;
+        const vkMwst = vkNetto * (Number(cfg.mwst_prozent) / 100);
+        const vkBrutto = Math.round((vkNetto + vkMwst) * 100) / 100;
+
+        // NK laden (Ist-Kosten)
+        const [zeiteintraege, nakaMat, nakaFremd, nakaSoek] = await Promise.all([
+          supabase.from("zeiteintraege").select("ort,maschinenpark,dauer_minuten").eq("auftrag_id", id),
+          supabase.from("nachkalkulation_material").select("betrag_chf").eq("auftrag_id", id),
+          supabase.from("nachkalkulation_fremdleistungen").select("betrag_chf").eq("auftrag_id", id),
+          supabase.from("nachkalkulation_soek").select("betrag_chf").eq("auftrag_id", id),
+        ]);
+
+        // Stunden nach Ort gruppieren
+        const ortMap: Record<string, { minuten: number; satz: number }> = {};
+        for (const z of ((zeiteintraege.data || []) as any[])) {
+          const ort = z.ort || "Unbekannt";
+          const masch = z.maschinenpark || null;
+          const key = masch ? `${ort}::${masch}` : ort;
+          if (!ortMap[key]) ortMap[key] = { minuten: 0, satz: getSatz(ort, masch) };
+          ortMap[key].minuten += Number(z.dauer_minuten) || 0;
+        }
+        const istSt = Object.values(ortMap).reduce((s, v) => s + (v.minuten / 60) * v.satz, 0);
+        const istMat = ((nakaMat.data || []) as any[]).reduce((s: number, r: any) => s + Number(r.betrag_chf), 0);
+        const istFr = ((nakaFremd.data || []) as any[]).reduce((s: number, r: any) => s + Number(r.betrag_chf), 0);
+        const istSo = ((nakaSoek.data || []) as any[]).reduce((s: number, r: any) => s + Number(r.betrag_chf), 0);
+        const istGesamt = Math.round((istSt + istMat + istFr + istSo) * 100) / 100;
+
+        // Nur Aufträge mit VK-Daten einbeziehen
+        if (vkBrutto === 0 && istGesamt === 0) continue;
+
+        const gewinn = Math.round((vkBrutto - istGesamt) * 100) / 100;
+        reingewinnTotal += gewinn;
+
+        detail.push({
+          id,
+          nr: a.nr,
+          titel: a.titel,
+          status: a.status,
+          vk_offertpreis: vkBrutto,
+          ist_kosten: istGesamt,
+          gewinn,
+        });
+      }
+
+      res.json({
+        reingewinn: Math.round(reingewinnTotal * 100) / 100,
+        detail,
+      });
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
   // ============= AUFTRAEGE =============
   app.get("/api/auftraege", async (_req, res) => {
     try {
