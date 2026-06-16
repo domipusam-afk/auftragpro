@@ -111,7 +111,7 @@ export default function PositionenTab({ auftragId }: { auftragId: string }) {
 
   // ─── Mutationen ──────────────────────────────────────────────────────────
 
-  const inv = () => queryClient.invalidateQueries({
+  const inv = () => queryClient.refetchQueries({
     queryKey: ["/api/auftraege", auftragId, "positionen"],
   });
 
@@ -141,8 +141,19 @@ export default function PositionenTab({ auftragId }: { auftragId: string }) {
   const loescheMutation = useMutation({
     mutationFn: (pid: string) =>
       apiRequest("DELETE", `/api/auftraege/${auftragId}/positionen/${pid}`).then(r => r.json()),
-    onSuccess: () => { inv(); setLoescheId(null); toast({ title: "Position gelöscht" }); },
-    onError: (e: any) => toast({ title: "Fehler", description: e.message, variant: "destructive" }),
+    onMutate: async (pid: string) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/auftraege", auftragId, "positionen"] });
+      const prev = queryClient.getQueryData(["/api/auftraege", auftragId, "positionen"]);
+      queryClient.setQueryData(["/api/auftraege", auftragId, "positionen"], (old: any[]) => (old || []).filter(p => p.id !== pid));
+      setLoescheId(null);
+      return { prev };
+    },
+    onError: (e: any, _pid, ctx: any) => {
+      queryClient.setQueryData(["/api/auftraege", auftragId, "positionen"], ctx?.prev);
+      toast({ title: "Fehler beim Löschen", description: e.message, variant: "destructive" });
+    },
+    onSettled: () => inv(),
+    onSuccess: () => toast({ title: "Position gelöscht" }),
   });
 
   // ─── Berechnungen ────────────────────────────────────────────────────────
