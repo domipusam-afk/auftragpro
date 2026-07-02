@@ -479,15 +479,7 @@ export default function Layout({ children }: { children: ReactNode }) {
     EINKAUF_NAV.some((n) => location === n.href || location.startsWith(n.href + "/"))
   );
 
-  // Mobile Drawer schliesst sich nur bei echter Navigation (location-Wechsel),
-  // NICHT beim Klick auf Accordion-Gruppen im Menü.
-  const prevLocation = useRef(location);
-  useEffect(() => {
-    if (prevLocation.current !== location) {
-      prevLocation.current = location;
-      setMobileOpen(false);
-    }
-  }, [location]);
+  useEffect(() => { setMobileOpen(false); }, [location]);
 
   useEffect(() => {
     const handleResize = () => { if (window.innerWidth >= 768) setMobileOpen(false); };
@@ -560,7 +552,6 @@ export default function Layout({ children }: { children: ReactNode }) {
               {auftraegeOpen && (
                 <div className="flex flex-col gap-0.5 mt-0.5">
                   <NavItem href="/auftraege" label="Alle Aufträge" icon={ListChecks} collapsed={false} indent />
-                  <KalkulationNavHint collapsed={false} />
                 </div>
               )}
             </div>
@@ -878,7 +869,10 @@ export default function Layout({ children }: { children: ReactNode }) {
             >
               <X className="h-5 w-5" />
             </button>
-            <SidebarContent mobile />
+            {/* nav-clicks schliessen die Sidebar auf Mobile */}
+            <div onClick={() => setMobileOpen(false)}>
+              <SidebarContent mobile />
+            </div>
           </aside>
         </div>
       )}
