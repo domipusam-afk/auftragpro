@@ -804,12 +804,60 @@ function OffertenTab({ id, auftrag }: { id: string; auftrag: Auftrag }) {
     { nr: 1, titel: "", beschreibung: "", menge: 1, einheit: "Stk.", einzelpreis: 0, total: 0 },
   ]);
   const [showForm, setShowForm] = useState(false);
+  const [editOfferte, setEditOfferte] = useState<Offerte | null>(null);
   const [pdfLoading, setPdfLoading] = useState<string | null>(null);
 
   const { data: offerten = [], isLoading } = useQuery<Offerte[]>({
     queryKey: ["/api/auftraege", id, "offerten"],
     queryFn: () => apiRequest("GET", `/api/auftraege/${id}/offerten`).then(r => r.json()),
   });
+
+  const updateMutation = useMutation({
+    mutationFn: (oid: string) => apiRequest("PATCH", `/api/offerten/${oid}`, {
+      ansprechpartner, telefon, email, anrede,
+      empfaenger_name: empfaengerName,
+      empfaenger_strasse: empfaengerStr,
+      empfaenger_plz_ort: empfaengerPlz,
+      projekt_beschreibung: projektBeschr,
+      intro_text: introText,
+      positionen,
+      rabatt_prozent: rabatt,
+      mwst_prozent: 8.1,
+      liefertermin, zahlungsbedingungen: zahlungsbed,
+      gueltigkeit, schluss_text: schlussText, datum,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auftraege", id, "offerten"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/offerten"] });
+      setShowForm(false);
+      setEditOfferte(null);
+      toast({ title: "Offerte aktualisiert ✓" });
+    },
+    onError: (e: any) => toast({ title: "Fehler", description: e.message, variant: "destructive" }),
+  });
+
+  const openEditForm = (o: Offerte) => {
+    setEditOfferte(o);
+    setAnrede(o.anrede || "Herr");
+    setEmpfaengerName(o.empfaenger_name || "");
+    setEmpfaengerStr(o.empfaenger_strasse || "");
+    setEmpfaengerPlz(o.empfaenger_plz_ort || "");
+    setAnsprechpartner(o.ansprechpartner || "");
+    setTelefon(o.telefon || "");
+    setEmail(o.email || "");
+    setProjektBeschr(o.projekt_beschreibung || "");
+    setIntroText(o.intro_text || "");
+    setSchlussText(o.schluss_text || "");
+    setDatum(o.datum || new Date().toISOString().slice(0, 10));
+    setRabatt(Number(o.rabatt_prozent) || 0);
+    setLiefertermin(o.liefertermin || "nach Vereinbarung");
+    setZahlungsbed(o.zahlungsbedingungen || "30 Tage netto");
+    setGueltigkeit(o.gueltigkeit || "30 Tage");
+    const pos: OffertePosition[] = Array.isArray(o.positionen) ? o.positionen as OffertePosition[] : [];
+    setPositionen(pos.length > 0 ? pos : [{ nr: 1, titel: "", beschreibung: "", menge: 1, einheit: "Stk.", einzelpreis: 0, total: 0 }]);
+    setShowForm(true);
+    setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 100);
+  };
 
   const createMutation = useMutation({
     mutationFn: () => apiRequest("POST", `/api/auftraege/${id}/offerten`, {
@@ -926,7 +974,7 @@ function OffertenTab({ id, auftrag }: { id: string; auftrag: Auftrag }) {
 
       {showForm && (
         <Card className="p-4 space-y-4 border-2 border-[#6b4c2a]/30">
-          <p className="text-sm font-bold text-[#6b4c2a]">Neue Offerte erstellen</p>
+          <p className="text-sm font-bold text-[#6b4c2a]">{editOfferte ? `Offerte ${editOfferte.nr} bearbeiten` : "Neue Offerte erstellen"}</p>
 
           {/* Empfänger */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1105,11 +1153,18 @@ function OffertenTab({ id, auftrag }: { id: string; auftrag: Auftrag }) {
           </div>
 
           <div className="flex gap-2 justify-end">
-            <Button variant="outline" onClick={() => setShowForm(false)}>Abbrechen</Button>
-            <Button onClick={() => createMutation.mutate()} disabled={createMutation.isPending}
-              className="bg-[#6b4c2a] hover:bg-[#5a3e22] text-white">
-              {createMutation.isPending ? "Speichern..." : "Offerte speichern"}
-            </Button>
+            <Button variant="outline" onClick={() => { setShowForm(false); setEditOfferte(null); }}>Abbrechen</Button>
+            {editOfferte ? (
+              <Button onClick={() => updateMutation.mutate(editOfferte.id)} disabled={updateMutation.isPending}
+                className="bg-[#6b4c2a] hover:bg-[#5a3e22] text-white">
+                {updateMutation.isPending ? "Speichern..." : "Änderungen speichern"}
+              </Button>
+            ) : (
+              <Button onClick={() => createMutation.mutate()} disabled={createMutation.isPending}
+                className="bg-[#6b4c2a] hover:bg-[#5a3e22] text-white">
+                {createMutation.isPending ? "Speichern..." : "Offerte speichern"}
+              </Button>
+            )}
           </div>
         </Card>
       )}
@@ -1152,6 +1207,11 @@ function OffertenTab({ id, auftrag }: { id: string; auftrag: Auftrag }) {
                       onClick={() => handlePdf(o.id, o.nr)}
                       disabled={pdfLoading === o.id}>
                       {pdfLoading === o.id ? "PDF..." : <><Eye className="w-3.5 h-3.5 mr-1" /> PDF</>}
+                    </Button>
+                    <Button size="sm" variant="outline"
+                      className="text-[#6b4c2a] border-[#6b4c2a]/40 hover:bg-[#6b4c2a]/10"
+                      onClick={() => openEditForm(o)}>
+                      <Pencil className="w-3.5 h-3.5 mr-1" /> Bearbeiten
                     </Button>
                     <Button size="sm" variant="outline"
                       className="text-green-700 border-green-300 hover:bg-green-50"
