@@ -11,6 +11,7 @@ import {
   Upload, Download, Trash, FileText, CheckCircle2, AlertTriangle, Info,
   Lock, Eye, EyeOff, DollarSign, Clock, Save, Building2, Mail, Phone,
   Shield, ShieldCheck, Smartphone, Copy, Check, Server, Percent, Image,
+  GripVertical, Plus, Pencil, X, GitBranch,
 } from "lucide-react";
 import { formatDate } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -1060,6 +1061,204 @@ function HintergrundTab({ settings }: { settings: EinstellungMap }) {
 
 // ─── Main Einstellungen Component ──────────────────────────────────────────────
 
+// ─── Status-Pipeline Tab ─────────────────────────────────────────────────────
+interface PipelineStatus { id: string; label: string; reihenfolge: number; farbe: string; }
+
+const FARB_OPTIONEN = [
+  { value: "orange",  label: "Orange",   cls: "bg-orange-500" },
+  { value: "blue",    label: "Blau",     cls: "bg-blue-500" },
+  { value: "purple",  label: "Lila",     cls: "bg-purple-500" },
+  { value: "yellow",  label: "Gelb",     cls: "bg-yellow-500" },
+  { value: "indigo",  label: "Indigo",   cls: "bg-indigo-500" },
+  { value: "green",   label: "Gr\u00fcn",    cls: "bg-green-500" },
+  { value: "red",     label: "Rot",      cls: "bg-red-500" },
+  { value: "gray",    label: "Grau",     cls: "bg-gray-500" },
+  { value: "teal",    label: "T\u00fcrkis",   cls: "bg-teal-500" },
+  { value: "pink",    label: "Pink",     cls: "bg-pink-500" },
+];
+
+function StatusPipelineTab() {
+  const { toast } = useToast();
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editLabel, setEditLabel] = useState("");
+  const [editFarbe, setEditFarbe] = useState("gray");
+  const [newLabel, setNewLabel] = useState("");
+  const [newFarbe, setNewFarbe] = useState("gray");
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [localOrder, setLocalOrder] = useState<PipelineStatus[]>([]);
+
+  const { data: pipeline = [], isLoading } = useQuery<PipelineStatus[]>({
+    queryKey: ["/api/einstellungen/status-pipeline"],
+    queryFn: () => apiRequest("GET", "/api/einstellungen/status-pipeline").then(r => r.json()),
+  });
+
+  useEffect(() => { setLocalOrder(pipeline); }, [pipeline]);
+
+  const addMut = useMutation({
+    mutationFn: (d: { label: string; reihenfolge: number; farbe: string }) =>
+      apiRequest("POST", "/api/einstellungen/status-pipeline", d).then(r => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/einstellungen/status-pipeline"] });
+      setNewLabel(""); setNewFarbe("gray");
+      toast({ title: "Status hinzugef\u00fcgt" });
+    },
+  });
+
+  const editMut = useMutation({
+    mutationFn: ({ id, label, farbe }: { id: string; label: string; farbe: string }) =>
+      apiRequest("PATCH", `/api/einstellungen/status-pipeline/${id}`, { label, farbe }).then(r => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/einstellungen/status-pipeline"] });
+      setEditId(null);
+      toast({ title: "Status gespeichert" });
+    },
+  });
+
+  const delMut = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest("DELETE", `/api/einstellungen/status-pipeline/${id}`).then(r => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/einstellungen/status-pipeline"] });
+      toast({ title: "Status gel\u00f6scht" });
+    },
+  });
+
+  const reorderMut = useMutation({
+    mutationFn: (order: { id: string; reihenfolge: number }[]) =>
+      apiRequest("POST", "/api/einstellungen/status-pipeline/reorder", { order }).then(r => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/einstellungen/status-pipeline"] });
+    },
+  });
+
+  const handleDragStart = (id: string) => setDragging(id);
+  const handleDragOver = (e: React.DragEvent, overId: string) => {
+    e.preventDefault();
+    if (!dragging || dragging === overId) return;
+    const arr = [...localOrder];
+    const fromIdx = arr.findIndex(s => s.id === dragging);
+    const toIdx = arr.findIndex(s => s.id === overId);
+    if (fromIdx === -1 || toIdx === -1) return;
+    const [moved] = arr.splice(fromIdx, 1);
+    arr.splice(toIdx, 0, moved);
+    setLocalOrder(arr);
+  };
+  const handleDrop = () => {
+    setDragging(null);
+    const order = localOrder.map((s, i) => ({ id: s.id, reihenfolge: i + 1 }));
+    reorderMut.mutate(order);
+  };
+
+  const farbCls = (v: string) => FARB_OPTIONEN.find(f => f.value === v)?.cls ?? "bg-gray-500";
+
+  return (
+    <Card className="p-6 space-y-6">
+      <div>
+        <h3 className="font-semibold text-base mb-1">Status-Pipeline</h3>
+        <p className="text-sm text-muted-foreground">Ziehe die Status in die gew\u00fcnschte Reihenfolge. \u201eStorniert\u201c ist fix und nicht \u00e4nderbar.</p>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-2">{[1,2,3].map(i => <div key={i} className="h-12 bg-muted rounded animate-pulse" />)}</div>
+      ) : (
+        <div className="space-y-2">
+          {localOrder.map((s) => (
+            <div
+              key={s.id}
+              draggable
+              onDragStart={() => handleDragStart(s.id)}
+              onDragOver={(e) => handleDragOver(e, s.id)}
+              onDrop={handleDrop}
+              className={`flex items-center gap-3 p-3 border rounded-lg bg-card cursor-grab active:cursor-grabbing transition-opacity ${
+                dragging === s.id ? "opacity-40" : "opacity-100"
+              }`}
+            >
+              <GripVertical className="h-4 w-4 text-muted-foreground shrink-0" />
+              <span className={`w-3 h-3 rounded-full shrink-0 ${farbCls(s.farbe)}`} />
+              {editId === s.id ? (
+                <>
+                  <Input
+                    value={editLabel}
+                    onChange={e => setEditLabel(e.target.value)}
+                    className="h-8 flex-1 text-sm"
+                    onKeyDown={e => e.key === "Enter" && editMut.mutate({ id: s.id, label: editLabel, farbe: editFarbe })}
+                    autoFocus
+                  />
+                  <select
+                    value={editFarbe}
+                    onChange={e => setEditFarbe(e.target.value)}
+                    className="h-8 text-sm border rounded px-2 bg-background"
+                  >
+                    {FARB_OPTIONEN.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+                  </select>
+                  <Button size="sm" className="h-8 px-3" onClick={() => editMut.mutate({ id: s.id, label: editLabel, farbe: editFarbe })}>
+                    <Check className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-8 px-2" onClick={() => setEditId(null)}>
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <span className="flex-1 text-sm font-medium">{s.label}</span>
+                  <Button size="sm" variant="ghost" className="h-8 px-2" onClick={() => { setEditId(s.id); setEditLabel(s.label); setEditFarbe(s.farbe); }}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-8 px-2 text-destructive hover:text-destructive" onClick={() => {
+                    if (localOrder.length <= 1) { toast({ title: "Mindestens 1 Status erforderlich", variant: "destructive" }); return; }
+                    delMut.mutate(s.id);
+                  }}>
+                    <Trash className="h-3.5 w-3.5" />
+                  </Button>
+                </>
+              )}
+            </div>
+          ))}
+          {/* Storniert fix */}
+          <div className="flex items-center gap-3 p-3 border rounded-lg bg-muted/40 opacity-60">
+            <GripVertical className="h-4 w-4 text-muted-foreground shrink-0" />
+            <span className="w-3 h-3 rounded-full shrink-0 bg-red-500" />
+            <span className="flex-1 text-sm font-medium">Storniert</span>
+            <span className="text-xs text-muted-foreground italic">Fix \u2014 nicht \u00e4nderbar</span>
+          </div>
+        </div>
+      )}
+
+      {/* Neuen Status hinzuf\u00fcgen */}
+      <div className="border-t pt-4">
+        <p className="text-sm font-medium mb-3">Neuen Status hinzuf\u00fcgen</p>
+        <div className="flex gap-2 flex-wrap">
+          <Input
+            placeholder="z.B. Montage, Abnahme ..."
+            value={newLabel}
+            onChange={e => setNewLabel(e.target.value)}
+            className="h-9 flex-1 min-w-[160px] text-sm"
+            onKeyDown={e => {
+              if (e.key === "Enter" && newLabel.trim()) {
+                addMut.mutate({ label: newLabel.trim(), reihenfolge: localOrder.length + 1, farbe: newFarbe });
+              }
+            }}
+          />
+          <select
+            value={newFarbe}
+            onChange={e => setNewFarbe(e.target.value)}
+            className="h-9 text-sm border rounded px-2 bg-background"
+          >
+            {FARB_OPTIONEN.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+          </select>
+          <Button
+            className="h-9"
+            disabled={!newLabel.trim() || addMut.isPending}
+            onClick={() => addMut.mutate({ label: newLabel.trim(), reihenfolge: localOrder.length + 1, farbe: newFarbe })}
+          >
+            <Plus className="h-4 w-4 mr-1" /> Hinzuf\u00fcgen
+          </Button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 export default function Einstellungen() {
   const { data: einstellungenList = [] } = useEinstellungen();
 
@@ -1108,6 +1307,10 @@ export default function Einstellungen() {
             <Image className="h-4 w-4 shrink-0" />
             <span>Hintergrund</span>
           </TabsTrigger>
+          <TabsTrigger value="status-pipeline" className="flex flex-col sm:flex-row items-center gap-1 text-xs p-2 sm:px-3 sm:py-1.5 h-auto">
+            <GitBranch className="h-4 w-4 shrink-0" />
+            <span>Status-Pipeline</span>
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="allgemein">
@@ -1137,6 +1340,9 @@ export default function Einstellungen() {
 
         <TabsContent value="hintergrund">
           <HintergrundTab settings={settings} />
+        </TabsContent>
+        <TabsContent value="status-pipeline">
+          <StatusPipelineTab />
         </TabsContent>
       </Tabs>
     </div>

@@ -118,20 +118,42 @@ function StatusPipeline({
   onChange: (s: Status) => void;
   disabled?: boolean;
 }) {
-  const currentIdx = STATUS_ORDER.indexOf(current);
   const isCancelled = current === "storniert";
+
+  // Dynamische Pipeline aus DB laden
+  const { data: pipeline = [] } = useQuery<{ id: string; label: string; reihenfolge: number; farbe: string }[]>({
+    queryKey: ["/api/einstellungen/status-pipeline"],
+    queryFn: () => apiRequest("GET", "/api/einstellungen/status-pipeline").then(r => r.json()),
+    staleTime: 60_000,
+  });
+
+  // Wenn DB noch lädt, Fallback auf hardcoded ORDER
+  const steps = pipeline.length > 0
+    ? pipeline
+    : STATUS_ORDER.filter(s => s !== "storniert").map((s, i) => ({ id: s, label: STATUS_LABEL[s], reihenfolge: i + 1, farbe: "gray" }));
+
+  // Aktuellen Index bestimmen — per label-Vergleich (case-insensitive)
+  const currentLabel = STATUS_LABEL[current] ?? current;
+  const currentIdx = steps.findIndex(s => s.label.toLowerCase() === currentLabel.toLowerCase());
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-1 flex-wrap">
-        {STATUS_ORDER.map((s, i) => {
+        {steps.map((s, i) => {
           const done = currentIdx >= i && !isCancelled;
           const active = currentIdx === i && !isCancelled;
           return (
             <button
-              key={s}
+              key={s.id}
               type="button"
               disabled={disabled}
-              onClick={() => onChange(s)}
+              onClick={() => {
+                // Versuche passenden Status-Key zu finden, sonst label direkt
+                const matchKey = (Object.keys(STATUS_LABEL) as Status[]).find(
+                  k => STATUS_LABEL[k].toLowerCase() === s.label.toLowerCase()
+                );
+                if (matchKey) onChange(matchKey);
+              }}
               className={cn(
                 "min-w-0 flex-1 px-1 sm:px-3 py-2 text-[10px] sm:text-xs font-medium rounded-md border transition-colors",
                 active
@@ -140,12 +162,12 @@ function StatusPipeline({
                   ? "bg-primary/10 text-primary border-primary/30"
                   : "bg-muted/40 text-muted-foreground border-border hover:bg-muted"
               )}
-              data-testid={`pipeline-${s}`}
+              data-testid={`pipeline-${s.id}`}
             >
               <div className="flex items-center gap-1.5 justify-center">
                 {done && <Check className="h-3 w-3" />}
                 <span className="text-[10px] opacity-70">{i + 1}.</span>
-                <span className="truncate">{STATUS_LABEL[s]}</span>
+                <span className="truncate">{s.label}</span>
               </div>
             </button>
           );

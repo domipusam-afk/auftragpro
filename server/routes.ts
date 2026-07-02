@@ -2743,6 +2743,71 @@ export async function registerRoutes(
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
+  // ─── Status-Pipeline CRUD ─────────────────────────────────────────────────────
+  app.get("/api/einstellungen/status-pipeline", async (_req, res) => {
+    try {
+      const { data, error } = await supabase
+        .from("auftrag_status_pipeline")
+        .select("*")
+        .order("reihenfolge");
+      if (error) throw error;
+      res.json(data || []);
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+  app.post("/api/einstellungen/status-pipeline", async (req, res) => {
+    try {
+      const { label, reihenfolge, farbe } = req.body;
+      const { data, error } = await supabase
+        .from("auftrag_status_pipeline")
+        .insert({ label, reihenfolge: Number(reihenfolge) || 0, farbe: farbe || "gray" })
+        .select().single();
+      if (error) throw error;
+      res.json(data);
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+  app.patch("/api/einstellungen/status-pipeline/:id", async (req, res) => {
+    try {
+      const { label, reihenfolge, farbe } = req.body;
+      const update: any = {};
+      if (label !== undefined) update.label = label;
+      if (reihenfolge !== undefined) update.reihenfolge = Number(reihenfolge);
+      if (farbe !== undefined) update.farbe = farbe;
+      const { data, error } = await supabase
+        .from("auftrag_status_pipeline")
+        .update(update)
+        .eq("id", req.params.id)
+        .select().single();
+      if (error) throw error;
+      res.json(data);
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+  app.delete("/api/einstellungen/status-pipeline/:id", async (req, res) => {
+    try {
+      const { error } = await supabase
+        .from("auftrag_status_pipeline")
+        .delete()
+        .eq("id", req.params.id);
+      if (error) throw error;
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+  // Bulk-Reihenfolge speichern (Drag & Drop)
+  app.post("/api/einstellungen/status-pipeline/reorder", async (req, res) => {
+    try {
+      const { order } = req.body as { order: { id: string; reihenfolge: number }[] };
+      await Promise.all(
+        order.map(({ id, reihenfolge }) =>
+          supabase.from("auftrag_status_pipeline").update({ reihenfolge }).eq("id", id)
+        )
+      );
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
   // ─── Stundensätze CRUD ────────────────────────────────────────────────────────
   app.get("/api/stundensaetze", async (_req, res) => {
     try {
