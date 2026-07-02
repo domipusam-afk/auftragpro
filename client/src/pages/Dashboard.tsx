@@ -89,9 +89,9 @@ function KpiCard({
               {value}
             </div>
           </div>
-          <div className="flex flex-col items-end gap-1">
-            <div className={cn("h-10 w-10 rounded-md flex items-center justify-center", tones[tone])}>
-              <Icon className="h-5 w-5" />
+          <div className="flex flex-col items-end gap-1 ml-1">
+            <div className={cn("h-8 w-8 md:h-10 md:w-10 rounded-md flex items-center justify-center shrink-0", tones[tone])}>
+              <Icon className="h-4 w-4 md:h-5 md:w-5" />
             </div>
           </div>
         </div>
@@ -442,12 +442,12 @@ export default function Dashboard() {
                   </div>
                 </div>
                 <div className={cn(
-                  "h-10 w-10 rounded-md flex items-center justify-center shrink-0",
+                  "h-8 w-8 md:h-10 md:w-10 rounded-md flex items-center justify-center shrink-0 ml-1",
                   reingewinn > 0 ? "bg-green-100 text-green-600" : reingewinn < 0 ? "bg-red-100 text-red-600" : "bg-muted text-muted-foreground"
                 )}>
                   {reingewinn >= 0
-                    ? <TrendingUp className="h-5 w-5" />
-                    : <TrendingDown className="h-5 w-5" />}
+                    ? <TrendingUp className="h-4 w-4 md:h-5 md:w-5" />
+                    : <TrendingDown className="h-4 w-4 md:h-5 md:w-5" />}
                 </div>
               </div>
               {!reingewinnLoading && reingewinnData && reingewinnData.detail.length > 0 && (
@@ -476,8 +476,8 @@ export default function Dashboard() {
                       </div>
                     )}
                   </div>
-                  <div className={cn("h-10 w-10 rounded-md flex items-center justify-center", offeneMahnungen.length > 0 ? "bg-orange-100 text-orange-600" : "bg-muted text-muted-foreground")}>
-                    <MailWarning className="h-5 w-5" />
+                  <div className={cn("h-8 w-8 md:h-10 md:w-10 rounded-md flex items-center justify-center shrink-0 ml-1", offeneMahnungen.length > 0 ? "bg-orange-100 text-orange-600" : "bg-muted text-muted-foreground")}>
+                    <MailWarning className="h-4 w-4 md:h-5 md:w-5" />
                   </div>
                 </div>
               </Card>
