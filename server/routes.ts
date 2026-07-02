@@ -538,10 +538,10 @@ export async function registerRoutes(
           supabase.from("vorkalkulation_hilfsmaterial").select("total_chf").eq("auftrag_id", id),
           supabase.from("vorkalkulation_fremdleistungen").select("total_chf").eq("auftrag_id", id),
           supabase.from("vorkalkulation_soek").select("total_chf").eq("auftrag_id", id),
-          supabase.from("vorkalkulation_config").select("risiko_gewinn_prozent,rabatt_prozent,mwst_prozent").eq("auftrag_id", id).maybeSingle(),
+          supabase.from("vorkalkulation_config").select("risiko_gewinn_prozent,rabatt_prozent,skonto_prozent,mwst_prozent").eq("auftrag_id", id).maybeSingle(),
         ]);
 
-        const cfg = (vkCfgRaw.data as any) || { risiko_gewinn_prozent: 10, rabatt_prozent: 0, mwst_prozent: 8.1 };
+        const cfg = (vkCfgRaw.data as any) || { risiko_gewinn_prozent: 10, rabatt_prozent: 0, skonto_prozent: 0, mwst_prozent: 8.1 };
         const vkSt = ((vkStunden.data || []) as any[]).reduce((s: number, r: any) => s + Number(r.soll_stunden) * Number(r.stundensatz), 0);
         const vkMat = ((vkMaterial.data || []) as any[]).reduce((s: number, r: any) => s + Number(r.total_chf), 0);
         const vkHilf = ((vkHilfsmat.data || []) as any[]).reduce((s: number, r: any) => s + Number(r.total_chf), 0);
@@ -3970,6 +3970,7 @@ export async function registerRoutes(
         auftrag_id: id,
         risiko_gewinn_prozent: 10,
         rabatt_prozent: 0,
+        skonto_prozent: 0,
         mwst_prozent: 8.1,
         notiz: "",
       });
@@ -3993,6 +3994,7 @@ export async function registerRoutes(
         auftrag_id: id,
         risiko_gewinn_prozent: Number(b.risiko_gewinn_prozent) ?? 10,
         rabatt_prozent: Number(b.rabatt_prozent) ?? 0,
+        skonto_prozent: Number(b.skonto_prozent) ?? 0,
         mwst_prozent: Number(b.mwst_prozent) ?? 8.1,
         notiz: String(b.notiz || ""),
       };
