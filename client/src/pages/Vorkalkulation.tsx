@@ -148,6 +148,17 @@ interface NakaFremd {
   notiz: string;
 }
 
+interface NakaSoek {
+  id?: string;
+  auftrag_id: string;
+  bezeichnung: string;
+  anzahl: number;
+  einheit: string;
+  preis_pro_einheit: number;
+  total_chf: number;
+  datum: string;
+}
+
 // ─── ORT-Konfiguration (muss mit stundensaetze-Tabelle übereinstimmen) ─────────
 
 const ORT_CONFIGS = [
@@ -1286,8 +1297,30 @@ function NachkalkulationBlock({
       queryClient.invalidateQueries({ queryKey: ["/api/nachkalkulation/fremd", auftragId] }),
   });
 
+  // ── NK SOEK ────────────────────────────────────────────────────────────────────
+  const { data: nakaSoek = [] } = useQuery<NakaSoek[]>({
+    queryKey: ["/api/nachkalkulation/soek", auftragId],
+    queryFn: () => apiRequest("GET", `/api/nachkalkulation/${auftragId}/soek`).then((r) => r.json()),
+  });
+
+  const addNakaSoek = useMutation({
+    mutationFn: (item: Omit<NakaSoek, "id">) =>
+      apiRequest("POST", `/api/nachkalkulation/${auftragId}/soek`, item),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["/api/nachkalkulation/soek", auftragId] }),
+  });
+
+  const delNakaSoek = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest("DELETE", `/api/nachkalkulation/${auftragId}/soek/${id}`),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["/api/nachkalkulation/soek", auftragId] }),
+  });
+
   const [newMat, setNewMat] = useState({ bezeichnung: "", lieferant: "", betrag_chf: 0, datum: new Date().toISOString().slice(0, 10), notiz: "" });
   const [newFrmd, setNewFrmd] = useState({ bezeichnung: "", lieferant: "", betrag_chf: 0, datum: new Date().toISOString().slice(0, 10), notiz: "" });
+  const SOEK_EINHEITEN = ["Psch.", "Stk.", "km", "h", "m"];
+  const [newNkSoek, setNewNkSoek] = useState({ bezeichnung: "", anzahl: 1, einheit: "Psch.", preis_pro_einheit: 0, datum: new Date().toISOString().slice(0, 10) });
 
   // ── Berechnungen ──────────────────────────────────────────────────────────────
 
@@ -1309,9 +1342,8 @@ function NachkalkulationBlock({
   // SOLL aggregieren (von VK)
   const sollByOrt: Record<string, { label: string; stunden: number; kosten: number }> = {};
   for (const s of vkStunden) {
-    const key = (s as any)._maschinenpark
-      ? `${s.ort}::${(s as any)._maschinenpark}`
-      : s.ort;
+    const mp = (s as any).maschinenpark ?? null;
+    const key = mp ? `${s.ort}::${mp}` : s.ort;
     const label = ORT_CONFIGS.find(c => ortKey(c.ort, c.maschinenpark) === key)?.label || key;
     if (!sollByOrt[key]) sollByOrt[key] = { label, stunden: 0, kosten: 0 };
     sollByOrt[key].stunden += Number(s.soll_stunden);
@@ -1332,9 +1364,10 @@ function NachkalkulationBlock({
   const istTotalFremd = nakaFremd.reduce((s, f) => s + Number(f.betrag_chf), 0);
 
   const vkTotalSoek = vkSoek.reduce((s, s2) => s + Number(s2.total_chf), 0);
+  const istTotalSoek = nakaSoek.reduce((s, s2) => s + Number(s2.total_chf), 0);
 
   const vkSelbstkosten = vkTotalStundenKosten + vkTotalMaterial + vkTotalFremd + vkTotalSoek;
-  const istSelbstkosten = istTotalStundenKosten + istTotalMaterial + istTotalFremd;
+  const istSelbstkosten = istTotalStundenKosten + istTotalMaterial + istTotalFremd + istTotalSoek;
 
   // VK-Offertpreis aus Konfiguration
   const risikoGewinnPctNaka = vkConfigNaka?.risiko_gewinn_prozent ?? 15;
@@ -1422,6 +1455,7 @@ function NachkalkulationBlock({
             <DiffRow label="Stundenkosten Total" soll={vkTotalStundenKosten} ist={istTotalStundenKosten} />
             <DiffRow label="Material" soll={vkTotalMaterial} ist={istTotalMaterial} />
             <DiffRow label="Fremdleistungen" soll={vkTotalFremd} ist={istTotalFremd} />
+            <DiffRow label="SOEK / Spesen" soll={vkTotalSoek} ist={istTotalSoek} />
             <tr className="font-bold bg-primary/5 border-t-2">
               <td className="p-3">Selbstkosten</td>
               <td className="p-3 text-right tabular-nums">CHF {vkSelbstkosten.toFixed(2)}</td>
@@ -1764,6 +1798,110 @@ function NachkalkulationBlock({
             <div className="flex justify-between px-3 py-1.5 font-bold text-sm border-t">
               <span>Total Ist-Fremdleistungen</span>
               <span style={{ color: "hsl(var(--primary))" }}>CHF {istTotalFremd.toFixed(2)}</span>
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {/* IST-SOEK */}
+      <Card className="p-4 space-y-3">
+        <h3 className="font-semibold text-sm" style={{ fontFamily: "var(--font-display)" }}>
+          Ist-SOEK / Spesen (effektive Kosten)
+        </h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 items-end">
+          <div className="sm:col-span-2">
+            <Label className="text-xs">Bezeichnung</Label>
+            <Input
+              value={newNkSoek.bezeichnung}
+              onChange={(e) => setNewNkSoek((p) => ({ ...p, bezeichnung: e.target.value }))}
+              placeholder="z.B. Verpflegung, Fahrtkosten, km…"
+              className="mt-0.5 h-8"
+            />
+          </div>
+          <div>
+            <Label className="text-xs">Anzahl</Label>
+            <Input
+              type="number"
+              min={0}
+              step="0.01"
+              value={newNkSoek.anzahl || ""}
+              onChange={(e) => setNewNkSoek((p) => ({ ...p, anzahl: Number(e.target.value) || 1 }))}
+              className="mt-0.5 h-8"
+            />
+          </div>
+          <div>
+            <Label className="text-xs">Einheit</Label>
+            <Select value={newNkSoek.einheit} onValueChange={(v) => setNewNkSoek((p) => ({ ...p, einheit: v }))}>
+              <SelectTrigger className="mt-0.5 h-8">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SOEK_EINHEITEN.map((e) => <SelectItem key={e} value={e}>{e}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs">Fr. / Einheit</Label>
+            <Input
+              type="number"
+              min={0}
+              step="0.01"
+              value={newNkSoek.preis_pro_einheit || ""}
+              onChange={(e) => setNewNkSoek((p) => ({ ...p, preis_pro_einheit: Number(e.target.value) || 0 }))}
+              className="mt-0.5 h-8"
+            />
+          </div>
+          <div>
+            <Label className="text-xs">Datum</Label>
+            <Input
+              type="date"
+              value={newNkSoek.datum}
+              onChange={(e) => setNewNkSoek((p) => ({ ...p, datum: e.target.value }))}
+              className="mt-0.5 h-8"
+            />
+          </div>
+          <div className="flex items-end sm:col-span-2">
+            <Button
+              onClick={() => {
+                const total = newNkSoek.anzahl * newNkSoek.preis_pro_einheit;
+                addNakaSoek.mutate({
+                  auftrag_id: auftragId,
+                  ...newNkSoek,
+                  total_chf: total,
+                });
+                setNewNkSoek({ bezeichnung: "", anzahl: 1, einheit: "Psch.", preis_pro_einheit: 0, datum: new Date().toISOString().slice(0, 10) });
+              }}
+              disabled={!newNkSoek.bezeichnung || addNakaSoek.isPending}
+              className="w-full h-8 bg-[#e8620a] hover:bg-[#cf5509] text-white text-xs"
+            >
+              <Plus className="h-3.5 w-3.5 mr-1" /> Ist-SOEK erfassen
+            </Button>
+          </div>
+        </div>
+        {nakaSoek.length > 0 && (
+          <div className="space-y-1.5 mt-2">
+            {nakaSoek.map((s) => (
+              <div key={s.id} className="flex items-center justify-between gap-2 rounded-lg border bg-muted/20 px-3 py-2 text-sm">
+                <div className="flex-1">
+                  <span className="font-medium">{s.bezeichnung}</span>
+                  <span className="text-muted-foreground ml-2 text-xs">{s.anzahl} {s.einheit} × CHF {Number(s.preis_pro_einheit).toFixed(2)}</span>
+                </div>
+                <span className="font-semibold tabular-nums text-sm" style={{ color: "hsl(var(--primary))" }}>
+                  CHF {Number(s.total_chf).toFixed(2)}
+                </span>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-6 w-6 text-destructive"
+                  onClick={() => s.id && delNakaSoek.mutate(s.id)}
+                >
+                  <Trash2 className="h-3 w-3" />
+                </Button>
+              </div>
+            ))}
+            <div className="flex justify-between px-3 py-1.5 font-bold text-sm border-t">
+              <span>Total Ist-SOEK</span>
+              <span style={{ color: "hsl(var(--primary))" }}>CHF {istTotalSoek.toFixed(2)}</span>
             </div>
           </div>
         )}

@@ -4121,6 +4121,46 @@ export async function registerRoutes(
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
+  // ── NK SOEK (Ist-Sondereinzelkosten) ─────────────────────────────────────────
+  app.get("/api/nachkalkulation/:id/soek", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { data, error } = await supabase
+        .from("nachkalkulation_soek")
+        .select("*")
+        .eq("auftrag_id", id)
+        .order("datum");
+      if (error) return res.status(500).json({ message: asError(error) });
+      res.json(data ?? []);
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+  app.post("/api/nachkalkulation/:id/soek", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const body = { ...req.body, auftrag_id: id };
+      const { data, error } = await supabase
+        .from("nachkalkulation_soek")
+        .insert(body)
+        .select()
+        .single();
+      if (error) return res.status(500).json({ message: asError(error) });
+      res.json(data);
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+  app.delete("/api/nachkalkulation/:id/soek/:sid", async (req, res) => {
+    try {
+      const { sid } = req.params;
+      const { error } = await supabase
+        .from("nachkalkulation_soek")
+        .delete()
+        .eq("id", sid);
+      if (error) return res.status(500).json({ message: asError(error) });
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
   // ============= KALKULATION PDF =============
 
   app.post("/api/auftraege/:id/kalkulation-pdf", async (req, res) => {

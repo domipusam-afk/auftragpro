@@ -100,6 +100,25 @@ app.use((req, res, next) => {
     },
     () => {
       log(`serving on port ${port}`);
+
+      // ── Keep-Alive Self-Ping (Render Free Tier schläft sonst ein) ──────────
+      // Pingt sich selbst alle 9 Minuten, damit der Server wach bleibt.
+      // Render Free Tier schläft nach ~15 Min Inaktivität ein.
+      if (process.env.NODE_ENV === "production") {
+        const RENDER_URL = process.env.RENDER_EXTERNAL_URL || `http://localhost:${port}`;
+        const PING_INTERVAL_MS = 9 * 60 * 1000; // alle 9 Minuten
+
+        setInterval(async () => {
+          try {
+            const res = await fetch(`${RENDER_URL}/api/ping`);
+            log(`Keep-alive ping: ${res.status}`, "keepalive");
+          } catch (e: any) {
+            log(`Keep-alive ping failed: ${e.message}`, "keepalive");
+          }
+        }, PING_INTERVAL_MS);
+
+        log(`Keep-alive ping aktiv → ${RENDER_URL}/api/ping (alle 9 Min)`);
+      }
     },
   );
 })();
