@@ -140,7 +140,7 @@ export default function PositionenTab({ auftragId }: { auftragId: string }) {
 
   const loescheMutation = useMutation({
     mutationFn: (pid: string) =>
-      apiRequest("DELETE", `/api/auftraege/${auftragId}/positionen/${pid}`).then(r => r.json()),
+      apiRequest("DELETE", `/api/auftraege/${auftragId}/positionen/${pid}`),
     onMutate: async (pid: string) => {
       await queryClient.cancelQueries({ queryKey: ["/api/auftraege", auftragId, "positionen"] });
       const prev = queryClient.getQueryData(["/api/auftraege", auftragId, "positionen"]);

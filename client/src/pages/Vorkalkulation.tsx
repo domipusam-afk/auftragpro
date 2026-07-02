@@ -376,10 +376,10 @@ function MaterialBlock({ auftragId }: { auftragId: string }) {
 
   const delMut = useMutation({
     mutationFn: (id: string) =>
-      apiRequest("DELETE", `/api/vorkalkulation/${auftragId}/material/${id}`).then(r => r.json()),
+      apiRequest("DELETE", `/api/vorkalkulation/${auftragId}/material/${id}`),
     onSuccess: (_data, id) => {
       queryClient.setQueryData(["/api/vorkalkulation/material", auftragId], (old: any[]) =>
-        (old || []).filter(i => i.id !== id)
+        (old || []).filter((i: any) => i.id !== id)
       );
       queryClient.invalidateQueries({ queryKey: ["/api/vorkalkulation/material", auftragId] });
     },
@@ -627,10 +627,10 @@ function FremdleistungenBlock({ auftragId }: { auftragId: string }) {
 
   const delMut = useMutation({
     mutationFn: (id: string) =>
-      apiRequest("DELETE", `/api/vorkalkulation/${auftragId}/fremdleistungen/${id}`).then(r => r.json()),
+      apiRequest("DELETE", `/api/vorkalkulation/${auftragId}/fremdleistungen/${id}`),
     onSuccess: (_data, id) => {
       queryClient.setQueryData(["/api/vorkalkulation/fremd", auftragId], (old: any[]) =>
-        (old || []).filter(i => i.id !== id)
+        (old || []).filter((i: any) => i.id !== id)
       );
       queryClient.invalidateQueries({ queryKey: ["/api/vorkalkulation/fremd", auftragId] });
     },
@@ -820,10 +820,10 @@ function SoekBlock({ auftragId }: { auftragId: string }) {
 
   const delMut = useMutation({
     mutationFn: (id: string) =>
-      apiRequest("DELETE", `/api/vorkalkulation/${auftragId}/soek/${id}`).then(r => r.json()),
+      apiRequest("DELETE", `/api/vorkalkulation/${auftragId}/soek/${id}`),
     onSuccess: (_data, id) => {
       queryClient.setQueryData(["/api/vorkalkulation/soek", auftragId], (old: any[]) =>
-        (old || []).filter(i => i.id !== id)
+        (old || []).filter((i: any) => i.id !== id)
       );
       queryClient.invalidateQueries({ queryKey: ["/api/vorkalkulation/soek", auftragId] });
     },
