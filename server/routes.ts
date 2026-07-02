@@ -2721,29 +2721,7 @@ export async function registerRoutes(
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
-  app.get("/api/einstellungen/:key", async (req, res) => {
-    try {
-      const { data, error } = await supabase.from("einstellungen").select("wert").eq("schluessel", req.params.key).single();
-      if (error) res.json({ wert: null });
-      else res.json(data);
-    } catch (e) { res.status(500).json({ message: asError(e) }); }
-  });
-
-  app.put("/api/einstellungen/:key", async (req, res) => {
-    try {
-      const { wert } = req.body;
-      // upsert
-      const { data: existing } = await supabase.from("einstellungen").select("schluessel").eq("schluessel", req.params.key).single();
-      if (existing) {
-        await supabase.from("einstellungen").update({ wert }).eq("schluessel", req.params.key);
-      } else {
-        await supabase.from("einstellungen").insert({ schluessel: req.params.key, wert, erstellt: new Date().toISOString() });
-      }
-      res.json({ ok: true });
-    } catch (e) { res.status(500).json({ message: asError(e) }); }
-  });
-
-  // ─── Status-Pipeline CRUD ─────────────────────────────────────────────────────
+  // ─── Status-Pipeline CRUD (VOR :key Route!) ────────────────────────────────────────
   app.get("/api/einstellungen/status-pipeline", async (_req, res) => {
     try {
       const { data, error } = await supabase
@@ -2752,6 +2730,18 @@ export async function registerRoutes(
         .order("reihenfolge");
       if (error) throw error;
       res.json(data || []);
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+  app.post("/api/einstellungen/status-pipeline/reorder", async (req, res) => {
+    try {
+      const { order } = req.body as { order: { id: string; reihenfolge: number }[] };
+      await Promise.all(
+        order.map(({ id, reihenfolge }) =>
+          supabase.from("auftrag_status_pipeline").update({ reihenfolge }).eq("id", id)
+        )
+      );
+      res.json({ ok: true });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
@@ -2795,15 +2785,25 @@ export async function registerRoutes(
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
-  // Bulk-Reihenfolge speichern (Drag & Drop)
-  app.post("/api/einstellungen/status-pipeline/reorder", async (req, res) => {
+  // ────────────────────────────────────────────────────────────────────────────────
+  app.get("/api/einstellungen/:key", async (req, res) => {
     try {
-      const { order } = req.body as { order: { id: string; reihenfolge: number }[] };
-      await Promise.all(
-        order.map(({ id, reihenfolge }) =>
-          supabase.from("auftrag_status_pipeline").update({ reihenfolge }).eq("id", id)
-        )
-      );
+      const { data, error } = await supabase.from("einstellungen").select("wert").eq("schluessel", req.params.key).single();
+      if (error) res.json({ wert: null });
+      else res.json(data);
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+  app.put("/api/einstellungen/:key", async (req, res) => {
+    try {
+      const { wert } = req.body;
+      // upsert
+      const { data: existing } = await supabase.from("einstellungen").select("schluessel").eq("schluessel", req.params.key).single();
+      if (existing) {
+        await supabase.from("einstellungen").update({ wert }).eq("schluessel", req.params.key);
+      } else {
+        await supabase.from("einstellungen").insert({ schluessel: req.params.key, wert, erstellt: new Date().toISOString() });
+      }
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
