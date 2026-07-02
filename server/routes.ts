@@ -1034,6 +1034,8 @@ export async function registerRoutes(
     firmaEmail: string;
     positionen: any[];
     subtotal: number;
+    rabattPct?: number;
+    rabattBetrag?: number;
     mwstPct: number;
     mwstBetrag: number;
     total: number;
@@ -1231,6 +1233,7 @@ export async function registerRoutes(
       <div style="display:flex;justify-content:flex-end;margin-top:16px;">
         <div style="width:44%;font-size:9pt;">
           <div style="display:flex;justify-content:space-between;padding:3px 0"><span>Subtotal</span><span>${fmtCHF(data.subtotal)}</span></div>
+          ${(data.rabattPct && data.rabattPct > 0 && data.rabattBetrag) ? `<div style="display:flex;justify-content:space-between;padding:3px 0"><span>Rabatt ${data.rabattPct}%</span><span>- ${fmtCHF(data.rabattBetrag)}</span></div>` : ""}
           <div style="display:flex;justify-content:space-between;padding:3px 0"><span>MWST ${data.mwstPct.toFixed(1)}%</span><span>${fmtCHF(data.mwstBetrag)}</span></div>
           ${data.mahngebuehr ? `<div style="display:flex;justify-content:space-between;padding:3px 0"><span>Mahngebühr</span><span>${fmtCHF(data.mahngebuehr)}</span></div>` : ""}
           <div style="display:flex;justify-content:space-between;padding:5px 0;border-top:1.5px solid ${fc};margin-top:3px;font-weight:700;font-size:11pt;color:${fc}">
@@ -3387,10 +3390,13 @@ export async function registerRoutes(
       for (const s of (settingsArr || [])) sMap[s.schluessel] = s.wert;
 
       const positionen: any[] = Array.isArray(offerte.positionen) ? offerte.positionen : [];
-      const subtotal   = positionen.reduce((s: number, p: any) => s + Number(p.total ?? (Number(p.menge||0)*Number(p.einzelpreis||0))), 0);
-      const mwstPct    = Number(offerte.mwst_prozent) || 8.1;
-      const mwstBetrag = subtotal * (mwstPct / 100);
-      const totalInkl  = subtotal + mwstBetrag;
+      const subtotal     = positionen.reduce((s: number, p: any) => s + Number(p.total ?? (Number(p.menge||0)*Number(p.einzelpreis||0))), 0);
+      const rabattPct    = Number(offerte.rabatt_prozent) || 0;
+      const rabattBetrag = subtotal * (rabattPct / 100);
+      const totalExkl    = subtotal - rabattBetrag;
+      const mwstPct      = Number(offerte.mwst_prozent) || 8.1;
+      const mwstBetrag   = totalExkl * (mwstPct / 100);
+      const totalInkl    = totalExkl + mwstBetrag;
 
       const datumStr = offerte.datum
         ? new Date(offerte.datum).toLocaleDateString("de-CH", { day: "2-digit", month: "long", year: "numeric" })
@@ -3421,7 +3427,7 @@ export async function registerRoutes(
         firmaTel:     sMap.telefon   || "071 411 16 87",
         firmaEmail:   sMap.email     || "info@schneggenburger.ch",
         positionen,
-        subtotal, mwstPct, mwstBetrag, total: totalInkl,
+        subtotal, rabattPct, rabattBetrag, mwstPct, mwstBetrag, total: totalInkl,
         einleitung: offerte.intro_text || "",
         schluss: offerte.schluss_text || "",
         showTotals: true,
@@ -3454,10 +3460,13 @@ export async function registerRoutes(
       for (const s of (settingsArr || [])) sMap[s.schluessel] = s.wert;
 
       const positionen: any[] = Array.isArray(offerte.positionen) ? offerte.positionen : (typeof offerte.positionen === "string" ? JSON.parse(offerte.positionen) : []);
-      const subtotal   = positionen.reduce((s: number, p: any) => s + Number(p.total ?? (Number(p.menge||0)*Number(p.einzelpreis||0))), 0);
-      const mwstPct    = Number(offerte.mwst_prozent) || 8.1;
-      const mwstBetrag = subtotal * (mwstPct / 100);
-      const totalInkl  = subtotal + mwstBetrag;
+      const subtotal     = positionen.reduce((s: number, p: any) => s + Number(p.total ?? (Number(p.menge||0)*Number(p.einzelpreis||0))), 0);
+      const rabattPct    = Number(offerte.rabatt_prozent) || 0;
+      const rabattBetrag = subtotal * (rabattPct / 100);
+      const totalExkl    = subtotal - rabattBetrag;
+      const mwstPct      = Number(offerte.mwst_prozent) || 8.1;
+      const mwstBetrag   = totalExkl * (mwstPct / 100);
+      const totalInkl    = totalExkl + mwstBetrag;
 
       const datumStr = offerte.datum
         ? new Date(offerte.datum).toLocaleDateString("de-CH", { day: "2-digit", month: "long", year: "numeric" })
@@ -3488,7 +3497,7 @@ export async function registerRoutes(
         firmaTel:     sMap.telefon   || "071 411 16 87",
         firmaEmail:   sMap.email     || "info@schneggenburger.ch",
         positionen,
-        subtotal, mwstPct, mwstBetrag, total: totalInkl,
+        subtotal, rabattPct, rabattBetrag, mwstPct, mwstBetrag, total: totalInkl,
         einleitung: offerte.intro_text || "",
         schluss: offerte.schluss_text || "",
         showTotals: true,
