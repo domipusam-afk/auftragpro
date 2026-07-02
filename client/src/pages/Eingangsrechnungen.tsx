@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select";
 import { Receipt, Plus, Trash2, CheckCircle2, Upload, Ban } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/hooks/use-confirm";
 import { formatCHF, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Auftrag } from "@shared/schema";
@@ -41,6 +42,7 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 export default function Eingangsrechnungen() {
+  const { confirm: confirmEin, ConfirmDialog: EinConfirmDialog } = useConfirm();
   const { toast } = useToast();
   const [lieferant, setLieferant] = useState("");
   const [betrag, setBetrag] = useState("");
@@ -239,7 +241,7 @@ export default function Eingangsrechnungen() {
                     )}
                     {r.status !== "storniert" && (
                       <button
-                        onClick={() => { if (window.confirm(`Eingangsrechnung von "${r.lieferant}" wirklich stornieren?`)) updateMutation.mutate({ id: r.id, status: "storniert" }); }}
+                        onClick={async () => { if (await confirmEin({ title: `Eingangsrechnung stornieren?`, description: `Von "${r.lieferant}" wird storniert.` })) updateMutation.mutate({ id: r.id, status: "storniert" }); }}
                         className="p-1.5 rounded hover:bg-orange-50 text-muted-foreground hover:text-orange-600 transition-colors"
                         title="Stornieren"
                       >
@@ -247,7 +249,7 @@ export default function Eingangsrechnungen() {
                       </button>
                     )}
                     <button
-                      onClick={() => { if (window.confirm(`Eingangsrechnung von "${r.lieferant}" wirklich löschen?`)) delMutation.mutate(r.id); }}
+                      onClick={async () => { if (await confirmEin({ title: `Eingangsrechnung löschen?`, description: `Von "${r.lieferant}" wird dauerhaft gelöscht.` })) delMutation.mutate(r.id); }}
                       className="p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors"
                       title="Löschen"
                     >
@@ -260,6 +262,7 @@ export default function Eingangsrechnungen() {
           </div>
         )}
       </Card>
+      <EinConfirmDialog />
     </div>
   );
 }

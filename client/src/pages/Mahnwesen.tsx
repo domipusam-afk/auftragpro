@@ -17,18 +17,11 @@ import {
 import { AlertTriangle, Plus, CheckCircle2, Clock, Trash2, AlertCircle, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { formatCHF, formatDate } from "@/lib/format";
+import { downloadPdf } from "@/lib/pdf";
 import { cn } from "@/lib/utils";
 import type { Auftrag } from "@shared/schema";
 
-const openPdfInTab = (url: string) => {
-  const a = document.createElement("a");
-  a.href = url;
-  a.target = "_blank";
-  a.rel = "noopener noreferrer";
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
-};
+const openPdfInTab = (url: string, filename = "dokument.pdf") => { downloadPdf(url, filename); };
 
 interface Mahnung {
   id: string;
@@ -267,7 +260,7 @@ export default function Mahnwesen() {
                         if (!r.ok) throw new Error(await r.text());
                         const blob = await r.blob();
                         const url = URL.createObjectURL(blob);
-                        openPdfInTab(url);
+                        openPdfInTab(url, "Mahnung.pdf");
                       } catch (e: any) {
                         toast({ title: "Fehler beim PDF", description: e.message, variant: "destructive" });
                       }

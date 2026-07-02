@@ -15,6 +15,8 @@ import type { Rechnung, Auftrag } from "@shared/schema";
 import { formatCHF, formatDate } from "@/lib/format";
 import { Download, FileSpreadsheet, FileText, AlertCircle, CheckCircle2, Clock, Mail, Banknote, RotateCcw, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/hooks/use-confirm";
+import { downloadPdf } from "@/lib/pdf";
 
 const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
 
@@ -64,6 +66,7 @@ function statusBadge(r: Rechnung) {
 }
 
 export default function Rechnungen() {
+  const { confirm: confirmDel, ConfirmDialog: RechnungConfirmDialog } = useConfirm();
   const { toast } = useToast();
   const [exportZeitraum, setExportZeitraum] = useState("jahr");
   const [exportLoading, setExportLoading] = useState(false);
@@ -198,23 +201,12 @@ export default function Rechnungen() {
   const handlePdfDownload = async () => {
     if (!pdfDialog) return;
     const { rechnung, auftragId, intern, internEmail, internTelefon, extern } = pdfDialog;
-    // Hilfsfunktion: öffnet PDF in neuem Tab (kein download-Attribut = kein Browser-Block)
-    const openPdfBlob = (url: string) => {
-      const a = document.createElement("a");
-      a.href = url;
-      a.target = "_blank";
-      a.rel = "noopener noreferrer";
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
-    };
-
-    // Falls Vorschau bereits geladen, direkt öffnen
+    // Falls Vorschau bereits geladen, direkt herunterladen
     if (pdfPreviewUrl) {
-      openPdfBlob(pdfPreviewUrl);
+      downloadPdf(pdfPreviewUrl, `Rechnung_${rechnung.nr}.pdf`);
       setPdfDialog(null);
       setPdfPreviewUrl(null);
-      toast({ title: "PDF geöffnet", description: `Rechnung ${rechnung.nr} — im Browser-Tab geöffnet` });
+      toast({ title: "PDF heruntergeladen", description: `Rechnung ${rechnung.nr} — wird im Browser geöffnet` });
       return;
     }
     setPdfLoading(rechnung.id);
@@ -226,9 +218,9 @@ export default function Rechnungen() {
       );
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      openPdfBlob(url);
+      downloadPdf(url, `Rechnung_${rechnung.nr}.pdf`);
       setPdfDialog(null);
-      toast({ title: "PDF erstellt", description: `Rechnung ${rechnung.nr} — im Browser-Tab geöffnet` });
+      toast({ title: "PDF heruntergeladen", description: `Rechnung ${rechnung.nr} — wird im Browser geöffnet` });
     } catch (e: any) {
       toast({ title: "Fehler", description: (e as any).message || "PDF konnte nicht generiert werden.", variant: "destructive" });
     } finally {
@@ -454,8 +446,8 @@ Schneggenburger GmbH`,
                             title="Rechnung löschen"
                             disabled={deleteRechnungMutation.isPending}
                             data-testid={`button-delete-rechnung-${r.id}`}
-                            onClick={() => {
-                              if (window.confirm(`Rechnung ${r.nr} wirklich löschen?`)) {
+                            onClick={async () => {
+                              if (await confirmDel({ title: `Rechnung ${r.nr} löschen?`, description: "Die Rechnung wird dauerhaft gelöscht." })) {
                                 deleteRechnungMutation.mutate(r.id);
                               }
                             }}
@@ -582,7 +574,7 @@ Schneggenburger GmbH`,
                       variant="outline"
                       className="h-7 w-7 p-0 text-red-500 border-red-200 hover:bg-red-50"
                       disabled={deleteRechnungMutation.isPending}
-                      onClick={() => { if (window.confirm(`Rechnung ${r.nr} wirklich löschen?`)) deleteRechnungMutation.mutate(r.id); }}
+                      onClick={async () => { if (await confirmDel({ title: `Rechnung ${r.nr} löschen?`, description: 'Die Rechnung wird dauerhaft gelöscht.' })) deleteRechnungMutation.mutate(r.id); }}
                       title="Rechnung löschen"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -749,6 +741,7 @@ Schneggenburger GmbH`,
           refId={emailModal.refId}
         />
       )}
+    <RechnungConfirmDialog />
     </div>
   );
 }

@@ -41,18 +41,11 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/hooks/use-confirm";
 import { formatCHF } from "@/lib/format";
 import type { Auftrag } from "@shared/schema";
 
-const openPdfInTab = (url: string) => {
-  const a = document.createElement("a");
-  a.href = url;
-  a.target = "_blank";
-  a.rel = "noopener noreferrer";
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
-};
+const openPdfInTab = (url: string, filename = "dokument.pdf") => { downloadPdf(url, filename); };
 
 const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
 
@@ -205,8 +198,8 @@ async function downloadKalkulationPdf(
     }
     const blob = await r.blob();
     const url = URL.createObjectURL(blob);
-    openPdfInTab(url);
-    toast({ title: "PDF erstellt ✓ — im Browser-Tab geöffnet" });
+    openPdfInTab(url, "Kalkulation.pdf");
+    toast({ title: "PDF heruntergeladen ✓", description: "Kalkulation wird im Browser geöffnet" });
   } catch (e: any) {
     toast({ title: "Fehler", description: e.message, variant: "destructive" });
   }
@@ -369,6 +362,7 @@ function StundenBlock({
 
 function MaterialBlock({ auftragId }: { auftragId: string }) {
   const { toast } = useToast();
+  const { confirm, ConfirmDialog: MaterialConfirmDialog } = useConfirm();
 
   const { data: items = [], isLoading } = useQuery<VkMaterial[]>({
     queryKey: ["/api/vorkalkulation/material", auftragId],
@@ -589,7 +583,7 @@ function MaterialBlock({ auftragId }: { auftragId: string }) {
                       size="icon"
                       variant="ghost"
                       className="h-6 w-6 text-destructive"
-                      onClick={() => item.id && delMut.mutate(item.id)}
+                      onClick={async () => { if (item.id && await confirm()) delMut.mutate(item.id); }}
                     >
                       <Trash2 className="h-3 w-3" />
                     </Button>
@@ -611,6 +605,7 @@ function MaterialBlock({ auftragId }: { auftragId: string }) {
           </table>
         </div>
       )}
+      <MaterialConfirmDialog />
     </div>
   );
 }
@@ -619,6 +614,7 @@ function MaterialBlock({ auftragId }: { auftragId: string }) {
 
 function FremdleistungenBlock({ auftragId }: { auftragId: string }) {
   const { toast } = useToast();
+  const { confirm, ConfirmDialog: FremdConfirmDialog } = useConfirm();
   const EINHEITEN = ["Psch.", "Stk.", "m", "m²", "kg", "h", "km"];
 
   const { data: items = [], isLoading } = useQuery<VkFremd[]>({
@@ -786,7 +782,7 @@ function FremdleistungenBlock({ auftragId }: { auftragId: string }) {
                       size="icon"
                       variant="ghost"
                       className="h-6 w-6 text-destructive"
-                      onClick={() => item.id && delMut.mutate(item.id)}
+                      onClick={async () => { if (item.id && await confirm()) delMut.mutate(item.id); }}
                     >
                       <Trash2 className="h-3 w-3" />
                     </Button>
@@ -804,6 +800,7 @@ function FremdleistungenBlock({ auftragId }: { auftragId: string }) {
           </table>
         </div>
       )}
+      <FremdConfirmDialog />
     </div>
   );
 }
@@ -812,6 +809,7 @@ function FremdleistungenBlock({ auftragId }: { auftragId: string }) {
 
 function SoekBlock({ auftragId }: { auftragId: string }) {
   const { toast } = useToast();
+  const { confirm, ConfirmDialog: SoekConfirmDialog } = useConfirm();
   const EINHEITEN = ["Stk.", "Tage", "km", "Nächte", "h", "Psch."];
 
   const { data: items = [], isLoading } = useQuery<VkSoek[]>({
@@ -966,7 +964,7 @@ function SoekBlock({ auftragId }: { auftragId: string }) {
                       size="icon"
                       variant="ghost"
                       className="h-6 w-6 text-destructive"
-                      onClick={() => item.id && delMut.mutate(item.id)}
+                      onClick={async () => { if (item.id && await confirm()) delMut.mutate(item.id); }}
                     >
                       <Trash2 className="h-3 w-3" />
                     </Button>
@@ -984,6 +982,7 @@ function SoekBlock({ auftragId }: { auftragId: string }) {
           </table>
         </div>
       )}
+      <SoekConfirmDialog />
     </div>
   );
 }
@@ -1054,6 +1053,17 @@ function ZusammenfassungBlock({
     onSuccess: () => {
       refetchConfig();
       toast({ title: "Kalkulation gespeichert ✓" });
+    },
+    onError: (e: any) =>
+      toast({ title: "Fehler", description: e.message, variant: "destructive" }),
+  });
+
+  const syncAuftragswertMut = useMutation({
+    mutationFn: (betrag: number) =>
+      apiRequest("PATCH", `/api/auftraege/${auftragId}`, { angebots_betrag: betrag }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auftraege", auftragId] });
+      toast({ title: "Auftragswert übernommen ✓", description: `CHF ${brutto.toFixed(2)} wurde im Auftrag gespeichert` });
     },
     onError: (e: any) =>
       toast({ title: "Fehler", description: e.message, variant: "destructive" }),
@@ -1184,13 +1194,23 @@ function ZusammenfassungBlock({
           />
         </div>
 
-        <Button
-          onClick={() => saveCfgMut.mutate()}
-          disabled={saveCfgMut.isPending}
-          className="bg-[#6b4c2a] hover:bg-[#5a3e22] text-white"
-        >
-          Kalkulation speichern
-        </Button>
+        <div className="flex gap-2 flex-wrap">
+          <Button
+            onClick={() => saveCfgMut.mutate()}
+            disabled={saveCfgMut.isPending}
+            className="bg-[#6b4c2a] hover:bg-[#5a3e22] text-white"
+          >
+            Kalkulation speichern
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => syncAuftragswertMut.mutate(brutto)}
+            disabled={syncAuftragswertMut.isPending || brutto <= 0}
+            title={`Bruttooffertpreis CHF ${brutto.toFixed(2)} als Auftragswert setzen`}
+          >
+            Auftragswert übernehmen (CHF {brutto.toFixed(2)})
+          </Button>
+        </div>
       </Card>
     </div>
   );
@@ -1212,6 +1232,7 @@ function NachkalkulationBlock({
   saetze: Stundensatz[];
 }) {
   const { toast } = useToast();
+  const { confirm: nakaConfirm, ConfirmDialog: NakaConfirmDialog } = useConfirm();
 
   // VK Daten
   const { data: vkStunden = [] } = useQuery<VkStunde[]>({
@@ -1703,7 +1724,7 @@ function NachkalkulationBlock({
                   size="icon"
                   variant="ghost"
                   className="h-6 w-6 text-destructive"
-                  onClick={() => m.id && delNakaMaterial.mutate(m.id)}
+                  onClick={async () => { if (m.id && await nakaConfirm()) delNakaMaterial.mutate(m.id); }}
                 >
                   <Trash2 className="h-3 w-3" />
                 </Button>
@@ -1789,7 +1810,7 @@ function NachkalkulationBlock({
                   size="icon"
                   variant="ghost"
                   className="h-6 w-6 text-destructive"
-                  onClick={() => f.id && delNakaFremd.mutate(f.id)}
+                  onClick={async () => { if (f.id && await nakaConfirm()) delNakaFremd.mutate(f.id); }}
                 >
                   <Trash2 className="h-3 w-3" />
                 </Button>
@@ -1893,7 +1914,7 @@ function NachkalkulationBlock({
                   size="icon"
                   variant="ghost"
                   className="h-6 w-6 text-destructive"
-                  onClick={() => s.id && delNakaSoek.mutate(s.id)}
+                  onClick={async () => { if (s.id && await nakaConfirm()) delNakaSoek.mutate(s.id); }}
                 >
                   <Trash2 className="h-3 w-3" />
                 </Button>
@@ -1906,6 +1927,7 @@ function NachkalkulationBlock({
           </div>
         )}
       </Card>
+      <NakaConfirmDialog />
     </div>
   );
 }

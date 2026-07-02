@@ -17,15 +17,7 @@ import { Download, Clock } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
-const openPdfInTab = (url: string) => {
-  const a = document.createElement("a");
-  a.href = url;
-  a.target = "_blank";
-  a.rel = "noopener noreferrer";
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
-};
+const openPdfInTab = (url: string, filename = "dokument.pdf") => { downloadPdf(url, filename); };
 
 
 const MONATE = [
@@ -126,8 +118,8 @@ export default function Lohnabrechnung() {
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
       const mName = MONATE.find(m => m.value === monat)?.label || monat;
-      openPdfInTab(url);
-      toast({ title: "PDF erstellt", description: `Lohnabrechnung ${mName} ${jahr} für ${mitarbeiter} — im Browser-Tab geöffnet` });
+      openPdfInTab(url, `Lohnabrechnung_${mName}_${jahr}.pdf`);
+      toast({ title: "PDF erstellt", description: `Lohnabrechnung ${mName} ${jahr} für ${mitarbeiter} — wird im Browser geöffnet` });
     } catch (e: any) {
       toast({ title: "Fehler", description: e.message, variant: "destructive" });
     } finally {

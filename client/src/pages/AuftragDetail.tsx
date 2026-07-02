@@ -87,16 +87,12 @@ import type {
 import { STATUS_LABEL, STATUS_ORDER } from "@shared/schema";
 import { STATUS_BADGE, PRIO_BADGE, formatCHF, formatDate, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { downloadPdf as triggerPdfDownload } from "@/lib/pdf";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/hooks/use-confirm";
 
-const openPdfInTab = (url: string) => {
-  const a = document.createElement("a");
-  a.href = url;
-  a.target = "_blank";
-  a.rel = "noopener noreferrer";
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+const openPdfInTab = (url: string, filename = "dokument.pdf") => {
+  triggerPdfDownload(url, filename);
 };
 
 interface DetailData extends Auftrag {
@@ -555,8 +551,8 @@ function RechnungenTab({
       if (!r.ok) throw new Error(await r.text());
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
-      openPdfInTab(url);
-      toast({ title: "PDF erstellt", description: `Rechnung ${nr} — im Browser-Tab geöffnet` });
+      openPdfInTab(url, `Rechnung_${nr}.pdf`);
+      toast({ title: "PDF heruntergeladen", description: `Rechnung ${nr} — wird im Browser geöffnet` });
     } catch (e: any) {
       toast({ title: "Fehler", description: e.message, variant: "destructive" });
     }
@@ -752,8 +748,8 @@ function RechnungenTab({
                     className="h-7 text-xs text-red-500 hover:text-red-700 hover:bg-red-50 ml-auto"
                     data-testid={`button-delete-rechnung-${r.id}`}
                     disabled={deleteRechnungMut.isPending}
-                    onClick={() => {
-                      if (window.confirm(`Rechnung ${r.nr} wirklich löschen?`)) {
+                    onClick={async () => {
+                      if (await confirmAction({ title: `Rechnung ${r.nr} löschen?`, description: "Die Rechnung wird dauerhaft gelöscht." })) {
                         deleteRechnungMut.mutate(r.id);
                       }
                     }}
@@ -879,8 +875,8 @@ function OffertenTab({ id, auftrag }: { id: string; auftrag: Auftrag }) {
       if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
-      openPdfInTab(url);
-      toast({ title: "PDF erstellt", description: `Offerte ${nr} — im Browser-Tab geöffnet` });
+      openPdfInTab(url, `Offerte_${nr}.pdf`);
+      toast({ title: "PDF heruntergeladen", description: `Offerte ${nr} — wird im Browser geöffnet` });
     } catch (e: any) {
       toast({ title: "PDF Fehler", description: e.message, variant: "destructive" });
     } finally { setPdfLoading(null); }
@@ -1183,7 +1179,7 @@ function OffertenTab({ id, auftrag }: { id: string; auftrag: Auftrag }) {
                     </Select>
                     <Button size="sm" variant="ghost"
                       className="h-8 text-red-500 hover:text-red-700 hover:bg-red-50"
-                      onClick={() => { if (confirm("Offerte löschen?")) deleteMutation.mutate(o.id); }}>
+                      onClick={async () => { if (await confirmAction({ title: `Offerte ${o.nr} löschen?`, description: "Die Offerte wird dauerhaft gelöscht." })) deleteMutation.mutate(o.id); }}>
                       <Trash className="w-3.5 h-3.5" />
                     </Button>
                   </div>
@@ -1760,7 +1756,7 @@ function GarantienTab({ id, auftrag }: { id: string; auftrag: any }) {
       const r = await apiRequest("POST", `/api/auftraege/${id}/abnahme-pdf`);
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
-      openPdfInTab(url);
+      openPdfInTab(url, `Abnahmeprotokoll.pdf`);
     } catch (e: any) {
       toast({ title: "Fehler", description: e.message, variant: "destructive" });
     }
@@ -1922,7 +1918,7 @@ function LiefertermineTab({ id }: { id: string }) {
                       </Button>
                     )}
                     <Button size="sm" variant="ghost" className="h-6 text-xs text-muted-foreground"
-                      onClick={() => { if (confirm("Löschen?")) delMut.mutate(t.id); }}>Löschen</Button>
+                      onClick={async () => { if (await confirmAction()) delMut.mutate(t.id); }}>Löschen</Button>
                   </div>
                 </div>
               </div>
@@ -2298,6 +2294,7 @@ function KundenportalTab({ id }: { id: string }) {
 export default function AuftragDetail({ id }: Props) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { confirm: confirmAction, ConfirmDialog: ActionConfirmDialog } = useConfirm();
   const [delOpen, setDelOpen] = useState(false);
 
   const { data, isLoading, refetch } = useQuery<DetailData>({
@@ -2402,7 +2399,7 @@ export default function AuftragDetail({ id }: Props) {
                   const r = await apiRequest("POST", `/api/auftraege/${id}/lieferschein-pdf`, { ansprechpersonIntern: auftrag.verantwortlicher || "" });
                   const blob = await r.blob();
                   const url = URL.createObjectURL(blob);
-                  openPdfInTab(url);
+                  openPdfInTab(url, `Lieferschein_${data.nr}.pdf`);
                 } catch (e: any) {
                   toast({ title: "Fehler", description: e.message, variant: "destructive" });
                 }
@@ -2419,7 +2416,7 @@ export default function AuftragDetail({ id }: Props) {
                   const r = await apiRequest("POST", `/api/auftraege/${id}/auftragsbestaetigung-pdf`, { ansprechpersonIntern: auftrag.verantwortlicher || "" });
                   const blob = await r.blob();
                   const url = URL.createObjectURL(blob);
-                  openPdfInTab(url);
+                  openPdfInTab(url, `Auftragsbestaetigung_${data.nr}.pdf`);
                 } catch (e: any) {
                   toast({ title: "Fehler", description: e.message, variant: "destructive" });
                 }
@@ -2743,6 +2740,7 @@ export default function AuftragDetail({ id }: Props) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <ActionConfirmDialog />
     </div>
   );
 }

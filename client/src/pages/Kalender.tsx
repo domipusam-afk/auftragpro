@@ -15,6 +15,7 @@ import {
 import { CalendarCheck, ChevronLeft, ChevronRight, Users, Pencil, Trash2, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/hooks/use-confirm";
 import type { Auftrag } from "@shared/schema";
 
 interface Termin {
@@ -246,9 +247,9 @@ export default function Kalender() {
     });
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!editTermin) return;
-    if (!window.confirm(`Termin "${editTermin.titel}" wirklich löschen?`)) return;
+    if (!(await confirmKal({ title: `Termin löschen?`, description: `"${editTermin.titel}" wird dauerhaft gelöscht.` }))) return;
     deleteMut.mutate(editTermin.id);
   };
 
@@ -657,6 +658,7 @@ export default function Kalender() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <KalConfirmDialog />
     </div>
   );
 }

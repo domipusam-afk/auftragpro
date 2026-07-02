@@ -12,17 +12,10 @@ import { Label } from "@/components/ui/label";
 import { Trash, Mail, FileDown, ArrowRight, CheckCircle2 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/hooks/use-confirm";
 import type { Offerte, OffertePosition, Auftrag } from "@shared/schema";
 
-const openPdfInTab = (url: string) => {
-  const a = document.createElement("a");
-  a.href = url;
-  a.target = "_blank";
-  a.rel = "noopener noreferrer";
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
-};
+const openPdfInTab = (url: string, filename = "dokument.pdf") => { downloadPdf(url, filename); };
 
 const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
 
@@ -34,6 +27,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default function Offerten() {
+  const { confirm: confirmDel, ConfirmDialog: OffertConfirmDialog } = useConfirm();
   const { toast } = useToast();
   const [emailModal, setEmailModal] = useState<{ open: boolean; to: string; subject: string; body: string; refId: string } | null>(null);
   const [pdfDialog, setPdfDialog] = useState<{ open: boolean; oid: string; nr: string; intern: string; internEmail: string; internTelefon: string; extern: string } | null>(null);
@@ -105,7 +99,7 @@ export default function Offerten() {
       if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
-      openPdfInTab(url);
+      openPdfInTab(url, `Offerte_${nr}.pdf`);
       setPdfDialog(null);
       toast({ title: "PDF erstellt", description: `Offerte ${nr} — im Browser-Tab geöffnet` });
     } catch (e: any) {
@@ -247,7 +241,7 @@ Schneggenburger GmbH`,
                       )}
                       <Button size="sm" variant="ghost"
                         className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
-                        onClick={() => { if (confirm("Offerte wirklich löschen?")) deleteMutation.mutate(o.id); }}>
+                        onClick={async () => { if (await confirmDel({ title: "Offerte löschen?", description: "Die Offerte wird dauerhaft gelöscht." })) deleteMutation.mutate(o.id); }}>
                         <Trash className="w-3.5 h-3.5" />
                       </Button>
                     </div>
@@ -361,6 +355,7 @@ Schneggenburger GmbH`,
           refId={emailModal.refId}
         />
       )}
+    <OffertConfirmDialog />
     </div>
   );
 }

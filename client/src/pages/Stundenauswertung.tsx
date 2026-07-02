@@ -5,18 +5,11 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BarChart2, ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { downloadPdf } from "@/lib/pdf";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 
-const openPdfInTab = (url: string) => {
-  const a = document.createElement("a");
-  a.href = url;
-  a.target = "_blank";
-  a.rel = "noopener noreferrer";
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
-};
+const openPdfInTab = (url: string, filename = "dokument.pdf") => { downloadPdf(url, filename); };
 
 interface Mitarbeiter {
   id: string;
@@ -131,8 +124,8 @@ export default function Stundenauswertung() {
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
       const mo = new Date(year, month, 1).toLocaleString("de-CH", { month: "long" });
-      openPdfInTab(url);
-      toast({ title: "PDF erstellt", description: `Stundenabrechnung ${mo} ${year} für ${fullName} — im Browser-Tab geöffnet` });
+      openPdfInTab(url, `Stundenabrechnung_${mo}_${year}.pdf`);
+      toast({ title: "PDF erstellt", description: `Stundenabrechnung ${mo} ${year} für ${fullName} — wird im Browser geöffnet` });
     } catch (e: any) {
       toast({ title: "Fehler", description: e.message, variant: "destructive" });
     } finally {

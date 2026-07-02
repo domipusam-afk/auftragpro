@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/hooks/use-confirm";
 import { Plus, Package, AlertTriangle, Search, Pencil, Trash2, ArrowUp, ArrowDown } from "lucide-react";
 
 const KATEGORIEN = [
@@ -45,6 +46,7 @@ interface BuchungForm {
 }
 
 export default function Lagerverwaltung() {
+  const { confirm: confirmLager, ConfirmDialog: LagerConfirmDialog } = useConfirm();
   const { toast } = useToast();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [buchungDialog, setBuchungDialog] = useState<LagerArtikel | null>(null);
@@ -226,7 +228,7 @@ export default function Lagerverwaltung() {
                             <Pencil className="h-4 w-4" />
                           </Button>
                           <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600"
-                            onClick={() => { if (confirm("Artikel löschen?")) deleteMutation.mutate(a.id); }}>
+                            onClick={async () => { if (await confirmLager({ title: "Artikel löschen?", description: "Der Artikel wird dauerhaft gelöscht." })) deleteMutation.mutate(a.id); }}>
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
@@ -347,6 +349,7 @@ export default function Lagerverwaltung() {
           </div>
         </DialogContent>
       </Dialog>
+      <LagerConfirmDialog />
     </div>
   );
 }
