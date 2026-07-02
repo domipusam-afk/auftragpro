@@ -765,8 +765,8 @@ function OffertpreisBlock({ auftragId, saetze }: { auftragId: string; saetze: St
   const mwst = num(merged.mwst_prozent) / 100;
 
   const nettoOhneRabatt = selbstkosten * (1 + risikoGewinn);
-  const nettoNachRabatt = nettoOhneRabatt * (1 - rabatt);
-  const nettoNachSkonto = nettoNachRabatt * (1 - skonto);
+  const nettoNachRabatt = nettoOhneRabatt * (1 + rabatt);
+  const nettoNachSkonto = nettoNachRabatt * (1 + skonto);
   const bruttoTotal = nettoNachSkonto * (1 + mwst);
 
   // Kennzahlen (Sheet 10)
@@ -826,8 +826,8 @@ function OffertpreisBlock({ auftragId, saetze }: { auftragId: string; saetze: St
           <Row label="Selbstkosten" value={chf(selbstkosten)} />
           <Row label={`+ Risiko/Gewinn ${merged.risiko_gewinn_prozent ?? 10}%`} value={chf(selbstkosten * risikoGewinn)} />
           <Row label="= Netto exkl. Rabatt" value={chf(nettoOhneRabatt)} />
-          {rabatt > 0 && <Row label={`− Rabatt ${merged.rabatt_prozent}%`} value={`− ${chf(nettoOhneRabatt * rabatt)}`} />}
-          {skonto > 0 && <Row label={`− Skonto ${merged.skonto_prozent}%`} value={`− ${chf(nettoNachRabatt * skonto)}`} />}
+          {rabatt > 0 && <Row label={`+ Rabatt ${merged.rabatt_prozent}%`} value={`+ ${chf(nettoOhneRabatt * rabatt)}`} />}
+          {skonto > 0 && <Row label={`+ Skonto ${merged.skonto_prozent}%`} value={`+ ${chf(nettoNachRabatt * skonto)}`} />}
           <Row label="= Netto exkl. MWST" value={chf(nettoNachSkonto)} />
           <Row label={`+ MWST ${merged.mwst_prozent ?? 8.1}%`} value={chf(nettoNachSkonto * mwst)} />
           <Separator />
