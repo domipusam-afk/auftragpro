@@ -747,6 +747,8 @@ function OffertpreisBlock({ auftragId, saetze }: { auftragId: string; saetze: St
     onSuccess: () => {
       refetch();
       setLocalCfg({});
+      queryClient.invalidateQueries({ queryKey: ["/api/auftraege", auftragId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/auftraege"] });
       toast({ title: "Offertpreis gespeichert ✓", description: "Angebotsbetrag im Auftrag aktualisiert" });
     },
   });
