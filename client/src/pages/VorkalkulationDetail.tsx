@@ -16,6 +16,7 @@ import {
   Layers, FileText, TrendingUp, TrendingDown, Minus, AlertTriangle,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/hooks/use-confirm";
 
 const openPdfInTab = (url: string, filename = "dokument.pdf") => { downloadPdf(url, filename); };
 
@@ -47,7 +48,7 @@ const WERKSTOFF_OPTIONEN = ["Stahl", "CNS / Edelstahl", "Aluminium", "Glas", "So
 const HILFSMATERIAL_KATEGORIEN = ["Gläser", "Schweissmaterial", "Befestigungsmittel", "Normteile", "Beschläge", "Sonstiges"];
 const FREMD_KATEGORIEN = ["Gläser", "Abkantarbeit", "Oberflächenbehandlung", "Transport", "Autokran", "Feuerverzinken", "Lackieren/Eloxieren", "Sonstiges"];
 const SOEK_KATEGORIEN = ["Distanz km", "Verpflegung", "Unterkunft", "PW km", "Firmenbus km", "LKW km", "Parkgebühren", "Werkzeug-Sonderkauf", "Sonstiges"];
-const EINHEITEN = ["Stk", "m", "m²", "kg", "L", "Psch", "h"];
+const EINHEITEN = ["Stk", "m", "m²", "kg", "L", "Psch", "h", "km"];
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
 interface Stundensatz { id: string; ort: string; maschinenpark: string | null; satz: number; grundsatz: number | null; }
@@ -62,6 +63,7 @@ interface Soek { id?: string; auftrag_id: string; bezeichnung: string; anzahl: n
 // ─── Stunden-Bereich Block ────────────────────────────────────────────────────
 function StundenBereichBlock({ auftragId, bereich, saetze }: { auftragId: string; bereich: string; saetze: Stundensatz[] }) {
   const { toast } = useToast();
+  const { confirm: confirmDel, ConfirmDialog: ConfirmDlg_StundenBereichBlock } = useConfirm();
   const unterkategorien = (STUNDEN_BEREICHE as any)[bereich] || [];
 
   const getOrte = () => {
@@ -172,7 +174,7 @@ function StundenBereichBlock({ auftragId, bereich, saetze }: { auftragId: string
                   <td className="px-2 py-1 text-xs text-right font-mono text-muted-foreground">{num(r.stundensatz).toFixed(2)}</td>
                   <td className="px-2 py-1 text-xs text-right font-mono font-medium">{chf(num(r.soll_stunden) * num(r.stundensatz))}</td>
                   <td className="px-2 py-1">
-                    <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => r.id && deleteMutation.mutate(r.id)}>
+                    <Button size="icon" variant="ghost" className="h-6 w-6" onClick={async () => { if (r.id && await confirmDel()) deleteMutation.mutate(r.id); }}>
                       <Trash2 className="h-3 w-3 text-destructive" />
                     </Button>
                   </td>
@@ -224,6 +226,7 @@ function StundenBereichBlock({ auftragId, bereich, saetze }: { auftragId: string
           </tfoot>
         </table>
       </div>
+    <ConfirmDlg_StundenBereichBlock />
     </div>
   );
 }
@@ -231,6 +234,7 @@ function StundenBereichBlock({ auftragId, bereich, saetze }: { auftragId: string
 // ─── Hauptmaterial Profil Block ───────────────────────────────────────────────
 function HauptmatProfilBlock({ auftragId }: { auftragId: string }) {
   const { toast } = useToast();
+  const { confirm: confirmDel, ConfirmDialog: ConfirmDlg_HauptmatProfilBlock } = useConfirm();
   const emptyRow = { pos: 0, profil: "", bemerkung: "", stueck: "", laenge_mm: "", kg_pro_m: "", werkstoff: "Stahl", preis_pro_einheit: "" };
   const [newRow, setNewRow] = useState(emptyRow);
 
@@ -256,7 +260,7 @@ function HauptmatProfilBlock({ auftragId }: { auftragId: string }) {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("DELETE", `/api/vorkalkulation/material/${id}`),
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/vorkalkulation/${auftragId}/material/${id}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/vk-hauptmaterial", auftragId] }),
   });
 
@@ -293,7 +297,7 @@ function HauptmatProfilBlock({ auftragId }: { auftragId: string }) {
                 <td className="px-2 py-1 text-xs text-right font-mono">{r.total_kg ? r.total_kg.toFixed(2) : "—"}</td>
                 <td className="px-2 py-1 text-xs text-right font-mono">{r.preis_pro_einheit.toFixed(2)}</td>
                 <td className="px-2 py-1 text-xs text-right font-mono font-semibold">{chf(r.total_chf)}</td>
-                <td className="px-1 py-1"><Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => r.id && deleteMutation.mutate(r.id)}><Trash2 className="h-3 w-3 text-destructive" /></Button></td>
+                <td className="px-1 py-1"><Button size="icon" variant="ghost" className="h-6 w-6" onClick={async () => { if (r.id && await confirmDel()) deleteMutation.mutate(r.id); }}><Trash2 className="h-3 w-3 text-destructive" /></Button></td>
               </tr>
             ))}
             {/* Neue Zeile */}
@@ -326,6 +330,7 @@ function HauptmatProfilBlock({ auftragId }: { auftragId: string }) {
           </tfoot>
         </table>
       </div>
+    <ConfirmDlg_HauptmatProfilBlock />
     </div>
   );
 }
@@ -333,6 +338,7 @@ function HauptmatProfilBlock({ auftragId }: { auftragId: string }) {
 // ─── Hauptmaterial Fläche Block ───────────────────────────────────────────────
 function HauptmatFlaecheBlock({ auftragId }: { auftragId: string }) {
   const { toast } = useToast();
+  const { confirm: confirmDel, ConfirmDialog: ConfirmDlg_HauptmatFlaecheBlock } = useConfirm();
   const emptyRow = { pos: 0, bezeichnung: "", stueck: "", breite_mm: "", hoehe_mm: "", dicke_mm: "", kg_pro_m2: "", werkstoff: "Stahl", preis_pro_kg: "", bemerkung: "" };
   const [newRow, setNewRow] = useState(emptyRow);
 
@@ -403,7 +409,7 @@ function HauptmatFlaecheBlock({ auftragId }: { auftragId: string }) {
                 <td className="px-2 py-1 text-xs text-right font-mono">{num(r.total_kg).toFixed(2)}</td>
                 <td className="px-2 py-1 text-xs text-right font-mono">{r.preis_pro_kg}</td>
                 <td className="px-2 py-1 text-xs text-right font-mono font-semibold">{chf(r.total_chf)}</td>
-                <td className="px-1 py-1"><Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => r.id && deleteMutation.mutate(r.id)}><Trash2 className="h-3 w-3 text-destructive" /></Button></td>
+                <td className="px-1 py-1"><Button size="icon" variant="ghost" className="h-6 w-6" onClick={async () => { if (r.id && await confirmDel()) deleteMutation.mutate(r.id); }}><Trash2 className="h-3 w-3 text-destructive" /></Button></td>
               </tr>
             ))}
             <tr className="border-t-2 border-dashed">
@@ -435,6 +441,7 @@ function HauptmatFlaecheBlock({ auftragId }: { auftragId: string }) {
           </tfoot>
         </table>
       </div>
+    <ConfirmDlg_HauptmatFlaecheBlock />
     </div>
   );
 }
@@ -442,6 +449,7 @@ function HauptmatFlaecheBlock({ auftragId }: { auftragId: string }) {
 // ─── Hilfsmaterial Block ──────────────────────────────────────────────────────
 function HilfsmaterialBlock({ auftragId }: { auftragId: string }) {
   const { toast } = useToast();
+  const { confirm: confirmDel, ConfirmDialog: ConfirmDlg_HilfsmaterialBlock } = useConfirm();
   const emptyRow = { kategorie: "Normteile", bezeichnung: "", stueck: "", einheit: "Stk", preis_pro_einheit: "", lieferant: "" };
   const [newRow, setNewRow] = useState(emptyRow);
 
@@ -499,7 +507,7 @@ function HilfsmaterialBlock({ auftragId }: { auftragId: string }) {
                 <td className="px-2 py-1 text-xs">{r.einheit}</td>
                 <td className="px-2 py-1 text-xs text-right font-mono">{num(r.preis_pro_einheit).toFixed(2)}</td>
                 <td className="px-2 py-1 text-xs text-right font-mono font-semibold">{chf(r.total_chf)}</td>
-                <td className="px-1 py-1"><Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => r.id && deleteMutation.mutate(r.id)}><Trash2 className="h-3 w-3 text-destructive" /></Button></td>
+                <td className="px-1 py-1"><Button size="icon" variant="ghost" className="h-6 w-6" onClick={async () => { if (r.id && await confirmDel()) deleteMutation.mutate(r.id); }}><Trash2 className="h-3 w-3 text-destructive" /></Button></td>
               </tr>
             ))}
             <tr className="border-t-2 border-dashed">
@@ -532,6 +540,7 @@ function HilfsmaterialBlock({ auftragId }: { auftragId: string }) {
           </tfoot>
         </table>
       </div>
+    <ConfirmDlg_HilfsmaterialBlock />
     </div>
   );
 }
@@ -539,7 +548,8 @@ function HilfsmaterialBlock({ auftragId }: { auftragId: string }) {
 // ─── Fremdleistungen Block ────────────────────────────────────────────────────
 function FremdBlock({ auftragId }: { auftragId: string }) {
   const { toast } = useToast();
-  const emptyRow = { bezeichnung: "", kategorie: "Sonstiges", anzahl: "", einheit: "Psch", preis_pro_einheit: "" };
+  const { confirm: confirmDel, ConfirmDialog: ConfirmDlg_FremdBlock } = useConfirm();
+  const emptyRow = { bezeichnung: "Sonstiges", kategorie: "Sonstiges", anzahl: "", einheit: "Psch", preis_pro_einheit: "" };
   const [newRow, setNewRow] = useState(emptyRow);
 
   const { data: rows = [] } = useQuery<Fremdleistung[]>({
@@ -551,7 +561,7 @@ function FremdBlock({ auftragId }: { auftragId: string }) {
     mutationFn: async () => {
       const anzahl = num(newRow.anzahl), preis = num(newRow.preis_pro_einheit);
       return apiRequest("POST", `/api/vorkalkulation/${auftragId}/fremdleistungen`, {
-        bezeichnung: newRow.bezeichnung, anzahl, einheit: newRow.einheit,
+        bezeichnung: newRow.bezeichnung || newRow.kategorie || "Sonstiges", anzahl, einheit: newRow.einheit,
         preis_pro_einheit: preis, total_chf: anzahl * preis,
       });
     },
@@ -559,7 +569,7 @@ function FremdBlock({ auftragId }: { auftragId: string }) {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("DELETE", `/api/vorkalkulation/fremdleistungen/${id}`),
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/vorkalkulation/${auftragId}/fremdleistungen/${id}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/vk-fremd", auftragId] }),
   });
 
@@ -588,7 +598,7 @@ function FremdBlock({ auftragId }: { auftragId: string }) {
                 <td className="px-2 py-1 text-xs">{r.einheit}</td>
                 <td className="px-2 py-1 text-xs text-right font-mono">{num(r.preis_pro_einheit).toFixed(2)}</td>
                 <td className="px-2 py-1 text-xs text-right font-mono font-semibold">{chf(r.total_chf)}</td>
-                <td className="px-1 py-1"><Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => r.id && deleteMutation.mutate(r.id)}><Trash2 className="h-3 w-3 text-destructive" /></Button></td>
+                <td className="px-1 py-1"><Button size="icon" variant="ghost" className="h-6 w-6" onClick={async () => { if (r.id && await confirmDel()) deleteMutation.mutate(r.id); }}><Trash2 className="h-3 w-3 text-destructive" /></Button></td>
               </tr>
             ))}
             <tr className="border-t-2 border-dashed">
@@ -607,7 +617,7 @@ function FremdBlock({ auftragId }: { auftragId: string }) {
               </td>
               <td className="px-1 py-1"><Input type="number" className="h-7 text-xs text-right" placeholder="Fr." value={newRow.preis_pro_einheit} onChange={e => setNewRow(p => ({ ...p, preis_pro_einheit: e.target.value }))} /></td>
               <td className="px-2 py-1 text-xs text-right font-mono">{chf(num(newRow.anzahl) * num(newRow.preis_pro_einheit))}</td>
-              <td className="px-1 py-1"><Button size="icon" variant="outline" className="h-7 w-7" onClick={() => addMutation.mutate()} disabled={!newRow.bezeichnung || !newRow.anzahl}><Plus className="h-3 w-3" /></Button></td>
+              <td className="px-1 py-1"><Button size="icon" variant="outline" className="h-7 w-7" onClick={() => addMutation.mutate()} disabled={addMutation.isPending || !newRow.anzahl}><Plus className="h-3 w-3" /></Button></td>
             </tr>
           </tbody>
           <tfoot>
@@ -619,6 +629,7 @@ function FremdBlock({ auftragId }: { auftragId: string }) {
           </tfoot>
         </table>
       </div>
+    <ConfirmDlg_FremdBlock />
     </div>
   );
 }
@@ -626,6 +637,7 @@ function FremdBlock({ auftragId }: { auftragId: string }) {
 // ─── SOEK Block ───────────────────────────────────────────────────────────────
 function SoekBlock({ auftragId }: { auftragId: string }) {
   const { toast } = useToast();
+  const { confirm: confirmDel, ConfirmDialog: ConfirmDlg_SoekBlock } = useConfirm();
   const emptyRow = { bezeichnung: "Verpflegung", anzahl: "", einheit: "Psch", preis_pro_einheit: "" };
   const [newRow, setNewRow] = useState(emptyRow);
 
@@ -646,7 +658,7 @@ function SoekBlock({ auftragId }: { auftragId: string }) {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("DELETE", `/api/vorkalkulation/soek/${id}`),
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/vorkalkulation/${auftragId}/soek/${id}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/vk-soek", auftragId] }),
   });
 
@@ -675,7 +687,7 @@ function SoekBlock({ auftragId }: { auftragId: string }) {
                 <td className="px-2 py-1 text-xs">{r.einheit}</td>
                 <td className="px-2 py-1 text-xs text-right font-mono">{num(r.preis_pro_einheit).toFixed(2)}</td>
                 <td className="px-2 py-1 text-xs text-right font-mono font-semibold">{chf(r.total_chf)}</td>
-                <td className="px-1 py-1"><Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => r.id && deleteMutation.mutate(r.id)}><Trash2 className="h-3 w-3 text-destructive" /></Button></td>
+                <td className="px-1 py-1"><Button size="icon" variant="ghost" className="h-6 w-6" onClick={async () => { if (r.id && await confirmDel()) deleteMutation.mutate(r.id); }}><Trash2 className="h-3 w-3 text-destructive" /></Button></td>
               </tr>
             ))}
             <tr className="border-t-2 border-dashed">
@@ -706,6 +718,7 @@ function SoekBlock({ auftragId }: { auftragId: string }) {
           </tfoot>
         </table>
       </div>
+    <ConfirmDlg_SoekBlock />
     </div>
   );
 }

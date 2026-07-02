@@ -14,8 +14,10 @@ import {
   Receipt, BarChart3, RefreshCw, TrendingUp, TrendingDown,
   Minus, AlertTriangle, CheckCircle2, FileDown} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/hooks/use-confirm";
+import { downloadPdf } from "@/lib/pdf";
 
-const openPdfInTab = (url: string, filename = "dokument.pdf") => { downloadPdf(url, filename); };
+const openPdfInTab = (url: string, filename = "dokument.pdf") => { downloadPdf(url, filename); }; // kept for compat
 
 const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
 
@@ -36,7 +38,7 @@ const UNTERKATEGORIEN: Record<string, string[]> = {
   "Werkstatt": ["Vorbereitung", "Zuschnitt", "Fertigung"],
   "Montage": ["Vorbereitung", "Reisen", "Baustelle einrichten", "Rohmontage", "Gläser einsetzen", "Beschläge einstellen", "Übergabe"],
 };
-const EINHEITEN = ["Stk", "m", "m²", "kg", "L", "Psch", "h"];
+const EINHEITEN = ["Stk", "m", "m²", "kg", "L", "Psch", "h", "km"];
 const SOEK_KATEGORIEN = ["Distanz km", "Verpflegung", "Unterkunft", "PW km", "Firmenbus km", "LKW km", "Parkgebühren", "Werkzeug-Sonderkauf", "Sonstiges"];
 
 interface NkStunde { id?: string; auftrag_id: string; bereich: string; unterkategorie?: string; mitarbeiter_name: string; datum: string; ist_stunden: number; stundensatz: number; total_chf: number; quelle: string; zeiterfassung_id?: string; bemerkung?: string; }
@@ -49,6 +51,7 @@ interface VkConfig { risiko_gewinn_prozent: number; rabatt_prozent: number; skon
 // ─── IST-Stunden Block ────────────────────────────────────────────────────────
 function NkStundenBlock({ auftragId }: { auftragId: string }) {
   const { toast } = useToast();
+  const { confirm: confirmDel, ConfirmDialog: ConfirmDlg_NkStunden } = useConfirm();
   const today = new Date().toISOString().split("T")[0];
   const emptyRow = { bereich: "Montage", unterkategorie: "Baustelle einrichten", mitarbeiter_name: "", datum: today, ist_stunden: "", stundensatz: "", bemerkung: "" };
   const [newRow, setNewRow] = useState(emptyRow);
@@ -155,7 +158,7 @@ function NkStundenBlock({ auftragId }: { auftragId: string }) {
                 <td className="px-1 py-1">
                   <Button size="icon" variant="ghost" className="h-6 w-6"
                     title={r.quelle === "zeiterfassung" ? "Zeiterfassung-Eintrag löschen" : "Manuellen Eintrag löschen"}
-                    onClick={() => deleteMutation.mutate(r)}>
+                    onClick={async () => { if (await confirmDel()) deleteMutation.mutate(r); }}>
                     <Trash2 className="h-3 w-3 text-destructive" />
                   </Button>
                 </td>
@@ -204,6 +207,7 @@ function NkStundenBlock({ auftragId }: { auftragId: string }) {
           </tbody>
         </table>
       </div>
+      <ConfirmDlg_NkStunden />
     </div>
   );
 }
@@ -211,6 +215,7 @@ function NkStundenBlock({ auftragId }: { auftragId: string }) {
 
 function NkMaterialBlock({ auftragId }: { auftragId: string }) {
   const { toast } = useToast();
+  const { confirm: confirmDel, ConfirmDialog: ConfirmDlg_NkMaterial } = useConfirm();
   const today = new Date().toISOString().split("T")[0];
   const emptyRow = { bezeichnung: "", kategorie: "Material", lieferant: "", betrag_chf: "", datum: today, rechnung_nr: "", bemerkung: "" };
   const [newRow, setNewRow] = useState(emptyRow);
@@ -256,7 +261,7 @@ function NkMaterialBlock({ auftragId }: { auftragId: string }) {
                 <td className="px-2 py-1 text-xs font-mono text-muted-foreground">{r.rechnung_nr}</td>
                 <td className="px-2 py-1 text-xs font-mono">{r.datum}</td>
                 <td className="px-2 py-1 text-xs text-right font-mono font-semibold">{chf(r.betrag_chf)}</td>
-                <td className="px-1 py-1"><Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => r.id && deleteMutation.mutate(r.id)}><Trash2 className="h-3 w-3 text-destructive" /></Button></td>
+                <td className="px-1 py-1"><Button size="icon" variant="ghost" className="h-6 w-6" onClick={async () => { if (r.id && await confirmDel()) deleteMutation.mutate(r.id); }}><Trash2 className="h-3 w-3 text-destructive" /></Button></td>
               </tr>
             ))}
             <tr className="border-t-2 border-dashed">
@@ -277,6 +282,7 @@ function NkMaterialBlock({ auftragId }: { auftragId: string }) {
           </tfoot>
         </table>
       </div>
+      <ConfirmDlg_NkMaterial />
     </div>
   );
 }
@@ -284,6 +290,7 @@ function NkMaterialBlock({ auftragId }: { auftragId: string }) {
 // ─── IST-Fremdleistungen Block ────────────────────────────────────────────────
 function NkFremdBlock({ auftragId }: { auftragId: string }) {
   const { toast } = useToast();
+  const { confirm: confirmDel, ConfirmDialog: ConfirmDlg_NkFremd } = useConfirm();
   const today = new Date().toISOString().split("T")[0];
   const emptyRow = { bezeichnung: "", lieferant: "", betrag_chf: "", datum: today, rechnung_nr: "" };
   const [newRow, setNewRow] = useState(emptyRow);
@@ -329,7 +336,7 @@ function NkFremdBlock({ auftragId }: { auftragId: string }) {
                 <td className="px-2 py-1 text-xs font-mono text-muted-foreground">{r.rechnung_nr}</td>
                 <td className="px-2 py-1 text-xs font-mono">{r.datum}</td>
                 <td className="px-2 py-1 text-xs text-right font-mono font-semibold">{chf(r.betrag_chf)}</td>
-                <td className="px-1 py-1"><Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => r.id && deleteMutation.mutate(r.id)}><Trash2 className="h-3 w-3 text-destructive" /></Button></td>
+                <td className="px-1 py-1"><Button size="icon" variant="ghost" className="h-6 w-6" onClick={async () => { if (r.id && await confirmDel()) deleteMutation.mutate(r.id); }}><Trash2 className="h-3 w-3 text-destructive" /></Button></td>
               </tr>
             ))}
             <tr className="border-t-2 border-dashed">
@@ -350,6 +357,7 @@ function NkFremdBlock({ auftragId }: { auftragId: string }) {
           </tfoot>
         </table>
       </div>
+      <ConfirmDlg_NkFremd />
     </div>
   );
 }
@@ -357,6 +365,7 @@ function NkFremdBlock({ auftragId }: { auftragId: string }) {
 // ─── IST-SOEK Block ───────────────────────────────────────────────────────────
 function NkSoekBlock({ auftragId }: { auftragId: string }) {
   const { toast } = useToast();
+  const { confirm: confirmDel, ConfirmDialog: ConfirmDlg_NkSoek } = useConfirm();
   const today = new Date().toISOString().split("T")[0];
   const emptyRow = { bezeichnung: "Verpflegung", anzahl: "", einheit: "Psch", preis_pro_einheit: "", datum: today };
   const [newRow, setNewRow] = useState(emptyRow);
@@ -407,7 +416,7 @@ function NkSoekBlock({ auftragId }: { auftragId: string }) {
                 <td className="px-2 py-1 text-xs text-right font-mono">{num(r.preis_pro_einheit).toFixed(2)}</td>
                 <td className="px-2 py-1 text-xs font-mono">{r.datum}</td>
                 <td className="px-2 py-1 text-xs text-right font-mono font-semibold">{chf(r.total_chf)}</td>
-                <td className="px-1 py-1"><Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => r.id && deleteMutation.mutate(r.id)}><Trash2 className="h-3 w-3 text-destructive" /></Button></td>
+                <td className="px-1 py-1"><Button size="icon" variant="ghost" className="h-6 w-6" onClick={async () => { if (r.id && await confirmDel()) deleteMutation.mutate(r.id); }}><Trash2 className="h-3 w-3 text-destructive" /></Button></td>
               </tr>
             ))}
             <tr className="border-t-2 border-dashed">
@@ -439,6 +448,7 @@ function NkSoekBlock({ auftragId }: { auftragId: string }) {
           </tfoot>
         </table>
       </div>
+      <ConfirmDlg_NkSoek />
     </div>
   );
 }
