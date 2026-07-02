@@ -1041,6 +1041,7 @@ function ZusammenfassungBlock({
     setCfg({
       risiko_gewinn_prozent: Number(config.risiko_gewinn_prozent),
       rabatt_prozent: Number(config.rabatt_prozent),
+      skonto_prozent: Number(config.skonto_prozent ?? 0),
       mwst_prozent: Number(config.mwst_prozent),
       notiz: config.notiz || "",
     });
@@ -1048,22 +1049,15 @@ function ZusammenfassungBlock({
   }
 
   const saveCfgMut = useMutation({
-    mutationFn: () =>
-      apiRequest("PUT", `/api/vorkalkulation/${auftragId}/config`, cfg),
+    mutationFn: async () => {
+      await apiRequest("PUT", `/api/vorkalkulation/${auftragId}/config`, cfg);
+      // Automatisch Bruttooffertpreis in Auftrag übernehmen
+      await apiRequest("PATCH", `/api/auftraege/${auftragId}`, { angebots_betrag: brutto });
+    },
     onSuccess: () => {
       refetchConfig();
-      toast({ title: "Kalkulation gespeichert ✓" });
-    },
-    onError: (e: any) =>
-      toast({ title: "Fehler", description: e.message, variant: "destructive" }),
-  });
-
-  const syncAuftragswertMut = useMutation({
-    mutationFn: (betrag: number) =>
-      apiRequest("PATCH", `/api/auftraege/${auftragId}`, { angebots_betrag: betrag }),
-    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/auftraege", auftragId] });
-      toast({ title: "Auftragswert übernommen ✓", description: `CHF ${brutto.toFixed(2)} wurde im Auftrag gespeichert` });
+      toast({ title: "Kalkulation gespeichert ✓", description: `Offertpreis CHF ${brutto.toFixed(2)} automatisch übernommen` });
     },
     onError: (e: any) =>
       toast({ title: "Fehler", description: e.message, variant: "destructive" }),
@@ -1082,7 +1076,9 @@ function ZusammenfassungBlock({
   const risikoGewinn = selbstkosten * ((cfg.risiko_gewinn_prozent || 0) / 100);
   const nettoOhneRabatt = selbstkosten + risikoGewinn;
   const rabattBetrag = nettoOhneRabatt * ((cfg.rabatt_prozent || 0) / 100);
-  const netto = nettoOhneRabatt - rabattBetrag;
+  const nettoNachRabatt = nettoOhneRabatt + rabattBetrag;
+  const skontoBetrag = nettoNachRabatt * ((cfg.skonto_prozent || 0) / 100);
+  const netto = nettoNachRabatt + skontoBetrag;
   const mwstBetrag = netto * ((cfg.mwst_prozent || 8.1) / 100);
   const brutto = netto + mwstBetrag;
 
@@ -1201,14 +1197,6 @@ function ZusammenfassungBlock({
             className="bg-[#6b4c2a] hover:bg-[#5a3e22] text-white"
           >
             Kalkulation speichern
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => syncAuftragswertMut.mutate(brutto)}
-            disabled={syncAuftragswertMut.isPending || brutto <= 0}
-            title={`Bruttooffertpreis CHF ${brutto.toFixed(2)} als Auftragswert setzen`}
-          >
-            Auftragswert übernehmen (CHF {brutto.toFixed(2)})
           </Button>
         </div>
       </Card>

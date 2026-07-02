@@ -740,8 +740,15 @@ function OffertpreisBlock({ auftragId, saetze }: { auftragId: string; saetze: St
   const merged = { ...cfg, ...localCfg };
 
   const saveMutation = useMutation({
-    mutationFn: () => apiRequest("PUT", `/api/vorkalkulation/${auftragId}/config`, merged),
-    onSuccess: () => { refetch(); setLocalCfg({}); toast({ title: "Offertpreis gespeichert" }); },
+    mutationFn: async (bruttoOffertpreis: number) => {
+      await apiRequest("PUT", `/api/vorkalkulation/${auftragId}/config`, merged);
+      await apiRequest("PATCH", `/api/auftraege/${auftragId}`, { angebots_betrag: bruttoOffertpreis });
+    },
+    onSuccess: () => {
+      refetch();
+      setLocalCfg({});
+      toast({ title: "Offertpreis gespeichert ✓", description: "Angebotsbetrag im Auftrag aktualisiert" });
+    },
   });
 
   // Alle Kosten laden
@@ -836,7 +843,7 @@ function OffertpreisBlock({ auftragId, saetze }: { auftragId: string; saetze: St
             <span className="font-mono" style={{ color: "#1a3a6b" }}>{chf(bruttoTotal)}</span>
           </div>
         </div>
-        <Button className="mt-3 w-full sm:w-auto" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
+        <Button className="mt-3 w-full sm:w-auto" onClick={() => saveMutation.mutate(bruttoTotal)} disabled={saveMutation.isPending}>
           <Save className="h-4 w-4 mr-2" />Speichern
         </Button>
       </Card>
