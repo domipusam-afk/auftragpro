@@ -12,7 +12,7 @@ import { Separator } from "@/components/ui/separator";
 import {
   ArrowLeft, Plus, Trash2, Clock, Package, Wrench,
   Receipt, BarChart3, RefreshCw, TrendingUp, TrendingDown,
-  Minus, AlertTriangle, CheckCircle2, FileDown} from "lucide-react";
+  Minus, AlertTriangle, CheckCircle2, FileDown, Check, X, Pencil} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirm } from "@/hooks/use-confirm";
 import { downloadPdf } from "@/lib/pdf";
@@ -55,6 +55,8 @@ function NkStundenBlock({ auftragId }: { auftragId: string }) {
   const today = new Date().toISOString().split("T")[0];
   const emptyRow = { bereich: "Montage", unterkategorie: "Baustelle einrichten", mitarbeiter_name: "", datum: today, ist_stunden: "", stundensatz: "", bemerkung: "" };
   const [newRow, setNewRow] = useState(emptyRow);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editRow, setEditRow] = useState<any>({});
 
   const { data: saetze = [] } = useQuery<any[]>({ queryKey: ["/api/stundensaetze"], queryFn: async () => { const r = await apiRequest("GET", "/api/stundensaetze"); return r.json(); } });
   const { data: mitarbeiter = [] } = useQuery<any[]>({ queryKey: ["/api/mitarbeiter"], queryFn: async () => { const r = await apiRequest("GET", "/api/mitarbeiter"); return r.json(); } });
@@ -90,6 +92,20 @@ function NkStundenBlock({ auftragId }: { auftragId: string }) {
       queryClient.invalidateQueries({ queryKey: ["/api/auftraege"] });
       toast({ title: "Eintrag gelöscht ✓" });
     },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const stunden = num(editRow.ist_stunden), satz = num(editRow.stundensatz);
+      return apiRequest("PUT", `/api/kalkulation/nk-stunden/${id}`, {
+        bereich: editRow.bereich, unterkategorie: editRow.unterkategorie,
+        mitarbeiter_name: editRow.mitarbeiter_name, datum: editRow.datum,
+        ist_stunden: stunden, stundensatz: satz, total_chf: stunden * satz,
+        bemerkung: editRow.bemerkung,
+      });
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/nk-stunden", auftragId] }); setEditId(null); setEditRow({}); toast({ title: "Zeile aktualisiert" }); },
+    onError: (e: any) => toast({ title: "Fehler", description: e.message, variant: "destructive" }),
   });
 
   const totalIst = rows.reduce((s, r) => s + num(r.ist_stunden), 0);
@@ -139,31 +155,62 @@ function NkStundenBlock({ auftragId }: { auftragId: string }) {
               <tr><td colSpan={9} className="text-center py-6 text-muted-foreground text-xs">
                 Noch keine IST-Stunden. Zeiterfassung im Auftrag erfassen oder manuell hinzufügen.
               </td></tr>
-            ) : rows.map((r, i) => (
-              <tr key={r.id || `${r.zeiterfassung_id}-${i}`} className={i % 2 === 0 ? "bg-muted/10" : ""}>
-                <td className="px-2 py-1">
-                  <span className="text-xs font-medium px-1.5 py-0.5 rounded" style={{ backgroundColor: (bereichColor[r.bereich] || "#888") + "20", color: bereichColor[r.bereich] || "#888" }}>{r.bereich}</span>
-                </td>
-                <td className="px-2 py-1 text-xs text-muted-foreground">{r.bemerkung || r.unterkategorie || "—"}</td>
-                <td className="px-2 py-1 text-xs">{r.mitarbeiter_name || "—"}</td>
-                <td className="px-2 py-1 text-xs font-mono">{r.datum}</td>
-                <td className="px-2 py-1 text-xs text-right font-mono">{num(r.ist_stunden).toFixed(2)}</td>
-                <td className="px-2 py-1 text-xs text-right font-mono text-muted-foreground">{num(r.stundensatz).toFixed(2)}</td>
-                <td className="px-2 py-1 text-xs text-right font-mono font-semibold">{chf(r.total_chf)}</td>
-                <td className="px-2 py-1">
-                  <Badge variant={r.quelle === "zeiterfassung" ? "default" : "secondary"} className="text-xs">
-                    {r.quelle === "zeiterfassung" ? "⏱ Zeiterfassung" : "✏ Manuell"}
-                  </Badge>
-                </td>
-                <td className="px-1 py-1">
-                  <Button size="icon" variant="ghost" className="h-6 w-6"
-                    title={r.quelle === "zeiterfassung" ? "Zeiterfassung-Eintrag löschen" : "Manuellen Eintrag löschen"}
-                    onClick={async () => { if (await confirmDel()) deleteMutation.mutate(r); }}>
-                    <Trash2 className="h-3 w-3 text-destructive" />
-                  </Button>
-                </td>
-              </tr>
-            ))}
+            ) : rows.map((r, i) => {
+              const isEditing = editId === r.id && r.quelle !== "zeiterfassung";
+              return isEditing ? (
+                <tr key={r.id || `${r.zeiterfassung_id}-${i}`} className="bg-blue-50 dark:bg-blue-950/30">
+                  <td className="px-1 py-1">
+                    <Select value={editRow.bereich ?? "Montage"} onValueChange={v => setEditRow((p: any) => ({ ...p, bereich: v }))}>
+                      <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>{BEREICHE.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </td>
+                  <td className="px-1 py-1"><Input className="h-7 text-xs" value={editRow.bemerkung ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, bemerkung: e.target.value }))} /></td>
+                  <td className="px-1 py-1"><Input className="h-7 text-xs" value={editRow.mitarbeiter_name ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, mitarbeiter_name: e.target.value }))} /></td>
+                  <td className="px-1 py-1"><Input type="date" className="h-7 text-xs" value={editRow.datum ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, datum: e.target.value }))} /></td>
+                  <td className="px-1 py-1"><Input type="number" step="0.25" className="h-7 text-xs text-right" value={editRow.ist_stunden ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, ist_stunden: e.target.value }))} /></td>
+                  <td className="px-1 py-1"><Input type="number" step="0.50" className="h-7 text-xs text-right" value={editRow.stundensatz ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, stundensatz: e.target.value }))} /></td>
+                  <td className="px-2 py-1 text-xs text-right font-mono font-semibold">{chf(num(editRow.ist_stunden) * num(editRow.stundensatz))}</td>
+                  <td className="px-2 py-1"><Badge variant="secondary" className="text-xs">✏ Manuell</Badge></td>
+                  <td className="px-1 py-1">
+                    <div className="flex gap-1">
+                      <Button size="icon" variant="ghost" className="h-6 w-6 text-green-600" onClick={() => r.id && updateMutation.mutate(r.id)}><Check className="h-3 w-3" /></Button>
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditId(null); setEditRow({}); }}><X className="h-3 w-3" /></Button>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                <tr key={r.id || `${r.zeiterfassung_id}-${i}`} className={i % 2 === 0 ? "bg-muted/10" : ""}
+                  onDoubleClick={() => { if (r.quelle !== "zeiterfassung" && r.id) { setEditId(r.id); setEditRow({ bereich: r.bereich, unterkategorie: r.unterkategorie, mitarbeiter_name: r.mitarbeiter_name, datum: r.datum, ist_stunden: r.ist_stunden, stundensatz: r.stundensatz, bemerkung: r.bemerkung }); } }}>
+                  <td className="px-2 py-1">
+                    <span className="text-xs font-medium px-1.5 py-0.5 rounded" style={{ backgroundColor: (bereichColor[r.bereich] || "#888") + "20", color: bereichColor[r.bereich] || "#888" }}>{r.bereich}</span>
+                  </td>
+                  <td className="px-2 py-1 text-xs text-muted-foreground">{r.bemerkung || r.unterkategorie || "—"}</td>
+                  <td className="px-2 py-1 text-xs">{r.mitarbeiter_name || "—"}</td>
+                  <td className="px-2 py-1 text-xs font-mono">{r.datum}</td>
+                  <td className="px-2 py-1 text-xs text-right font-mono">{num(r.ist_stunden).toFixed(2)}</td>
+                  <td className="px-2 py-1 text-xs text-right font-mono text-muted-foreground">{num(r.stundensatz).toFixed(2)}</td>
+                  <td className="px-2 py-1 text-xs text-right font-mono font-semibold">{chf(r.total_chf)}</td>
+                  <td className="px-2 py-1">
+                    <Badge variant={r.quelle === "zeiterfassung" ? "default" : "secondary"} className="text-xs">
+                      {r.quelle === "zeiterfassung" ? "⏱ Zeiterfassung" : "✏ Manuell"}
+                    </Badge>
+                  </td>
+                  <td className="px-1 py-1">
+                    <div className="flex gap-1">
+                      {r.quelle !== "zeiterfassung" && r.id && (
+                        <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditId(r.id!); setEditRow({ bereich: r.bereich, unterkategorie: r.unterkategorie, mitarbeiter_name: r.mitarbeiter_name, datum: r.datum, ist_stunden: r.ist_stunden, stundensatz: r.stundensatz, bemerkung: r.bemerkung }); }}><Pencil className="h-3 w-3 text-muted-foreground" /></Button>
+                      )}
+                      <Button size="icon" variant="ghost" className="h-6 w-6"
+                        title={r.quelle === "zeiterfassung" ? "Zeiterfassung-Eintrag löschen" : "Manuellen Eintrag löschen"}
+                        onClick={async () => { if (await confirmDel()) deleteMutation.mutate(r); }}>
+                        <Trash2 className="h-3 w-3 text-destructive" />
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
             {/* Neue manuelle Zeile */}
             <tr className="border-t-2 border-dashed">
               <td className="px-1 py-1">
@@ -219,10 +266,18 @@ function NkMaterialBlock({ auftragId }: { auftragId: string }) {
   const today = new Date().toISOString().split("T")[0];
   const emptyRow = { bezeichnung: "", kategorie: "Material", lieferant: "", betrag_chf: "", datum: today, rechnung_nr: "", bemerkung: "" };
   const [newRow, setNewRow] = useState(emptyRow);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editRow, setEditRow] = useState<any>({});
 
   const { data: rows = [] } = useQuery<NkMaterial[]>({
     queryKey: ["/api/nk-material", auftragId],
     queryFn: async () => { const r = await apiRequest("GET", `/api/kalkulation/${auftragId}/nk-material`); return r.json(); },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async (id: string) => apiRequest("PUT", `/api/kalkulation/nk-material/${id}`, { ...editRow, betrag_chf: num(editRow.betrag_chf) }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/nk-material", auftragId] }); setEditId(null); setEditRow({}); toast({ title: "Zeile aktualisiert" }); },
+    onError: (e: any) => toast({ title: "Fehler", description: e.message, variant: "destructive" }),
   });
 
   const addMutation = useMutation({
@@ -254,16 +309,38 @@ function NkMaterialBlock({ auftragId }: { auftragId: string }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, i) => (
-              <tr key={r.id || i} className={i % 2 === 0 ? "bg-muted/10" : ""}>
-                <td className="px-2 py-1 text-xs font-medium">{r.bezeichnung}</td>
-                <td className="px-2 py-1 text-xs text-muted-foreground">{r.lieferant}</td>
-                <td className="px-2 py-1 text-xs font-mono text-muted-foreground">{r.rechnung_nr}</td>
-                <td className="px-2 py-1 text-xs font-mono">{r.datum}</td>
-                <td className="px-2 py-1 text-xs text-right font-mono font-semibold">{chf(r.betrag_chf)}</td>
-                <td className="px-1 py-1"><Button size="icon" variant="ghost" className="h-6 w-6" onClick={async () => { if (r.id && await confirmDel()) deleteMutation.mutate(r.id); }}><Trash2 className="h-3 w-3 text-destructive" /></Button></td>
-              </tr>
-            ))}
+            {rows.map((r, i) => {
+              const isEditing = editId === r.id;
+              return isEditing ? (
+                <tr key={r.id || i} className="bg-blue-50 dark:bg-blue-950/30">
+                  <td className="px-1 py-1"><Input className="h-7 text-xs" value={editRow.bezeichnung ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, bezeichnung: e.target.value }))} /></td>
+                  <td className="px-1 py-1"><Input className="h-7 text-xs" value={editRow.lieferant ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, lieferant: e.target.value }))} /></td>
+                  <td className="px-1 py-1"><Input className="h-7 text-xs" value={editRow.rechnung_nr ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, rechnung_nr: e.target.value }))} /></td>
+                  <td className="px-1 py-1"><Input type="date" className="h-7 text-xs" value={editRow.datum ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, datum: e.target.value }))} /></td>
+                  <td className="px-1 py-1"><Input type="number" className="h-7 text-xs text-right" value={editRow.betrag_chf ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, betrag_chf: e.target.value }))} /></td>
+                  <td className="px-1 py-1">
+                    <div className="flex gap-1">
+                      <Button size="icon" variant="ghost" className="h-6 w-6 text-green-600" onClick={() => r.id && updateMutation.mutate(r.id)}><Check className="h-3 w-3" /></Button>
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditId(null); setEditRow({}); }}><X className="h-3 w-3" /></Button>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                <tr key={r.id || i} className={i % 2 === 0 ? "bg-muted/10" : ""} onDoubleClick={() => { setEditId(r.id || null); setEditRow({ bezeichnung: r.bezeichnung, lieferant: r.lieferant, rechnung_nr: r.rechnung_nr, datum: r.datum, betrag_chf: r.betrag_chf }); }}>
+                  <td className="px-2 py-1 text-xs font-medium">{r.bezeichnung}</td>
+                  <td className="px-2 py-1 text-xs text-muted-foreground">{r.lieferant}</td>
+                  <td className="px-2 py-1 text-xs font-mono text-muted-foreground">{r.rechnung_nr}</td>
+                  <td className="px-2 py-1 text-xs font-mono">{r.datum}</td>
+                  <td className="px-2 py-1 text-xs text-right font-mono font-semibold">{chf(r.betrag_chf)}</td>
+                  <td className="px-1 py-1">
+                    <div className="flex gap-1">
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditId(r.id || null); setEditRow({ bezeichnung: r.bezeichnung, lieferant: r.lieferant, rechnung_nr: r.rechnung_nr, datum: r.datum, betrag_chf: r.betrag_chf }); }}><Pencil className="h-3 w-3 text-muted-foreground" /></Button>
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={async () => { if (r.id && await confirmDel()) deleteMutation.mutate(r.id); }}><Trash2 className="h-3 w-3 text-destructive" /></Button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
             <tr className="border-t-2 border-dashed">
               <td className="px-1 py-1"><Input className="h-7 text-xs" placeholder="Bezeichnung" value={newRow.bezeichnung} onChange={e => setNewRow(p => ({ ...p, bezeichnung: e.target.value }))} /></td>
               <td className="px-1 py-1"><Input className="h-7 text-xs" placeholder="Lieferant" value={newRow.lieferant} onChange={e => setNewRow(p => ({ ...p, lieferant: e.target.value }))} /></td>
@@ -294,10 +371,18 @@ function NkFremdBlock({ auftragId }: { auftragId: string }) {
   const today = new Date().toISOString().split("T")[0];
   const emptyRow = { bezeichnung: "", lieferant: "", betrag_chf: "", datum: today, rechnung_nr: "" };
   const [newRow, setNewRow] = useState(emptyRow);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editRow, setEditRow] = useState<any>({});
 
   const { data: rows = [] } = useQuery<NkFremd[]>({
     queryKey: ["/api/nk-fremd", auftragId],
     queryFn: async () => { const r = await apiRequest("GET", `/api/kalkulation/${auftragId}/nk-fremd`); return r.json(); },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async (id: string) => apiRequest("PUT", `/api/kalkulation/nk-fremd/${id}`, { ...editRow, betrag_chf: num(editRow.betrag_chf) }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/nk-fremd", auftragId] }); setEditId(null); setEditRow({}); toast({ title: "Zeile aktualisiert" }); },
+    onError: (e: any) => toast({ title: "Fehler", description: e.message, variant: "destructive" }),
   });
 
   const addMutation = useMutation({
@@ -329,16 +414,38 @@ function NkFremdBlock({ auftragId }: { auftragId: string }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, i) => (
-              <tr key={r.id || i} className={i % 2 === 0 ? "bg-muted/10" : ""}>
-                <td className="px-2 py-1 text-xs font-medium">{r.bezeichnung}</td>
-                <td className="px-2 py-1 text-xs text-muted-foreground">{r.lieferant}</td>
-                <td className="px-2 py-1 text-xs font-mono text-muted-foreground">{r.rechnung_nr}</td>
-                <td className="px-2 py-1 text-xs font-mono">{r.datum}</td>
-                <td className="px-2 py-1 text-xs text-right font-mono font-semibold">{chf(r.betrag_chf)}</td>
-                <td className="px-1 py-1"><Button size="icon" variant="ghost" className="h-6 w-6" onClick={async () => { if (r.id && await confirmDel()) deleteMutation.mutate(r.id); }}><Trash2 className="h-3 w-3 text-destructive" /></Button></td>
-              </tr>
-            ))}
+            {rows.map((r, i) => {
+              const isEditing = editId === r.id;
+              return isEditing ? (
+                <tr key={r.id || i} className="bg-blue-50 dark:bg-blue-950/30">
+                  <td className="px-1 py-1"><Input className="h-7 text-xs" value={editRow.bezeichnung ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, bezeichnung: e.target.value }))} /></td>
+                  <td className="px-1 py-1"><Input className="h-7 text-xs" value={editRow.lieferant ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, lieferant: e.target.value }))} /></td>
+                  <td className="px-1 py-1"><Input className="h-7 text-xs" value={editRow.rechnung_nr ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, rechnung_nr: e.target.value }))} /></td>
+                  <td className="px-1 py-1"><Input type="date" className="h-7 text-xs" value={editRow.datum ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, datum: e.target.value }))} /></td>
+                  <td className="px-1 py-1"><Input type="number" className="h-7 text-xs text-right" value={editRow.betrag_chf ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, betrag_chf: e.target.value }))} /></td>
+                  <td className="px-1 py-1">
+                    <div className="flex gap-1">
+                      <Button size="icon" variant="ghost" className="h-6 w-6 text-green-600" onClick={() => r.id && updateMutation.mutate(r.id)}><Check className="h-3 w-3" /></Button>
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditId(null); setEditRow({}); }}><X className="h-3 w-3" /></Button>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                <tr key={r.id || i} className={i % 2 === 0 ? "bg-muted/10" : ""} onDoubleClick={() => { setEditId(r.id || null); setEditRow({ bezeichnung: r.bezeichnung, lieferant: r.lieferant, rechnung_nr: r.rechnung_nr, datum: r.datum, betrag_chf: r.betrag_chf }); }}>
+                  <td className="px-2 py-1 text-xs font-medium">{r.bezeichnung}</td>
+                  <td className="px-2 py-1 text-xs text-muted-foreground">{r.lieferant}</td>
+                  <td className="px-2 py-1 text-xs font-mono text-muted-foreground">{r.rechnung_nr}</td>
+                  <td className="px-2 py-1 text-xs font-mono">{r.datum}</td>
+                  <td className="px-2 py-1 text-xs text-right font-mono font-semibold">{chf(r.betrag_chf)}</td>
+                  <td className="px-1 py-1">
+                    <div className="flex gap-1">
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditId(r.id || null); setEditRow({ bezeichnung: r.bezeichnung, lieferant: r.lieferant, rechnung_nr: r.rechnung_nr, datum: r.datum, betrag_chf: r.betrag_chf }); }}><Pencil className="h-3 w-3 text-muted-foreground" /></Button>
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={async () => { if (r.id && await confirmDel()) deleteMutation.mutate(r.id); }}><Trash2 className="h-3 w-3 text-destructive" /></Button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
             <tr className="border-t-2 border-dashed">
               <td className="px-1 py-1"><Input className="h-7 text-xs" placeholder="Bezeichnung" value={newRow.bezeichnung} onChange={e => setNewRow(p => ({ ...p, bezeichnung: e.target.value }))} /></td>
               <td className="px-1 py-1"><Input className="h-7 text-xs" placeholder="Lieferant" value={newRow.lieferant} onChange={e => setNewRow(p => ({ ...p, lieferant: e.target.value }))} /></td>
@@ -369,10 +476,21 @@ function NkSoekBlock({ auftragId }: { auftragId: string }) {
   const today = new Date().toISOString().split("T")[0];
   const emptyRow = { bezeichnung: "Verpflegung", anzahl: "", einheit: "Psch", preis_pro_einheit: "", datum: today };
   const [newRow, setNewRow] = useState(emptyRow);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editRow, setEditRow] = useState<any>({});
 
   const { data: rows = [] } = useQuery<NkSoek[]>({
     queryKey: ["/api/nk-soek", auftragId],
     queryFn: async () => { const r = await apiRequest("GET", `/api/kalkulation/${auftragId}/nk-soek`); return r.json(); },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const anzahl = num(editRow.anzahl), preis = num(editRow.preis_pro_einheit);
+      return apiRequest("PUT", `/api/kalkulation/nk-soek/${id}`, { ...editRow, anzahl, preis_pro_einheit: preis, total_chf: anzahl * preis });
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/nk-soek", auftragId] }); setEditId(null); setEditRow({}); toast({ title: "Zeile aktualisiert" }); },
+    onError: (e: any) => toast({ title: "Fehler", description: e.message, variant: "destructive" }),
   });
 
   const addMutation = useMutation({
@@ -408,17 +526,50 @@ function NkSoekBlock({ auftragId }: { auftragId: string }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, i) => (
-              <tr key={r.id || i} className={i % 2 === 0 ? "bg-muted/10" : ""}>
-                <td className="px-2 py-1 text-xs font-medium">{r.bezeichnung}</td>
-                <td className="px-2 py-1 text-xs text-right font-mono">{r.anzahl}</td>
-                <td className="px-2 py-1 text-xs">{r.einheit}</td>
-                <td className="px-2 py-1 text-xs text-right font-mono">{num(r.preis_pro_einheit).toFixed(2)}</td>
-                <td className="px-2 py-1 text-xs font-mono">{r.datum}</td>
-                <td className="px-2 py-1 text-xs text-right font-mono font-semibold">{chf(r.total_chf)}</td>
-                <td className="px-1 py-1"><Button size="icon" variant="ghost" className="h-6 w-6" onClick={async () => { if (r.id && await confirmDel()) deleteMutation.mutate(r.id); }}><Trash2 className="h-3 w-3 text-destructive" /></Button></td>
-              </tr>
-            ))}
+            {rows.map((r, i) => {
+              const isEditing = editId === r.id;
+              return isEditing ? (
+                <tr key={r.id || i} className="bg-blue-50 dark:bg-blue-950/30">
+                  <td className="px-1 py-1">
+                    <Select value={editRow.bezeichnung ?? "Verpflegung"} onValueChange={v => setEditRow((p: any) => ({ ...p, bezeichnung: v }))}>
+                      <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>{SOEK_KATEGORIEN.map(k => <SelectItem key={k} value={k}>{k}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </td>
+                  <td className="px-1 py-1"><Input type="number" className="h-7 text-xs text-right" value={editRow.anzahl ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, anzahl: e.target.value }))} /></td>
+                  <td className="px-1 py-1">
+                    <Select value={editRow.einheit ?? "Psch"} onValueChange={v => setEditRow((p: any) => ({ ...p, einheit: v }))}>
+                      <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>{EINHEITEN.map(e => <SelectItem key={e} value={e}>{e}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </td>
+                  <td className="px-1 py-1"><Input type="number" className="h-7 text-xs text-right" value={editRow.preis_pro_einheit ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, preis_pro_einheit: e.target.value }))} /></td>
+                  <td className="px-1 py-1"><Input type="date" className="h-7 text-xs" value={editRow.datum ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, datum: e.target.value }))} /></td>
+                  <td className="px-2 py-1 text-xs text-right font-mono font-semibold">{chf(num(editRow.anzahl) * num(editRow.preis_pro_einheit))}</td>
+                  <td className="px-1 py-1">
+                    <div className="flex gap-1">
+                      <Button size="icon" variant="ghost" className="h-6 w-6 text-green-600" onClick={() => r.id && updateMutation.mutate(r.id)}><Check className="h-3 w-3" /></Button>
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditId(null); setEditRow({}); }}><X className="h-3 w-3" /></Button>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                <tr key={r.id || i} className={i % 2 === 0 ? "bg-muted/10" : ""} onDoubleClick={() => { setEditId(r.id || null); setEditRow({ bezeichnung: r.bezeichnung, anzahl: r.anzahl, einheit: r.einheit, preis_pro_einheit: r.preis_pro_einheit, datum: r.datum }); }}>
+                  <td className="px-2 py-1 text-xs font-medium">{r.bezeichnung}</td>
+                  <td className="px-2 py-1 text-xs text-right font-mono">{r.anzahl}</td>
+                  <td className="px-2 py-1 text-xs">{r.einheit}</td>
+                  <td className="px-2 py-1 text-xs text-right font-mono">{num(r.preis_pro_einheit).toFixed(2)}</td>
+                  <td className="px-2 py-1 text-xs font-mono">{r.datum}</td>
+                  <td className="px-2 py-1 text-xs text-right font-mono font-semibold">{chf(r.total_chf)}</td>
+                  <td className="px-1 py-1">
+                    <div className="flex gap-1">
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditId(r.id || null); setEditRow({ bezeichnung: r.bezeichnung, anzahl: r.anzahl, einheit: r.einheit, preis_pro_einheit: r.preis_pro_einheit, datum: r.datum }); }}><Pencil className="h-3 w-3 text-muted-foreground" /></Button>
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={async () => { if (r.id && await confirmDel()) deleteMutation.mutate(r.id); }}><Trash2 className="h-3 w-3 text-destructive" /></Button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
             <tr className="border-t-2 border-dashed">
               <td className="px-1 py-1">
                 <Select value={newRow.bezeichnung} onValueChange={v => setNewRow(p => ({ ...p, bezeichnung: v }))}>

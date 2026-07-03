@@ -14,6 +14,7 @@ import {
   ArrowLeft, Plus, Trash2, Calculator, Package, Wrench, FileDown,
   Receipt, BarChart3, Clock, ChevronRight, Save, RefreshCw,
   Layers, FileText, TrendingUp, TrendingDown, Minus, AlertTriangle,
+  Pencil, Check, X,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirm } from "@/hooks/use-confirm";
@@ -65,6 +66,8 @@ function StundenBereichBlock({ auftragId, bereich, saetze }: { auftragId: string
   const { toast } = useToast();
   const { confirm: confirmDel, ConfirmDialog: ConfirmDlg_StundenBereichBlock } = useConfirm();
   const unterkategorien = (STUNDEN_BEREICHE as any)[bereich] || [];
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editRow, setEditRow] = useState<any>({});
 
   const getOrte = () => {
     if (bereich === "Planung/AVOR") return [{ label: "AVOR", ort: "Avor", maschine: null }];
@@ -133,6 +136,23 @@ function StundenBereichBlock({ auftragId, bereich, saetze }: { auftragId: string
     },
   });
 
+  const updateMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const satz = getSatz(editRow.ort || "Werkstatt", editRow.maschine || null);
+      return apiRequest("PATCH", `/api/vorkalkulation/stunden/${id}`, {
+        bezeichnung: editRow.bezeichnung,
+        soll_stunden: num(editRow.soll_stunden),
+        stundensatz: satz,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/vk-stunden", auftragId, bereich] });
+      queryClient.invalidateQueries({ queryKey: ["/api/vk-stunden-all", auftragId] });
+      setEditId(null); setEditRow({});
+      toast({ title: "Zeile aktualisiert" });
+    },
+  });
+
   const totalStunden = rows.reduce((s, r) => s + num(r.soll_stunden), 0);
   const totalChf = rows.reduce((s, r) => s + num(r.soll_stunden) * num(r.stundensatz), 0);
 
@@ -165,18 +185,31 @@ function StundenBereichBlock({ auftragId, bereich, saetze }: { auftragId: string
               <tr><td colSpan={7} className="text-center py-4 text-muted-foreground text-xs">Noch keine Einträge</td></tr>
             ) : rows.map((r, i) => {
               const ortLabel = r.maschinenpark ? `Werkstatt · ${r.maschinenpark}` : r.ort;
-              return (
-                <tr key={r.id || i} className={i % 2 === 0 ? "bg-muted/20" : ""}>
+              const isEditing = editId === r.id;
+              return isEditing ? (
+                <tr key={r.id || i} className="bg-blue-50 dark:bg-blue-950/30">
+                  <td className="px-2 py-1 text-xs">{r.unterkategorie || r.ort}</td>
+                  <td className="px-1 py-1"><Input className="h-7 text-xs" value={editRow.bezeichnung ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, bezeichnung: e.target.value }))} /></td>
+                  <td className="px-2 py-1 text-xs">{ortLabel}</td>
+                  <td className="px-1 py-1"><Input type="number" className="h-7 text-xs text-right" value={editRow.soll_stunden ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, soll_stunden: e.target.value }))} /></td>
+                  <td className="px-2 py-1 text-xs text-right font-mono text-muted-foreground">{num(r.stundensatz).toFixed(2)}</td>
+                  <td className="px-2 py-1 text-xs text-right font-mono font-medium">{chf(num(editRow.soll_stunden) * num(r.stundensatz))}</td>
+                  <td className="px-1 py-1 flex gap-1">
+                    <Button size="icon" variant="ghost" className="h-6 w-6 text-green-600" onClick={() => r.id && updateMutation.mutate(r.id)}><Check className="h-3 w-3" /></Button>
+                    <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditId(null); setEditRow({}); }}><X className="h-3 w-3" /></Button>
+                  </td>
+                </tr>
+              ) : (
+                <tr key={r.id || i} className={i % 2 === 0 ? "bg-muted/20" : ""} onDoubleClick={() => { setEditId(r.id || null); setEditRow({ bezeichnung: (r as any).bezeichnung || "", soll_stunden: r.soll_stunden }); }}>
                   <td className="px-2 py-1 text-xs">{r.unterkategorie || r.ort}</td>
                   <td className="px-2 py-1 text-xs text-muted-foreground">{(r as any).bezeichnung || ""}</td>
                   <td className="px-2 py-1 text-xs">{ortLabel}</td>
                   <td className="px-2 py-1 text-xs text-right font-mono">{num(r.soll_stunden).toFixed(2)}</td>
                   <td className="px-2 py-1 text-xs text-right font-mono text-muted-foreground">{num(r.stundensatz).toFixed(2)}</td>
                   <td className="px-2 py-1 text-xs text-right font-mono font-medium">{chf(num(r.soll_stunden) * num(r.stundensatz))}</td>
-                  <td className="px-2 py-1">
-                    <Button size="icon" variant="ghost" className="h-6 w-6" onClick={async () => { if (r.id && await confirmDel()) deleteMutation.mutate(r.id); }}>
-                      <Trash2 className="h-3 w-3 text-destructive" />
-                    </Button>
+                  <td className="px-2 py-1 flex gap-1">
+                    <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditId(r.id || null); setEditRow({ bezeichnung: (r as any).bezeichnung || "", soll_stunden: r.soll_stunden }); }}><Pencil className="h-3 w-3 text-muted-foreground" /></Button>
+                    <Button size="icon" variant="ghost" className="h-6 w-6" onClick={async () => { if (r.id && await confirmDel()) deleteMutation.mutate(r.id); }}><Trash2 className="h-3 w-3 text-destructive" /></Button>
                   </td>
                 </tr>
               );
@@ -237,6 +270,8 @@ function HauptmatProfilBlock({ auftragId }: { auftragId: string }) {
   const { confirm: confirmDel, ConfirmDialog: ConfirmDlg_HauptmatProfilBlock } = useConfirm();
   const emptyRow = { pos: 0, profil: "", bemerkung: "", stueck: "", laenge_mm: "", kg_pro_m: "", werkstoff: "Stahl", preis_pro_einheit: "" };
   const [newRow, setNewRow] = useState(emptyRow);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editRow, setEditRow] = useState<any>({});
 
   const { data: rows = [] } = useQuery<HauptmatProfil[]>({
     queryKey: ["/api/vk-hauptmaterial", auftragId],
@@ -264,6 +299,21 @@ function HauptmatProfilBlock({ auftragId }: { auftragId: string }) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/vk-hauptmaterial", auftragId] }),
   });
 
+  const updateMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const stueck = num(editRow.stueck), laenge = num(editRow.laenge_mm), kgm = num(editRow.kg_pro_m);
+      const totalKg = stueck * (laenge / 1000) * kgm;
+      const preis = num(editRow.preis_pro_einheit);
+      const totalChf = totalKg > 0 ? totalKg * preis : stueck * preis;
+      return apiRequest("PATCH", `/api/vorkalkulation/${auftragId}/material/${id}`, {
+        profil: editRow.profil, bemerkung: editRow.bemerkung, werkstoff: editRow.werkstoff,
+        stueck, laenge_mm: laenge || null, kg_pro_m: kgm || null,
+        total_kg: totalKg || null, preis_pro_einheit: preis, total_chf: totalChf,
+      });
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/vk-hauptmaterial", auftragId] }); setEditId(null); setEditRow({}); toast({ title: "Zeile aktualisiert" }); },
+  });
+
   const total = rows.reduce((s, r) => s + num(r.total_chf), 0);
 
   return (
@@ -286,20 +336,49 @@ function HauptmatProfilBlock({ auftragId }: { auftragId: string }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, i) => (
-              <tr key={r.id || i} className={i % 2 === 0 ? "bg-muted/10" : ""}>
-                <td className="px-2 py-1 text-xs">{r.pos}</td>
-                <td className="px-2 py-1 text-xs font-medium">{r.profil} <span className="text-muted-foreground font-normal">{r.bemerkung}</span></td>
-                <td className="px-2 py-1"><Badge variant="outline" className="text-xs">{r.werkstoff}</Badge></td>
-                <td className="px-2 py-1 text-xs text-right font-mono">{r.stueck}</td>
-                <td className="px-2 py-1 text-xs text-right font-mono">{r.laenge_mm ?? "—"}</td>
-                <td className="px-2 py-1 text-xs text-right font-mono">{r.kg_pro_m ?? "—"}</td>
-                <td className="px-2 py-1 text-xs text-right font-mono">{r.total_kg ? r.total_kg.toFixed(2) : "—"}</td>
-                <td className="px-2 py-1 text-xs text-right font-mono">{r.preis_pro_einheit.toFixed(2)}</td>
-                <td className="px-2 py-1 text-xs text-right font-mono font-semibold">{chf(r.total_chf)}</td>
-                <td className="px-1 py-1"><Button size="icon" variant="ghost" className="h-6 w-6" onClick={async () => { if (r.id && await confirmDel()) deleteMutation.mutate(r.id); }}><Trash2 className="h-3 w-3 text-destructive" /></Button></td>
-              </tr>
-            ))}
+            {rows.map((r, i) => {
+              const isEditing = editId === r.id;
+              return isEditing ? (
+                <tr key={r.id || i} className="bg-blue-50 dark:bg-blue-950/30">
+                  <td className="px-2 py-1 text-xs">{r.pos}</td>
+                  <td className="px-1 py-1" colSpan={2}>
+                    <div className="flex gap-1">
+                      <Input className="h-7 text-xs" placeholder="Profil" value={editRow.profil ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, profil: e.target.value }))} />
+                      <Select value={editRow.werkstoff ?? "Stahl"} onValueChange={v => setEditRow((p: any) => ({ ...p, werkstoff: v }))}>
+                        <SelectTrigger className="h-7 text-xs w-24"><SelectValue /></SelectTrigger>
+                        <SelectContent>{WERKSTOFF_OPTIONEN.map(w => <SelectItem key={w} value={w}>{w}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
+                  </td>
+                  <td className="px-1 py-1"><Input type="number" className="h-7 text-xs text-right" value={editRow.stueck ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, stueck: e.target.value }))} /></td>
+                  <td className="px-1 py-1"><Input type="number" className="h-7 text-xs text-right" value={editRow.laenge_mm ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, laenge_mm: e.target.value }))} /></td>
+                  <td className="px-1 py-1"><Input type="number" className="h-7 text-xs text-right" value={editRow.kg_pro_m ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, kg_pro_m: e.target.value }))} /></td>
+                  <td className="px-2 py-1 text-xs text-right font-mono text-muted-foreground">{(num(editRow.stueck) * (num(editRow.laenge_mm) / 1000) * num(editRow.kg_pro_m)).toFixed(2)}</td>
+                  <td className="px-1 py-1"><Input type="number" className="h-7 text-xs text-right" value={editRow.preis_pro_einheit ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, preis_pro_einheit: e.target.value }))} /></td>
+                  <td className="px-2 py-1 text-xs text-right font-mono font-semibold">{chf((() => { const kg = num(editRow.stueck) * (num(editRow.laenge_mm) / 1000) * num(editRow.kg_pro_m); return kg > 0 ? kg * num(editRow.preis_pro_einheit) : num(editRow.stueck) * num(editRow.preis_pro_einheit); })())}</td>
+                  <td className="px-1 py-1 flex gap-1">
+                    <Button size="icon" variant="ghost" className="h-6 w-6 text-green-600" onClick={() => r.id && updateMutation.mutate(r.id)}><Check className="h-3 w-3" /></Button>
+                    <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditId(null); setEditRow({}); }}><X className="h-3 w-3" /></Button>
+                  </td>
+                </tr>
+              ) : (
+                <tr key={r.id || i} className={i % 2 === 0 ? "bg-muted/10" : ""} onDoubleClick={() => { setEditId(r.id || null); setEditRow({ profil: r.profil, bemerkung: r.bemerkung, werkstoff: r.werkstoff, stueck: r.stueck, laenge_mm: r.laenge_mm, kg_pro_m: r.kg_pro_m, preis_pro_einheit: r.preis_pro_einheit }); }}>
+                  <td className="px-2 py-1 text-xs">{r.pos}</td>
+                  <td className="px-2 py-1 text-xs font-medium">{r.profil} <span className="text-muted-foreground font-normal">{r.bemerkung}</span></td>
+                  <td className="px-2 py-1"><Badge variant="outline" className="text-xs">{r.werkstoff}</Badge></td>
+                  <td className="px-2 py-1 text-xs text-right font-mono">{r.stueck}</td>
+                  <td className="px-2 py-1 text-xs text-right font-mono">{r.laenge_mm ?? "—"}</td>
+                  <td className="px-2 py-1 text-xs text-right font-mono">{r.kg_pro_m ?? "—"}</td>
+                  <td className="px-2 py-1 text-xs text-right font-mono">{r.total_kg ? r.total_kg.toFixed(2) : "—"}</td>
+                  <td className="px-2 py-1 text-xs text-right font-mono">{r.preis_pro_einheit.toFixed(2)}</td>
+                  <td className="px-2 py-1 text-xs text-right font-mono font-semibold">{chf(r.total_chf)}</td>
+                  <td className="px-1 py-1 flex gap-1">
+                    <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditId(r.id || null); setEditRow({ profil: r.profil, bemerkung: r.bemerkung, werkstoff: r.werkstoff, stueck: r.stueck, laenge_mm: r.laenge_mm, kg_pro_m: r.kg_pro_m, preis_pro_einheit: r.preis_pro_einheit }); }}><Pencil className="h-3 w-3 text-muted-foreground" /></Button>
+                    <Button size="icon" variant="ghost" className="h-6 w-6" onClick={async () => { if (r.id && await confirmDel()) deleteMutation.mutate(r.id); }}><Trash2 className="h-3 w-3 text-destructive" /></Button>
+                  </td>
+                </tr>
+              );
+            })}
             {/* Neue Zeile */}
             <tr className="border-t-2 border-dashed">
               <td className="px-1 py-1 text-xs text-muted-foreground">{rows.length + 1}</td>
@@ -341,6 +420,8 @@ function HauptmatFlaecheBlock({ auftragId }: { auftragId: string }) {
   const { confirm: confirmDel, ConfirmDialog: ConfirmDlg_HauptmatFlaecheBlock } = useConfirm();
   const emptyRow = { pos: 0, bezeichnung: "", stueck: "", breite_mm: "", hoehe_mm: "", dicke_mm: "", kg_pro_m2: "", werkstoff: "Stahl", preis_pro_kg: "", bemerkung: "" };
   const [newRow, setNewRow] = useState(emptyRow);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editRow, setEditRow] = useState<any>({});
 
   const { data: rows = [] } = useQuery<HauptmatFlaeche[]>({
     queryKey: ["/api/vk-hauptmat-flaeche", auftragId],
@@ -371,6 +452,20 @@ function HauptmatFlaecheBlock({ auftragId }: { auftragId: string }) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/vk-hauptmat-flaeche", auftragId] }),
   });
 
+  const updateMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const stueck = num(editRow.stueck), breite = num(editRow.breite_mm), hoehe = num(editRow.hoehe_mm);
+      const m2 = stueck * (breite / 1000) * (hoehe / 1000);
+      const kgm2 = num(editRow.kg_pro_m2), preis = num(editRow.preis_pro_kg);
+      return apiRequest("PUT", `/api/kalkulation/hauptmaterial-flaeche/${id}`, {
+        bezeichnung: editRow.bezeichnung, stueck, breite_mm: breite, hoehe_mm: hoehe, m2,
+        dicke_mm: num(editRow.dicke_mm), kg_pro_m2: kgm2, total_kg: m2 * kgm2,
+        werkstoff: editRow.werkstoff, preis_pro_kg: preis, total_chf: m2 * kgm2 * preis,
+      });
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/vk-hauptmat-flaeche", auftragId] }); setEditId(null); setEditRow({}); toast({ title: "Zeile aktualisiert" }); },
+  });
+
   const total = rows.reduce((s, r) => s + num(r.total_chf), 0);
   const m2Input = num(newRow.stueck) * (num(newRow.breite_mm) / 1000) * (num(newRow.hoehe_mm) / 1000);
 
@@ -396,22 +491,56 @@ function HauptmatFlaecheBlock({ auftragId }: { auftragId: string }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, i) => (
-              <tr key={r.id || i} className={i % 2 === 0 ? "bg-muted/10" : ""}>
-                <td className="px-2 py-1 text-xs">{r.pos}</td>
-                <td className="px-2 py-1 text-xs font-medium">{r.bezeichnung}</td>
-                <td className="px-2 py-1"><Badge variant="outline" className="text-xs">{r.werkstoff}</Badge></td>
-                <td className="px-2 py-1 text-xs text-right font-mono">{r.stueck}</td>
-                <td className="px-2 py-1 text-xs text-right font-mono">{r.breite_mm}</td>
-                <td className="px-2 py-1 text-xs text-right font-mono">{r.hoehe_mm}</td>
-                <td className="px-2 py-1 text-xs text-right font-mono">{num(r.m2).toFixed(3)}</td>
-                <td className="px-2 py-1 text-xs text-right font-mono">{r.kg_pro_m2}</td>
-                <td className="px-2 py-1 text-xs text-right font-mono">{num(r.total_kg).toFixed(2)}</td>
-                <td className="px-2 py-1 text-xs text-right font-mono">{r.preis_pro_kg}</td>
-                <td className="px-2 py-1 text-xs text-right font-mono font-semibold">{chf(r.total_chf)}</td>
-                <td className="px-1 py-1"><Button size="icon" variant="ghost" className="h-6 w-6" onClick={async () => { if (r.id && await confirmDel()) deleteMutation.mutate(r.id); }}><Trash2 className="h-3 w-3 text-destructive" /></Button></td>
-              </tr>
-            ))}
+            {rows.map((r, i) => {
+              const isEditing = editId === r.id;
+              const editM2 = num(editRow.stueck) * (num(editRow.breite_mm) / 1000) * (num(editRow.hoehe_mm) / 1000);
+              return isEditing ? (
+                <tr key={r.id || i} className="bg-blue-50 dark:bg-blue-950/30">
+                  <td className="px-2 py-1 text-xs text-muted-foreground">{r.pos}</td>
+                  <td className="px-1 py-1"><Input className="h-7 text-xs" value={editRow.bezeichnung ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, bezeichnung: e.target.value }))} /></td>
+                  <td className="px-1 py-1">
+                    <Select value={editRow.werkstoff ?? "Stahl"} onValueChange={v => setEditRow((p: any) => ({ ...p, werkstoff: v }))}>
+                      <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>{WERKSTOFF_OPTIONEN.map(w => <SelectItem key={w} value={w}>{w}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </td>
+                  <td className="px-1 py-1"><Input type="number" className="h-7 text-xs text-right" value={editRow.stueck ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, stueck: e.target.value }))} /></td>
+                  <td className="px-1 py-1"><Input type="number" className="h-7 text-xs text-right" value={editRow.breite_mm ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, breite_mm: e.target.value }))} /></td>
+                  <td className="px-1 py-1"><Input type="number" className="h-7 text-xs text-right" value={editRow.hoehe_mm ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, hoehe_mm: e.target.value }))} /></td>
+                  <td className="px-2 py-1 text-xs text-right font-mono text-muted-foreground">{editM2.toFixed(3)}</td>
+                  <td className="px-1 py-1"><Input type="number" className="h-7 text-xs text-right" value={editRow.kg_pro_m2 ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, kg_pro_m2: e.target.value }))} /></td>
+                  <td className="px-2 py-1 text-xs text-right font-mono text-muted-foreground">{(editM2 * num(editRow.kg_pro_m2)).toFixed(2)}</td>
+                  <td className="px-1 py-1"><Input type="number" className="h-7 text-xs text-right" value={editRow.preis_pro_kg ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, preis_pro_kg: e.target.value }))} /></td>
+                  <td className="px-2 py-1 text-xs text-right font-mono font-semibold">{chf(editM2 * num(editRow.kg_pro_m2) * num(editRow.preis_pro_kg))}</td>
+                  <td className="px-1 py-1">
+                    <div className="flex gap-1">
+                      <Button size="icon" variant="ghost" className="h-6 w-6 text-green-600" onClick={() => r.id && updateMutation.mutate(r.id)}><Check className="h-3 w-3" /></Button>
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditId(null); setEditRow({}); }}><X className="h-3 w-3" /></Button>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                <tr key={r.id || i} className={i % 2 === 0 ? "bg-muted/10" : ""} onDoubleClick={() => { setEditId(r.id || null); setEditRow({ bezeichnung: r.bezeichnung, werkstoff: r.werkstoff, stueck: r.stueck, breite_mm: r.breite_mm, hoehe_mm: r.hoehe_mm, kg_pro_m2: r.kg_pro_m2, preis_pro_kg: r.preis_pro_kg }); }}>
+                  <td className="px-2 py-1 text-xs">{r.pos}</td>
+                  <td className="px-2 py-1 text-xs font-medium">{r.bezeichnung}</td>
+                  <td className="px-2 py-1"><Badge variant="outline" className="text-xs">{r.werkstoff}</Badge></td>
+                  <td className="px-2 py-1 text-xs text-right font-mono">{r.stueck}</td>
+                  <td className="px-2 py-1 text-xs text-right font-mono">{r.breite_mm}</td>
+                  <td className="px-2 py-1 text-xs text-right font-mono">{r.hoehe_mm}</td>
+                  <td className="px-2 py-1 text-xs text-right font-mono">{num(r.m2).toFixed(3)}</td>
+                  <td className="px-2 py-1 text-xs text-right font-mono">{r.kg_pro_m2}</td>
+                  <td className="px-2 py-1 text-xs text-right font-mono">{num(r.total_kg).toFixed(2)}</td>
+                  <td className="px-2 py-1 text-xs text-right font-mono">{r.preis_pro_kg}</td>
+                  <td className="px-2 py-1 text-xs text-right font-mono font-semibold">{chf(r.total_chf)}</td>
+                  <td className="px-1 py-1">
+                    <div className="flex gap-1">
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditId(r.id || null); setEditRow({ bezeichnung: r.bezeichnung, werkstoff: r.werkstoff, stueck: r.stueck, breite_mm: r.breite_mm, hoehe_mm: r.hoehe_mm, kg_pro_m2: r.kg_pro_m2, preis_pro_kg: r.preis_pro_kg }); }}><Pencil className="h-3 w-3 text-muted-foreground" /></Button>
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={async () => { if (r.id && await confirmDel()) deleteMutation.mutate(r.id); }}><Trash2 className="h-3 w-3 text-destructive" /></Button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
             <tr className="border-t-2 border-dashed">
               <td className="px-1 py-1 text-xs text-muted-foreground">{rows.length + 1}</td>
               <td className="px-1 py-1"><Input className="h-7 text-xs" placeholder="Bezeichnung" value={newRow.bezeichnung} onChange={e => setNewRow(p => ({ ...p, bezeichnung: e.target.value }))} /></td>
@@ -452,10 +581,25 @@ function HilfsmaterialBlock({ auftragId }: { auftragId: string }) {
   const { confirm: confirmDel, ConfirmDialog: ConfirmDlg_HilfsmaterialBlock } = useConfirm();
   const emptyRow = { kategorie: "Normteile", bezeichnung: "", stueck: "", einheit: "Stk", preis_pro_einheit: "", lieferant: "" };
   const [newRow, setNewRow] = useState(emptyRow);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editRow, setEditRow] = useState<any>({});
 
   const { data: rows = [] } = useQuery<Hilfsmaterial[]>({
     queryKey: ["/api/vk-hilfsmaterial", auftragId],
     queryFn: async () => { const r = await apiRequest("GET", `/api/kalkulation/${auftragId}/hilfsmaterial`); return r.json(); },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const stueck = num(editRow.stueck), preis = num(editRow.preis_pro_einheit);
+      return apiRequest("PUT", `/api/kalkulation/hilfsmaterial/${id}`, {
+        kategorie: editRow.kategorie, bezeichnung: editRow.bezeichnung,
+        stueck, einheit: editRow.einheit, preis_pro_einheit: preis,
+        total_chf: stueck * preis, lieferant: editRow.lieferant,
+      });
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/vk-hilfsmaterial", auftragId] }); setEditId(null); setEditRow({}); toast({ title: "Zeile aktualisiert" }); },
+    onError: (e: any) => toast({ title: "Fehler", description: e.message, variant: "destructive" }),
   });
 
   const addMutation = useMutation({
@@ -498,18 +642,52 @@ function HilfsmaterialBlock({ auftragId }: { auftragId: string }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, i) => (
-              <tr key={r.id || i} className={i % 2 === 0 ? "bg-muted/10" : ""}>
-                <td className="px-2 py-1"><Badge variant="secondary" className="text-xs">{r.kategorie}</Badge></td>
-                <td className="px-2 py-1 text-xs font-medium">{r.bezeichnung}</td>
-                <td className="px-2 py-1 text-xs text-muted-foreground">{r.lieferant}</td>
-                <td className="px-2 py-1 text-xs text-right font-mono">{r.stueck}</td>
-                <td className="px-2 py-1 text-xs">{r.einheit}</td>
-                <td className="px-2 py-1 text-xs text-right font-mono">{num(r.preis_pro_einheit).toFixed(2)}</td>
-                <td className="px-2 py-1 text-xs text-right font-mono font-semibold">{chf(r.total_chf)}</td>
-                <td className="px-1 py-1"><Button size="icon" variant="ghost" className="h-6 w-6" onClick={async () => { if (r.id && await confirmDel()) deleteMutation.mutate(r.id); }}><Trash2 className="h-3 w-3 text-destructive" /></Button></td>
-              </tr>
-            ))}
+            {rows.map((r, i) => {
+              const isEditing = editId === r.id;
+              return isEditing ? (
+                <tr key={r.id || i} className="bg-blue-50 dark:bg-blue-950/30">
+                  <td className="px-1 py-1">
+                    <Select value={editRow.kategorie ?? "Normteile"} onValueChange={v => setEditRow((p: any) => ({ ...p, kategorie: v }))}>
+                      <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>{HILFSMATERIAL_KATEGORIEN.map(k => <SelectItem key={k} value={k}>{k}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </td>
+                  <td className="px-1 py-1"><Input className="h-7 text-xs" value={editRow.bezeichnung ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, bezeichnung: e.target.value }))} /></td>
+                  <td className="px-1 py-1"><Input className="h-7 text-xs" value={editRow.lieferant ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, lieferant: e.target.value }))} /></td>
+                  <td className="px-1 py-1"><Input type="number" className="h-7 text-xs text-right" value={editRow.stueck ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, stueck: e.target.value }))} /></td>
+                  <td className="px-1 py-1">
+                    <Select value={editRow.einheit ?? "Stk"} onValueChange={v => setEditRow((p: any) => ({ ...p, einheit: v }))}>
+                      <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>{EINHEITEN.map(e => <SelectItem key={e} value={e}>{e}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </td>
+                  <td className="px-1 py-1"><Input type="number" className="h-7 text-xs text-right" value={editRow.preis_pro_einheit ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, preis_pro_einheit: e.target.value }))} /></td>
+                  <td className="px-2 py-1 text-xs text-right font-mono font-semibold">{chf(num(editRow.stueck) * num(editRow.preis_pro_einheit))}</td>
+                  <td className="px-1 py-1">
+                    <div className="flex gap-1">
+                      <Button size="icon" variant="ghost" className="h-6 w-6 text-green-600" onClick={() => r.id && updateMutation.mutate(r.id)}><Check className="h-3 w-3" /></Button>
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditId(null); setEditRow({}); }}><X className="h-3 w-3" /></Button>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                <tr key={r.id || i} className={i % 2 === 0 ? "bg-muted/10" : ""} onDoubleClick={() => { setEditId(r.id || null); setEditRow({ kategorie: r.kategorie, bezeichnung: r.bezeichnung, lieferant: r.lieferant, stueck: r.stueck, einheit: r.einheit, preis_pro_einheit: r.preis_pro_einheit }); }}>
+                  <td className="px-2 py-1"><Badge variant="secondary" className="text-xs">{r.kategorie}</Badge></td>
+                  <td className="px-2 py-1 text-xs font-medium">{r.bezeichnung}</td>
+                  <td className="px-2 py-1 text-xs text-muted-foreground">{r.lieferant}</td>
+                  <td className="px-2 py-1 text-xs text-right font-mono">{r.stueck}</td>
+                  <td className="px-2 py-1 text-xs">{r.einheit}</td>
+                  <td className="px-2 py-1 text-xs text-right font-mono">{num(r.preis_pro_einheit).toFixed(2)}</td>
+                  <td className="px-2 py-1 text-xs text-right font-mono font-semibold">{chf(r.total_chf)}</td>
+                  <td className="px-1 py-1">
+                    <div className="flex gap-1">
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditId(r.id || null); setEditRow({ kategorie: r.kategorie, bezeichnung: r.bezeichnung, lieferant: r.lieferant, stueck: r.stueck, einheit: r.einheit, preis_pro_einheit: r.preis_pro_einheit }); }}><Pencil className="h-3 w-3 text-muted-foreground" /></Button>
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={async () => { if (r.id && await confirmDel()) deleteMutation.mutate(r.id); }}><Trash2 className="h-3 w-3 text-destructive" /></Button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
             <tr className="border-t-2 border-dashed">
               <td className="px-1 py-1">
                 <Select value={newRow.kategorie} onValueChange={v => setNewRow(p => ({ ...p, kategorie: v }))}>
@@ -551,10 +729,24 @@ function FremdBlock({ auftragId }: { auftragId: string }) {
   const { confirm: confirmDel, ConfirmDialog: ConfirmDlg_FremdBlock } = useConfirm();
   const emptyRow = { bezeichnung: "Sonstiges", kategorie: "Sonstiges", anzahl: "", einheit: "Psch", preis_pro_einheit: "" };
   const [newRow, setNewRow] = useState(emptyRow);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editRow, setEditRow] = useState<any>({});
 
   const { data: rows = [] } = useQuery<Fremdleistung[]>({
     queryKey: ["/api/vk-fremd", auftragId],
     queryFn: async () => { const r = await apiRequest("GET", `/api/vorkalkulation/${auftragId}/fremdleistungen`); return r.json(); },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const anzahl = num(editRow.anzahl), preis = num(editRow.preis_pro_einheit);
+      return apiRequest("PATCH", `/api/vorkalkulation/${auftragId}/fremdleistungen/${id}`, {
+        bezeichnung: editRow.bezeichnung, anzahl, einheit: editRow.einheit,
+        preis_pro_einheit: preis, total_chf: anzahl * preis,
+      });
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/vk-fremd", auftragId] }); setEditId(null); setEditRow({}); toast({ title: "Zeile aktualisiert" }); },
+    onError: (e: any) => toast({ title: "Fehler", description: e.message, variant: "destructive" }),
   });
 
   const addMutation = useMutation({
@@ -591,16 +783,43 @@ function FremdBlock({ auftragId }: { auftragId: string }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, i) => (
-              <tr key={r.id || i} className={i % 2 === 0 ? "bg-muted/10" : ""}>
-                <td className="px-2 py-1 text-xs font-medium">{r.bezeichnung}</td>
-                <td className="px-2 py-1 text-xs text-right font-mono">{r.anzahl}</td>
-                <td className="px-2 py-1 text-xs">{r.einheit}</td>
-                <td className="px-2 py-1 text-xs text-right font-mono">{num(r.preis_pro_einheit).toFixed(2)}</td>
-                <td className="px-2 py-1 text-xs text-right font-mono font-semibold">{chf(r.total_chf)}</td>
-                <td className="px-1 py-1"><Button size="icon" variant="ghost" className="h-6 w-6" onClick={async () => { if (r.id && await confirmDel()) deleteMutation.mutate(r.id); }}><Trash2 className="h-3 w-3 text-destructive" /></Button></td>
-              </tr>
-            ))}
+            {rows.map((r, i) => {
+              const isEditing = editId === r.id;
+              return isEditing ? (
+                <tr key={r.id || i} className="bg-blue-50 dark:bg-blue-950/30">
+                  <td className="px-1 py-1"><Input className="h-7 text-xs" value={editRow.bezeichnung ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, bezeichnung: e.target.value }))} /></td>
+                  <td className="px-1 py-1"><Input type="number" className="h-7 text-xs text-right" value={editRow.anzahl ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, anzahl: e.target.value }))} /></td>
+                  <td className="px-1 py-1">
+                    <Select value={editRow.einheit ?? "Psch"} onValueChange={v => setEditRow((p: any) => ({ ...p, einheit: v }))}>
+                      <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>{EINHEITEN.map(e => <SelectItem key={e} value={e}>{e}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </td>
+                  <td className="px-1 py-1"><Input type="number" className="h-7 text-xs text-right" value={editRow.preis_pro_einheit ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, preis_pro_einheit: e.target.value }))} /></td>
+                  <td className="px-2 py-1 text-xs text-right font-mono font-semibold">{chf(num(editRow.anzahl) * num(editRow.preis_pro_einheit))}</td>
+                  <td className="px-1 py-1">
+                    <div className="flex gap-1">
+                      <Button size="icon" variant="ghost" className="h-6 w-6 text-green-600" onClick={() => r.id && updateMutation.mutate(r.id)}><Check className="h-3 w-3" /></Button>
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditId(null); setEditRow({}); }}><X className="h-3 w-3" /></Button>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                <tr key={r.id || i} className={i % 2 === 0 ? "bg-muted/10" : ""} onDoubleClick={() => { setEditId(r.id || null); setEditRow({ bezeichnung: r.bezeichnung, anzahl: r.anzahl, einheit: r.einheit, preis_pro_einheit: r.preis_pro_einheit }); }}>
+                  <td className="px-2 py-1 text-xs font-medium">{r.bezeichnung}</td>
+                  <td className="px-2 py-1 text-xs text-right font-mono">{r.anzahl}</td>
+                  <td className="px-2 py-1 text-xs">{r.einheit}</td>
+                  <td className="px-2 py-1 text-xs text-right font-mono">{num(r.preis_pro_einheit).toFixed(2)}</td>
+                  <td className="px-2 py-1 text-xs text-right font-mono font-semibold">{chf(r.total_chf)}</td>
+                  <td className="px-1 py-1">
+                    <div className="flex gap-1">
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditId(r.id || null); setEditRow({ bezeichnung: r.bezeichnung, anzahl: r.anzahl, einheit: r.einheit, preis_pro_einheit: r.preis_pro_einheit }); }}><Pencil className="h-3 w-3 text-muted-foreground" /></Button>
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={async () => { if (r.id && await confirmDel()) deleteMutation.mutate(r.id); }}><Trash2 className="h-3 w-3 text-destructive" /></Button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
             <tr className="border-t-2 border-dashed">
               <td className="px-1 py-1">
                 <Select value={newRow.bezeichnung || newRow.kategorie} onValueChange={v => setNewRow(p => ({ ...p, bezeichnung: v }))}>
@@ -640,10 +859,24 @@ function SoekBlock({ auftragId }: { auftragId: string }) {
   const { confirm: confirmDel, ConfirmDialog: ConfirmDlg_SoekBlock } = useConfirm();
   const emptyRow = { bezeichnung: "Verpflegung", anzahl: "", einheit: "Psch", preis_pro_einheit: "" };
   const [newRow, setNewRow] = useState(emptyRow);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editRow, setEditRow] = useState<any>({});
 
   const { data: rows = [] } = useQuery<Soek[]>({
     queryKey: ["/api/vk-soek", auftragId],
     queryFn: async () => { const r = await apiRequest("GET", `/api/vorkalkulation/${auftragId}/soek`); return r.json(); },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const anzahl = num(editRow.anzahl), preis = num(editRow.preis_pro_einheit);
+      return apiRequest("PATCH", `/api/vorkalkulation/${auftragId}/soek/${id}`, {
+        bezeichnung: editRow.bezeichnung, anzahl, einheit: editRow.einheit,
+        preis_pro_einheit: preis, total_chf: anzahl * preis,
+      });
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/vk-soek", auftragId] }); setEditId(null); setEditRow({}); toast({ title: "Zeile aktualisiert" }); },
+    onError: (e: any) => toast({ title: "Fehler", description: e.message, variant: "destructive" }),
   });
 
   const addMutation = useMutation({
@@ -680,16 +913,48 @@ function SoekBlock({ auftragId }: { auftragId: string }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, i) => (
-              <tr key={r.id || i} className={i % 2 === 0 ? "bg-muted/10" : ""}>
-                <td className="px-2 py-1 text-xs font-medium">{r.bezeichnung}</td>
-                <td className="px-2 py-1 text-xs text-right font-mono">{r.anzahl}</td>
-                <td className="px-2 py-1 text-xs">{r.einheit}</td>
-                <td className="px-2 py-1 text-xs text-right font-mono">{num(r.preis_pro_einheit).toFixed(2)}</td>
-                <td className="px-2 py-1 text-xs text-right font-mono font-semibold">{chf(r.total_chf)}</td>
-                <td className="px-1 py-1"><Button size="icon" variant="ghost" className="h-6 w-6" onClick={async () => { if (r.id && await confirmDel()) deleteMutation.mutate(r.id); }}><Trash2 className="h-3 w-3 text-destructive" /></Button></td>
-              </tr>
-            ))}
+            {rows.map((r, i) => {
+              const isEditing = editId === r.id;
+              return isEditing ? (
+                <tr key={r.id || i} className="bg-blue-50 dark:bg-blue-950/30">
+                  <td className="px-1 py-1">
+                    <Select value={editRow.bezeichnung ?? "Verpflegung"} onValueChange={v => setEditRow((p: any) => ({ ...p, bezeichnung: v }))}>
+                      <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>{SOEK_KATEGORIEN.map(k => <SelectItem key={k} value={k}>{k}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </td>
+                  <td className="px-1 py-1"><Input type="number" className="h-7 text-xs text-right" value={editRow.anzahl ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, anzahl: e.target.value }))} /></td>
+                  <td className="px-1 py-1">
+                    <Select value={editRow.einheit ?? "Psch"} onValueChange={v => setEditRow((p: any) => ({ ...p, einheit: v }))}>
+                      <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>{EINHEITEN.map(e => <SelectItem key={e} value={e}>{e}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </td>
+                  <td className="px-1 py-1"><Input type="number" className="h-7 text-xs text-right" value={editRow.preis_pro_einheit ?? ""} onChange={e => setEditRow((p: any) => ({ ...p, preis_pro_einheit: e.target.value }))} /></td>
+                  <td className="px-2 py-1 text-xs text-right font-mono font-semibold">{chf(num(editRow.anzahl) * num(editRow.preis_pro_einheit))}</td>
+                  <td className="px-1 py-1">
+                    <div className="flex gap-1">
+                      <Button size="icon" variant="ghost" className="h-6 w-6 text-green-600" onClick={() => r.id && updateMutation.mutate(r.id)}><Check className="h-3 w-3" /></Button>
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditId(null); setEditRow({}); }}><X className="h-3 w-3" /></Button>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                <tr key={r.id || i} className={i % 2 === 0 ? "bg-muted/10" : ""} onDoubleClick={() => { setEditId(r.id || null); setEditRow({ bezeichnung: r.bezeichnung, anzahl: r.anzahl, einheit: r.einheit, preis_pro_einheit: r.preis_pro_einheit }); }}>
+                  <td className="px-2 py-1 text-xs font-medium">{r.bezeichnung}</td>
+                  <td className="px-2 py-1 text-xs text-right font-mono">{r.anzahl}</td>
+                  <td className="px-2 py-1 text-xs">{r.einheit}</td>
+                  <td className="px-2 py-1 text-xs text-right font-mono">{num(r.preis_pro_einheit).toFixed(2)}</td>
+                  <td className="px-2 py-1 text-xs text-right font-mono font-semibold">{chf(r.total_chf)}</td>
+                  <td className="px-1 py-1">
+                    <div className="flex gap-1">
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditId(r.id || null); setEditRow({ bezeichnung: r.bezeichnung, anzahl: r.anzahl, einheit: r.einheit, preis_pro_einheit: r.preis_pro_einheit }); }}><Pencil className="h-3 w-3 text-muted-foreground" /></Button>
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={async () => { if (r.id && await confirmDel()) deleteMutation.mutate(r.id); }}><Trash2 className="h-3 w-3 text-destructive" /></Button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
             <tr className="border-t-2 border-dashed">
               <td className="px-1 py-1">
                 <Select value={newRow.bezeichnung} onValueChange={v => setNewRow(p => ({ ...p, bezeichnung: v }))}>

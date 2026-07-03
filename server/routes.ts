@@ -3900,6 +3900,22 @@ export async function registerRoutes(
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
+  // PATCH fremdleistungen/:fid
+  app.patch("/api/vorkalkulation/:id/fremdleistungen/:fid", async (req, res) => {
+    try {
+      const { fid } = req.params; const b = req.body;
+      const updates: any = {};
+      if (b.anzahl !== undefined) updates.anzahl = Number(b.anzahl);
+      if (b.einheit !== undefined) updates.einheit = String(b.einheit);
+      if (b.bezeichnung !== undefined) updates.bezeichnung = String(b.bezeichnung);
+      if (b.preis_pro_einheit !== undefined) updates.preis_pro_einheit = Number(b.preis_pro_einheit);
+      if (b.total_chf !== undefined) updates.total_chf = Number(b.total_chf);
+      const { data, error } = await supabase.from("vorkalkulation_fremdleistungen").update(updates).eq("id", fid).select().single();
+      if (error) return res.status(500).json({ message: asError(error) });
+      res.json(data);
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
   // DELETE fremdleistungen/:fid
   app.delete("/api/vorkalkulation/:id/fremdleistungen/:fid", async (req, res) => {
     try {
@@ -3946,6 +3962,22 @@ export async function registerRoutes(
         .insert(row)
         .select()
         .single();
+      if (error) return res.status(500).json({ message: asError(error) });
+      res.json(data);
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+  // PATCH soek/:sid
+  app.patch("/api/vorkalkulation/:id/soek/:sid", async (req, res) => {
+    try {
+      const { sid } = req.params; const b = req.body;
+      const updates: any = {};
+      if (b.bezeichnung !== undefined) updates.bezeichnung = String(b.bezeichnung);
+      if (b.anzahl !== undefined) updates.anzahl = Number(b.anzahl);
+      if (b.einheit !== undefined) updates.einheit = String(b.einheit);
+      if (b.preis_pro_einheit !== undefined) updates.preis_pro_einheit = Number(b.preis_pro_einheit);
+      if (b.total_chf !== undefined) updates.total_chf = Number(b.total_chf);
+      const { data, error } = await supabase.from("vorkalkulation_soek").update(updates).eq("id", sid).select().single();
       if (error) return res.status(500).json({ message: asError(error) });
       res.json(data);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
