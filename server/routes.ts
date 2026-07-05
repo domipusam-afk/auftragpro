@@ -500,17 +500,19 @@ export async function registerRoutes(
 
   // ============= DASHBOARD REINGEWINN =============
   // GET /api/dashboard/reingewinn
-  // Berechnet Gewinn/Verlust aller Aufträge aus VK-Offertpreis minus NK-Ist-Kosten
+  // Reingewinn = nur abgeschlossene Aufträge MIT bezahlter Rechnung
+  // Formel: Summe(bezahlte Rechnungen Netto) − Summe(NK-Ist-Kosten)
   app.get("/api/dashboard/reingewinn", async (_req, res) => {
     try {
-      // Alle Auftrag-IDs laden
+      // Nur abgeschlossene Aufträge
       const { data: auftraege } = await supabase
         .from("auftraege")
-        .select("id, nr, titel, status");
+        .select("id, nr, titel, status")
+        .eq("status", "abgeschlossen");
       if (!auftraege || auftraege.length === 0)
-        return res.json({ reingewinn: 0, detail: [] });
+        return res.json({ reingewinn: 0, umsatz: 0, kosten: 0, anzahl: 0, detail: [] });
 
-      // Stundensaetze laden (einmalig)
+      // Stundensaetze laden (einmalig für NK-Stunden)
       const { data: saetzeRaw } = await supabase
         .from("saetze")
         .select("ort, maschinenpark, satz");
@@ -527,35 +529,29 @@ export async function registerRoutes(
 
       const detail: any[] = [];
       let reingewinnTotal = 0;
+      let umsatzTotal = 0;
+      let kostenTotal = 0;
 
       for (const a of auftraege) {
         const id = a.id;
 
-        // VK laden
-        const [vkStunden, vkMaterial, vkHilfsmat, vkFremd, vkSoek, vkCfgRaw] = await Promise.all([
-          supabase.from("vorkalkulation_stunden").select("soll_stunden,stundensatz").eq("auftrag_id", id),
-          supabase.from("vorkalkulation_material").select("total_chf").eq("auftrag_id", id),
-          supabase.from("vorkalkulation_hilfsmaterial").select("total_chf").eq("auftrag_id", id),
-          supabase.from("vorkalkulation_fremdleistungen").select("total_chf").eq("auftrag_id", id),
-          supabase.from("vorkalkulation_soek").select("total_chf").eq("auftrag_id", id),
-          supabase.from("vorkalkulation_config").select("risiko_gewinn_prozent,rabatt_prozent,skonto_prozent,mwst_prozent").eq("auftrag_id", id).maybeSingle(),
-        ]);
+        // Bezahlte Rechnungen für diesen Auftrag
+        const { data: rechnungen } = await supabase
+          .from("rechnungen")
+          .select("betrag, bezahlt_am")
+          .eq("auftrag_id", id)
+          .not("bezahlt_am", "is", null);
 
-        const cfg = (vkCfgRaw.data as any) || { risiko_gewinn_prozent: 10, rabatt_prozent: 0, skonto_prozent: 0, mwst_prozent: 8.1 };
-        const vkSt = ((vkStunden.data || []) as any[]).reduce((s: number, r: any) => s + Number(r.soll_stunden) * Number(r.stundensatz), 0);
-        const vkMat = ((vkMaterial.data || []) as any[]).reduce((s: number, r: any) => s + Number(r.total_chf), 0);
-        const vkHilf = ((vkHilfsmat.data || []) as any[]).reduce((s: number, r: any) => s + Number(r.total_chf), 0);
-        const vkFr = ((vkFremd.data || []) as any[]).reduce((s: number, r: any) => s + Number(r.total_chf), 0);
-        const vkSo = ((vkSoek.data || []) as any[]).reduce((s: number, r: any) => s + Number(r.total_chf), 0);
-        const vkSub = vkSt + vkMat + vkHilf + vkFr + vkSo;
-        const vkRisiko = vkSub * (Number(cfg.risiko_gewinn_prozent) / 100);
-        const vkNorR = vkSub + vkRisiko;
-        const vkRabatt = vkNorR * (Number(cfg.rabatt_prozent) / 100);
-        const vkNetto = vkNorR - vkRabatt;
-        const vkMwst = vkNetto * (Number(cfg.mwst_prozent) / 100);
-        const vkBrutto = Math.round((vkNetto + vkMwst) * 100) / 100;
+        // Kein Umsatz = überspringen (noch nicht bezahlt)
+        const bezahlteRechnungen = (rechnungen || []) as any[];
+        if (bezahlteRechnungen.length === 0) continue;
 
-        // NK laden (Ist-Kosten)
+        // Netto = Brutto / 1.081 (MwSt 8.1% herausrechnen)
+        const mwstFaktor = 1.081;
+        const rechnungBrutto = bezahlteRechnungen.reduce((s: number, r: any) => s + (Number(r.betrag) || 0), 0);
+        const rechnungNetto = Math.round((rechnungBrutto / mwstFaktor) * 100) / 100;
+
+        // NK-Ist-Kosten laden
         const [zeiteintraege, nakaMat, nakaFremd, nakaSoek] = await Promise.all([
           supabase.from("zeiteintraege").select("ort,maschinenpark,dauer_minuten").eq("auftrag_id", id),
           supabase.from("nachkalkulation_material").select("betrag_chf").eq("auftrag_id", id),
@@ -563,7 +559,6 @@ export async function registerRoutes(
           supabase.from("nachkalkulation_soek").select("betrag_chf").eq("auftrag_id", id),
         ]);
 
-        // Stunden nach Ort gruppieren
         const ortMap: Record<string, { minuten: number; satz: number }> = {};
         for (const z of ((zeiteintraege.data || []) as any[])) {
           const ort = z.ort || "Unbekannt";
@@ -578,18 +573,18 @@ export async function registerRoutes(
         const istSo = ((nakaSoek.data || []) as any[]).reduce((s: number, r: any) => s + Number(r.betrag_chf), 0);
         const istGesamt = Math.round((istSt + istMat + istFr + istSo) * 100) / 100;
 
-        // Nur Aufträge mit VK-Daten einbeziehen
-        if (vkBrutto === 0 && istGesamt === 0) continue;
-
-        const gewinn = Math.round((vkBrutto - istGesamt) * 100) / 100;
+        const gewinn = Math.round((rechnungNetto - istGesamt) * 100) / 100;
         reingewinnTotal += gewinn;
+        umsatzTotal += rechnungNetto;
+        kostenTotal += istGesamt;
 
         detail.push({
           id,
           nr: a.nr,
           titel: a.titel,
           status: a.status,
-          vk_offertpreis: vkBrutto,
+          rechnung_netto: rechnungNetto,
+          rechnung_brutto: Math.round(rechnungBrutto * 100) / 100,
           ist_kosten: istGesamt,
           gewinn,
         });
@@ -597,6 +592,9 @@ export async function registerRoutes(
 
       res.json({
         reingewinn: Math.round(reingewinnTotal * 100) / 100,
+        umsatz: Math.round(umsatzTotal * 100) / 100,
+        kosten: Math.round(kostenTotal * 100) / 100,
+        anzahl: detail.length,
         detail,
       });
     } catch (e) { res.status(500).json({ message: asError(e) }); }

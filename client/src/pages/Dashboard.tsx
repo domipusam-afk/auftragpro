@@ -203,16 +203,26 @@ export default function Dashboard() {
     },
   });
 
-  // Reingewinn aus VK/NK
-  const { data: reingewinnData, isLoading: reingewinnLoading } = useQuery<{ reingewinn: number; detail: any[] }>({
+  // Reingewinn: nur abgeschlossene Aufträge mit bezahlter Rechnung
+  // Formel: Netto-Rechnungsbetrag (bezahlt) − NK-Ist-Kosten
+  const { data: reingewinnData, isLoading: reingewinnLoading } = useQuery<{
+    reingewinn: number;
+    umsatz: number;
+    kosten: number;
+    anzahl: number;
+    detail: any[];
+  }>({
     queryKey: ["/api/dashboard/reingewinn"],
     queryFn: async () => {
       const r = await apiRequest("GET", "/api/dashboard/reingewinn");
       return r.json();
     },
-    staleTime: 60_000, // 1 Min. cachen
+    staleTime: 60_000,
   });
   const reingewinn = reingewinnData?.reingewinn ?? 0;
+  const reingewinnUmsatz = reingewinnData?.umsatz ?? 0;
+  const reingewinnKosten = reingewinnData?.kosten ?? 0;
+  const reingewinnAnzahl = reingewinnData?.anzahl ?? 0;
 
   // Fälligkeits-Warnungen
   const today = new Date(); today.setHours(0,0,0,0);
@@ -414,7 +424,7 @@ export default function Dashboard() {
             icon={CheckSquare}
             tone="green"
           />
-          {/* Reingewinn aus VK/NK */}
+          {/* Reingewinn: abgeschlossen + Rechnung bezahlt */}
           <div className="col-span-1">
             <Card className={cn(
               "p-3 md:p-5 bg-card h-full transition-all",
@@ -422,24 +432,31 @@ export default function Dashboard() {
             )}>
               <div className="flex items-start justify-between">
                 <div className="min-w-0 flex-1">
-                  <div className="text-xs md:text-sm text-muted-foreground truncate">Reingewinn VK/NK</div>
+                  <div className="text-xs md:text-sm text-muted-foreground truncate">Reingewinn</div>
                   {reingewinnLoading ? (
                     <div className="h-8 w-24 bg-muted rounded animate-pulse mt-1" />
+                  ) : reingewinnAnzahl === 0 ? (
+                    <>
+                      <div className="text-base md:text-lg font-semibold mt-1 text-muted-foreground">— Keine Daten</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">Noch kein Auftrag abgeschlossen &amp; bezahlt</div>
+                    </>
                   ) : (
-                    <div
-                      className="text-xl md:text-2xl font-bold mt-1 tabular-nums"
-                      style={{
-                        fontFamily: "var(--font-display)",
-                        color: reingewinn > 0 ? "#16a34a" : reingewinn < 0 ? "#dc2626" : undefined,
-                      }}
-                    >
-                      {reingewinn < 0 ? "−" : reingewinn > 0 ? "+" : ""}{formatCHF(Math.abs(reingewinn))}
-                    </div>
+                    <>
+                      <div
+                        className="text-xl md:text-2xl font-bold mt-1 tabular-nums"
+                        style={{
+                          fontFamily: "var(--font-display)",
+                          color: reingewinn > 0 ? "#16a34a" : reingewinn < 0 ? "#dc2626" : undefined,
+                        }}
+                      >
+                        {reingewinn < 0 ? "−" : reingewinn > 0 ? "+" : ""}{formatCHF(Math.abs(reingewinn))}
+                      </div>
+                      <div className="text-xs mt-0.5 font-medium"
+                        style={{ color: reingewinn > 0 ? "#16a34a" : reingewinn < 0 ? "#dc2626" : "#6b7280" }}>
+                        {reingewinn > 0 ? "Gewinn" : reingewinn < 0 ? "Verlust" : "Ausgeglichen"}
+                      </div>
+                    </>
                   )}
-                  <div className="text-xs mt-0.5 font-medium"
-                    style={{ color: reingewinn > 0 ? "#16a34a" : reingewinn < 0 ? "#dc2626" : "#6b7280" }}>
-                    {reingewinnLoading ? "" : reingewinn > 0 ? "Gewinn" : reingewinn < 0 ? "Verlust" : "Keine VK/NK Daten"}
-                  </div>
                 </div>
                 <div className={cn(
                   "h-8 w-8 md:h-10 md:w-10 rounded-md flex items-center justify-center shrink-0 ml-1",
@@ -450,9 +467,19 @@ export default function Dashboard() {
                     : <TrendingDown className="h-4 w-4 md:h-5 md:w-5" />}
                 </div>
               </div>
-              {!reingewinnLoading && reingewinnData && reingewinnData.detail.length > 0 && (
-                <div className="text-xs text-muted-foreground mt-1">
-                  {reingewinnData.detail.length} Auftrag{reingewinnData.detail.length !== 1 ? "äge" : ""} mit VK/NK
+              {!reingewinnLoading && reingewinnAnzahl > 0 && (
+                <div className="text-xs text-muted-foreground mt-2 space-y-0.5">
+                  <div className="flex justify-between">
+                    <span>Umsatz (Netto):</span>
+                    <span className="tabular-nums font-medium">{formatCHF(reingewinnUmsatz)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>NK-Ist-Kosten:</span>
+                    <span className="tabular-nums text-red-500">−{formatCHF(reingewinnKosten)}</span>
+                  </div>
+                  <div className="text-[10px] text-muted-foreground/60 pt-0.5">
+                    {reingewinnAnzahl} Auftrag{reingewinnAnzahl !== 1 ? "äge" : ""} · abgeschlossen &amp; bezahlt
+                  </div>
                 </div>
               )}
             </Card>
