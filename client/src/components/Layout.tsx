@@ -411,6 +411,54 @@ function GlobalSearch({ collapsed }: { collapsed: boolean }) {
   );
 }
 
+// ─── Mobile Drawer mit Swipe-to-close ───────────────────────────────────────────────────────────────
+function MobileDrawer({ children, onClose }: { children: ReactNode; onClose: () => void }) {
+  const touchStartX = useRef<number | null>(null);
+  const touchStartY = useRef<number | null>(null);
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  }, []);
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (touchStartX.current === null || touchStartY.current === null) return;
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    const dy = Math.abs(e.changedTouches[0].clientY - touchStartY.current);
+    // Swipe nach links: mindestens 60px horizontal, weniger als 80px vertikal
+    if (dx < -60 && dy < 80) {
+      onClose();
+    }
+    touchStartX.current = null;
+    touchStartY.current = null;
+  }, [onClose]);
+
+  return (
+    <div className="md:hidden fixed inset-0 z-50 flex" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/50" />
+      <aside
+        className="relative w-72 flex flex-col h-full overflow-y-auto"
+        style={{
+          background: "hsl(var(--sidebar))",
+          color: "hsl(var(--sidebar-foreground))",
+        }}
+        onClick={(e) => e.stopPropagation()}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      >
+        <button
+          className="absolute top-4 right-4 z-10 text-white/70 hover:text-white"
+          onClick={onClose}
+          aria-label="Menü schließen"
+        >
+          <X className="h-5 w-5" />
+        </button>
+        {children}
+      </aside>
+    </div>
+  );
+}
+
 export default function Layout({ children }: { children: ReactNode }) {
   const [location] = useLocation();
   const { theme, toggle } = useTheme();
@@ -479,7 +527,8 @@ export default function Layout({ children }: { children: ReactNode }) {
     EINKAUF_NAV.some((n) => location === n.href || location.startsWith(n.href + "/"))
   );
 
-  useEffect(() => { setMobileOpen(false); }, [location]);
+  // Mobile: Menü schließt NICHT automatisch bei Routenwechsel — nur manuell (Overlay, X, Swipe)
+  // useEffect(() => { setMobileOpen(false); }, [location]); // <-- absichtlich deaktiviert
 
   useEffect(() => {
     const handleResize = () => { if (window.innerWidth >= 768) setMobileOpen(false); };
@@ -853,28 +902,9 @@ export default function Layout({ children }: { children: ReactNode }) {
 
       {/* ── MOBILE DRAWER ── */}
       {mobileOpen && (
-        <div className="md:hidden fixed inset-0 z-50 flex" onClick={() => setMobileOpen(false)}>
-          <div className="absolute inset-0 bg-black/50" />
-          <aside
-            className="relative w-64 flex flex-col h-full overflow-y-auto"
-            style={{
-              background: "hsl(var(--sidebar))",
-              color: "hsl(var(--sidebar-foreground))",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              className="absolute top-4 right-4 text-white/70 hover:text-white"
-              onClick={() => setMobileOpen(false)}
-            >
-              <X className="h-5 w-5" />
-            </button>
-            {/* nav-clicks schliessen die Sidebar auf Mobile */}
-            <div onClick={() => setMobileOpen(false)}>
-              <SidebarContent mobile />
-            </div>
-          </aside>
-        </div>
+        <MobileDrawer onClose={() => setMobileOpen(false)}>
+          <SidebarContent mobile />
+        </MobileDrawer>
       )}
 
       {/* ── MAIN CONTENT ── */}
