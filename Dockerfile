@@ -48,7 +48,11 @@ ENV PUPPETEER_CACHE_DIR=/app/.cache/puppeteer
 # Install dependencies
 COPY package*.json ./
 RUN npm ci
-RUN npx puppeteer browsers install chrome
+# --install-deps installiert automatisch ALLE fehlenden System-Bibliotheken
+# fuer das heruntergeladene Chrome (z.B. libpango, libgtk etc.), die im
+# minimalen node:20-slim-Image standardmaessig fehlen. Das ist zuverlässiger
+# als eine manuell gepflegte apt-get-Liste, die schnell veraltet.
+RUN npx puppeteer browsers install chrome --install-deps
 
 # Copy source and build
 COPY . .
