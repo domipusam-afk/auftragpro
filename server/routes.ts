@@ -1643,10 +1643,10 @@ export async function registerRoutes(
     "--single-process",          // ← wichtigste Speicher-Optimierung
     "--memory-pressure-off",
     "--js-flags=--max-old-space-size=128",
-    // Minimaler Docker-Container hat keinen D-Bus/System-Bus laufen —
-    // ohne diese Flags versucht Chromium sich damit zu verbinden und crasht
-    // beim Start ("Failed to connect to the bus").
-    "--disable-dbus",
+    // Minimaler Docker-Container hat urspruenglich keinen D-Bus/System-Bus
+    // laufen gehabt — wird jetzt via docker-entrypoint.sh vor dem Start
+    // hochgefahren. --no-zygote reduziert zusaetzlich Prozess-Spawning-
+    // Probleme in eingeschraenkten Container-Umgebungen.
     "--disable-features=Translate,BackForwardCache,AudioServiceOutOfProcess",
     "--no-zygote",
   ];

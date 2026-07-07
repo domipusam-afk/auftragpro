@@ -42,7 +42,10 @@ RUN npm run build
 # Remove devDependencies after build
 RUN npm prune --omit=dev
 
+RUN chmod +x docker-entrypoint.sh
+
 EXPOSE 5000
 ENV NODE_ENV=production
 ENV PORT=5000
+ENTRYPOINT ["./docker-entrypoint.sh"]
 CMD ["node", "dist/index.cjs"]
