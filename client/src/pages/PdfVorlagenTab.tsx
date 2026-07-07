@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo, useTransition } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -809,6 +809,12 @@ export default function PdfVorlagenTab() {
   const { toast } = useToast();
 
   const [activeDoc, setActiveDoc] = useState<string>("offerte");
+  // Echte PDF-Vorschau: Bild-URL vom Backend (Puppeteer-gerendert)
+  const [previewImgUrl, setPreviewImgUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [vorlagen, setVorlagen] = useState<Record<string, PdfVorlage>>(() => {
     const init: Record<string, PdfVorlage> = {};
     DOC_TYPES.forEach(({ key }) => { init[key] = DEFAULT_VORLAGE(key); });
@@ -873,6 +879,42 @@ export default function PdfVorlagenTab() {
   }, [activeDoc]);
 
   const handleSave = () => saveMutation.mutate(vorlage);
+
+  // ─── Echte PDF-Vorschau: Debounced fetch vom Backend ────────────────
+  const fetchPreview = useCallback((v: PdfVorlage, docTyp: string) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      setPreviewLoading(true);
+      setPreviewError(false);
+      try {
+        const resp = await fetch("/api/pdf-vorlagen/vorschau", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ vorlage: v, doc_typ: docTyp }),
+        });
+        if (!resp.ok) throw new Error("Fehler beim Rendern");
+        const blob = await resp.blob();
+        // Alte Objekt-URL freigeben
+        setPreviewImgUrl((old) => { if (old) URL.revokeObjectURL(old); return URL.createObjectURL(blob); });
+      } catch {
+        setPreviewError(true);
+      } finally {
+        setPreviewLoading(false);
+      }
+    }, 800); // 800ms Debounce
+  }, []);
+
+  // Vorschau neu laden wenn sich Vorlage oder Dokumenttyp ändert
+  useEffect(() => {
+    fetchPreview(vorlage, activeDoc);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vorlage, activeDoc]);
+
+  // Cleanup bei Unmount
+  useEffect(() => () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (previewImgUrl) URL.revokeObjectURL(previewImgUrl);
+  }, []);
 
   // ─── Design preview mini content ─────────────────────
   const designPreviews = [
@@ -1450,24 +1492,87 @@ export default function PdfVorlagenTab() {
                 ) : null;
               })()}
             </div>
-            {/* A4-Vorschau — rendert sofort bei jeder Änderung */}
+            {/* A4-Vorschau — echtes Puppeteer-Rendering (1:1 mit generiertem PDF) */}
             <div
               style={{
                 width: "100%",
                 maxWidth: 520,
                 aspectRatio: "1 / 1.4142",
-                background: "white",
+                background: "#f3f3f3",
                 boxShadow: "0 4px 24px rgba(0,0,0,0.15), 0 1.5px 6px rgba(0,0,0,0.08)",
                 overflow: "hidden",
-                fontSize: 9,
                 position: "relative",
                 borderRadius: 4,
                 border: "1px solid #e5e7eb",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
               }}
-              dangerouslySetInnerHTML={{ __html: renderA4Preview(vorlage, activeDoc) }}
-            />
+            >
+              {/* Vorheriges Bild als Hintergrund (verhindert Flackern) */}
+              {previewImgUrl && (
+                <img
+                  src={previewImgUrl}
+                  alt="PDF-Vorschau"
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                    objectPosition: "top",
+                    display: "block",
+                    opacity: previewLoading ? 0.45 : 1,
+                    transition: "opacity 0.25s",
+                  }}
+                />
+              )}
+              {/* Ladeindikator */}
+              {previewLoading && (
+                <div style={{
+                  position: "absolute",
+                  inset: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 10,
+                  background: previewImgUrl ? "rgba(255,255,255,0.4)" : "#f8f7f5",
+                }}>
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#6b4c2a" strokeWidth="2" strokeLinecap="round">
+                    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83">
+                      <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite"/>
+                    </path>
+                  </svg>
+                  <span style={{ fontSize: 11, color: "#6b4c2a", fontWeight: 500 }}>Vorschau wird gerendert…</span>
+                </div>
+              )}
+              {/* Fehlerzustand */}
+              {previewError && !previewLoading && (
+                <div style={{
+                  position: "absolute",
+                  inset: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 8,
+                  background: "#fff5f5",
+                }}>
+                  <span style={{ fontSize: 28 }}>&#x26A0;</span>
+                  <span style={{ fontSize: 11, color: "#991b1b" }}>Vorschau konnte nicht geladen werden</span>
+                  <button
+                    type="button"
+                    onClick={() => fetchPreview(vorlage, activeDoc)}
+                    style={{ fontSize: 11, color: "#6b4c2a", textDecoration: "underline", background: "none", border: "none", cursor: "pointer" }}
+                  >Erneut versuchen</button>
+                </div>
+              )}
+              {/* Initialer Leerzustand (noch kein Bild, kein Fehler) */}
+              {!previewImgUrl && !previewLoading && !previewError && (
+                <div style={{ fontSize: 11, color: "#999", textAlign: "center" }}>Vorschau wird geladen…</div>
+              )}
+            </div>
             <div className="flex items-center justify-between mt-1.5">
-              <p className="text-xs text-gray-400">Beispieldaten — aktualisiert sofort bei jeder Änderung</p>
+              <p className="text-xs text-gray-400">Echte Vorschau — 1:1 identisch mit generiertem PDF</p>
               <button
                 type="button"
                 onClick={handleSave}
