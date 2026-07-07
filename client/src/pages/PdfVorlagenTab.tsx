@@ -25,6 +25,8 @@ interface PdfVorlage {
   show_page_num: boolean;
   logo_data_url: string | null;
   logo_scale: number;
+  logo_offset_x: number; // 0-100%, freie horizontale Logo-Position im Header
+  logo_offset_y: number; // 0-100%, freie vertikale Logo-Position im Header
   watermark_data_url: string | null;
   watermark_opacity: number;
   watermark_size: number;
@@ -92,6 +94,8 @@ const DEFAULT_VORLAGE = (doc_typ: string): PdfVorlage => ({
   show_page_num: true,
   logo_data_url: null,
   logo_scale: 100,
+  logo_offset_x: 100,
+  logo_offset_y: 0,
   watermark_data_url: null,
   watermark_opacity: 15,
   watermark_size: 60,
@@ -1115,34 +1119,30 @@ export default function PdfVorlagenTab() {
                 onRemove={() => updateVorlage({ logo_data_url: null })}
                 previewSize={40}
               />
-              <div>
-                <Label className="text-xs text-gray-600 block mb-1.5">Logo-Position</Label>
-                <div className="flex gap-2">
-                  {(["links", "rechts"] as const).map((pos) => (
-                    <button
-                      key={pos}
-                      type="button"
-                      onClick={() => updateVorlage({ logo_pos: pos })}
-                      className={`flex-1 py-1 px-2 rounded text-xs border transition-colors capitalize ${
-                        vorlage.logo_pos === pos
-                          ? "text-white border-transparent"
-                          : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
-                      }`}
-                      style={vorlage.logo_pos === pos ? { background: "#6b4c2a", borderColor: "#6b4c2a" } : undefined}
-                    >
-                      {pos}
-                    </button>
-                  ))}
-                </div>
-              </div>
               {vorlage.logo_data_url && (
-                <StyledSlider
-                  label="Logo-Grösse"
-                  value={vorlage.logo_scale}
-                  min={30}
-                  max={200}
-                  onChange={(v) => updateVorlage({ logo_scale: v })}
-                />
+                <>
+                  <StyledSlider
+                    label="Logo-Grösse"
+                    value={vorlage.logo_scale}
+                    min={30}
+                    max={400}
+                    onChange={(v) => updateVorlage({ logo_scale: v })}
+                  />
+                  <StyledSlider
+                    label="Logo-Position horizontal"
+                    value={vorlage.logo_offset_x ?? 100}
+                    min={0}
+                    max={100}
+                    onChange={(v) => updateVorlage({ logo_offset_x: v })}
+                  />
+                  <StyledSlider
+                    label="Logo-Position vertikal"
+                    value={vorlage.logo_offset_y ?? 0}
+                    min={0}
+                    max={100}
+                    onChange={(v) => updateVorlage({ logo_offset_y: v })}
+                  />
+                </>
               )}
             </AccordionSection>
 
@@ -1500,7 +1500,7 @@ export default function PdfVorlagenTab() {
             <div
               style={{
                 width: "100%",
-                maxWidth: 520,
+                maxWidth: 640,
                 aspectRatio: "1 / 1.4142",
                 background: "#f3f3f3",
                 boxShadow: "0 4px 24px rgba(0,0,0,0.15), 0 1.5px 6px rgba(0,0,0,0.08)",

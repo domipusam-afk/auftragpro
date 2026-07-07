@@ -1070,11 +1070,13 @@ export async function registerRoutes(
     const v = vd || {};
     // Logo-Fallback: wenn aktuelle Vorlage kein Logo hat, hole es aus der Offerte-Vorlage
     if (!v.logo_data_url && docTyp !== "offerte") {
-      const { data: offVorlage } = await supabase.from("pdf_vorlagen").select("logo_data_url,logo_scale,logo_pos").eq("doc_typ", "offerte").single();
+      const { data: offVorlage } = await supabase.from("pdf_vorlagen").select("logo_data_url,logo_scale,logo_pos,logo_offset_x,logo_offset_y").eq("doc_typ", "offerte").single();
       if (offVorlage?.logo_data_url) {
         v.logo_data_url = offVorlage.logo_data_url;
         if (!v.logo_scale) v.logo_scale = offVorlage.logo_scale;
         if (!v.logo_pos)   v.logo_pos   = offVorlage.logo_pos;
+        if (v.logo_offset_x == null) v.logo_offset_x = offVorlage.logo_offset_x;
+        if (v.logo_offset_y == null) v.logo_offset_y = offVorlage.logo_offset_y;
         console.log(`[PDF] Logo-Fallback aus Offerte-Vorlage verwendet für doc_typ=${docTyp}`);
       }
     }
@@ -1085,6 +1087,11 @@ export async function registerRoutes(
     const logoUrl    = v.logo_data_url || null;
     const slogan     = v.slogan       || "Ihr Partner für Metallbau & Schreinerei";
     const logoPos    = v.logo_pos     || "links";
+    // Freie Logo-Positionierung im Header (0-100%, ersetzt Links/Rechts-Umschalter).
+    // 0/0 = oben-links im Header-Bereich. Fallback: wenn (noch) nicht gesetzt, alte Position
+    // Links/Rechts in einen sinnvollen X-Wert übersetzen (Rückwärtskompatibilität).
+    const logoOffX   = v.logo_offset_x != null ? Number(v.logo_offset_x) : (logoPos === "rechts" ? 100 : 0);
+    const logoOffY   = v.logo_offset_y != null ? Number(v.logo_offset_y) : 0;
     const einl       = (v.einleitung !== undefined && v.einleitung !== null) ? v.einleitung : (data.einleitung || "");
     const schl       = (v.schluss !== undefined && v.schluss !== null) ? v.schluss : (data.schluss || "");
     const showContact= v.show_contact !== false;
@@ -1265,12 +1272,15 @@ export async function registerRoutes(
           </div>
         </div>`;
 
+    // Logo-Höhe in mm (bei 96dpi: 1mm ≈ 3.78px) — wird für dynamische Header-Höhe benötigt,
+    // damit ein bis auf 400% skaliertes Logo nicht mit dem Inhalt darunter kollidiert.
+    const logoHmm = Math.round(34 * logoScale / 100) / 3.78;
     // Gemeinsame Höhen für @page-Margins (Header/Footer nicht überlappen)
-    const hdrH = (design === "B") ? (logoUrl ? 26 : 20)
-               : (design === "C") ? (logoUrl ? 18 : 10)
-               : (design === "E") ? (logoUrl ? 22 : 14)
-               : (design === "G") ? (logoUrl ? 26 : 18)
-               : 22; // Design A — Firma links + Logo rechts (hdrH=22 → @page margin-top=26mm, kein Overlap auf Seite 2)
+    const hdrH = (design === "B") ? (logoUrl ? Math.max(26, logoHmm + 12) : 20)
+               : (design === "C") ? (logoUrl ? Math.max(18, logoHmm + 8) : 10)
+               : (design === "E") ? (logoUrl ? Math.max(22, logoHmm + 10) : 14)
+               : (design === "G") ? (logoUrl ? Math.max(26, logoHmm + 12) : 18)
+               : (logoUrl ? Math.max(22, logoHmm + 10) : 22); // Design A — Firma links + Logo frei positioniert (wächst mit Logo-Grösse)
     const ftrH = (design === "E") ? 16 : 12;
     const padMm = 10; // Seitenrand in mm
 
@@ -1473,16 +1483,39 @@ export async function registerRoutes(
     // Diese Methode ist zuverlässiger als position:fixed (kein Overlap, korrekte Seitenzahlen)
     // WICHTIG: headerTemplate/footerTemplate müssen vollständig inline-styled sein
     // Logos als base64-DataURL funktionieren, externe URLs nicht
+    // Logo: freie X/Y-Positionierung innerhalb der Header-Box (0-100%).
+    // Header-Box ist ~22mm hoch ≈ 83px (bei 96dpi Puppeteer-Rendering).
+    // Logo-Grösse skaliert bis 400% — bei sehr grossen Werten wird die Box
+    // automatisch etwas höher, damit das Logo nicht abgeschnitten wird.
+    const pptrLogoW = Math.round(60 * logoScale / 100);
+    const pptrLogoH = Math.round(34 * logoScale / 100);
+    // Reservierte Höhe für den Slogan unterhalb des Logos (verhindert Overlap mit der Trennlinie).
+    const pptrSloganReserve = slogan ? 20 : 0;
+    // Header-Box-Höhe leitet sich direkt von hdrH (mm) ab — so bleibt die sichtbare Box
+    // exakt so hoch wie der reservierte Seiten-Rand (kein Clipping, kein Overlap mit Inhalt).
+    const pptrHeaderBoxH = Math.round(hdrH * 3.78);
+    // logoOffX/Y (0-100%) → Position der linken-oberen Ecke des Logos innerhalb der Box,
+    // mit Innenabstand (40px seitlich, 2px oben/unten). Der Y-Bereich endet vor der
+    // Slogan-Reserve, damit Logo+Slogan nie mit der Trennlinie kollidieren.
+    const pptrLogoLeft = `calc(40px + (100% - 80px - ${pptrLogoW}px) * ${(logoOffX/100).toFixed(3)})`;
+    const pptrLogoTop  = `calc(2px + (${pptrHeaderBoxH}px - 4px - ${pptrSloganReserve}px - ${pptrLogoH}px) * ${(logoOffY/100).toFixed(3)})`;
+    // Slogan wird direkt unter dem Logo platziert (folgt der Logo-Position), damit er bei
+    // freier X/Y-Platzierung nie mit dem Firmenblock oder dem Logo selbst kollidiert.
+    const pptrLogoRightGap = `calc(100% - ${pptrLogoLeft} - ${pptrLogoW}px)`;
+    const pptrSloganStyle = logoOffX >= 50
+      ? `right:${pptrLogoRightGap};text-align:right;`
+      : `left:${pptrLogoLeft};text-align:left;`;
+    // Firmenblock (links oben) weicht dem Logo horizontal aus, falls das Logo in der linken
+    // Hälfte platziert ist — sonst würden sich Firmentext und Logo überlappen.
+    const pptrFirmaLeft = logoOffX < 50 ? `calc(${pptrLogoLeft} + ${pptrLogoW}px + 12px)` : "40px";
     const pptrHeaderHtml = `<div style="width:100%;font-family:Arial,Helvetica,sans-serif;font-size:0;box-sizing:border-box;overflow:hidden;">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:2px 40px 2px;">
-        <div style="font-size:8pt;color:#555;line-height:1.4;">
+      <div style="position:relative;height:${pptrHeaderBoxH}px;padding:2px 0;">
+        <div style="position:absolute;top:2px;left:${pptrFirmaLeft};right:40px;font-size:8pt;color:#555;line-height:1.4;">
           <div style="font-weight:700;font-size:9pt;color:#222;">${data.firma}</div>
           <div style="font-size:7.5pt;">${data.firmaAdresse}, ${data.firmaPlzOrt} · ${data.firmaTel}</div>
         </div>
-        <div style="text-align:right;flex-shrink:0;">
-          ${logoUrl ? `<img src="${logoUrl}" style="max-width:${Math.round(60*logoScale/100)}px;max-height:${Math.round(34*logoScale/100)}px;object-fit:contain;display:block;margin-left:auto;">` : ""}
-          ${slogan ? `<div style="font-size:7pt;color:#aaa;margin-top:1px;">${slogan}</div>` : ""}
-        </div>
+        ${logoUrl ? `<img src="${logoUrl}" style="position:absolute;left:${pptrLogoLeft};top:${pptrLogoTop};max-width:${pptrLogoW}px;max-height:${pptrLogoH}px;object-fit:contain;display:block;">` : ""}
+        ${slogan ? `<div style="position:absolute;top:calc(${pptrLogoTop} + ${pptrLogoH}px + 2px);${pptrSloganStyle}max-width:${pptrLogoW+40}px;font-size:7pt;color:#aaa;">${slogan}</div>` : ""}
       </div>
       <div style="height:2px;background:${hc};margin:0 40px;"></div>
     </div>`;
@@ -5594,6 +5627,8 @@ export async function registerRoutes(
           show_page_num: true,
           logo_data_url: null,
           logo_scale: 100,
+          logo_offset_x: 100,
+          logo_offset_y: 0,
           watermark_data_url: null,
           watermark_opacity: 15,
           watermark_size: 60,
@@ -5778,7 +5813,7 @@ export async function registerRoutes(
       const tmpBase = `${tmpPdf}_out`;
       writeFileSync(tmpPdf, pdfBuf);
       try {
-        execSync(`pdftoppm -jpeg -r 150 "${tmpPdf}" "${tmpBase}"`, { timeout: 20000 });
+        execSync(`pdftoppm -jpeg -r 210 "${tmpPdf}" "${tmpBase}"`, { timeout: 20000 });
         const dir = "/tmp";
         const baseName = tmpBase.replace("/tmp/", "");
         const files = readdirSync(dir)
