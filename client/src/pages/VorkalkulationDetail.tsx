@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirm } from "@/hooks/use-confirm";
+import { downloadPdf } from "@/lib/pdf";
 
 const openPdfInTab = (url: string, filename = "dokument.pdf") => { downloadPdf(url, filename); };
 

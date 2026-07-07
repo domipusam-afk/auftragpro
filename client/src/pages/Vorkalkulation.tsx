@@ -43,6 +43,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useConfirm } from "@/hooks/use-confirm";
 import { formatCHF } from "@/lib/format";
+import { downloadPdf } from "@/lib/pdf";
 import type { Auftrag } from "@shared/schema";
 
 const openPdfInTab = (url: string, filename = "dokument.pdf") => { downloadPdf(url, filename); };

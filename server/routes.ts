@@ -5783,7 +5783,7 @@ export async function registerRoutes(
         titel: docTitle,
         nummer: musterNummer,
         datum: "01. Juli 2026",
-        faelligDatum: musterFaelligStr,
+        ...(doc_typ === "offerte" ? { gueltigBis: "60 Tage" } : { faelligDatum: musterFaelligStr }),
         empfaenger: musterEmpfaenger,
         empfaengerStrasse: musterEmpStrasse,
         empfaengerPlzOrt: musterEmpPlzOrt,
@@ -5797,6 +5797,9 @@ export async function registerRoutes(
         schluss: vorlage.schluss || "Mit freundlichen Grüssen\n" + firma,
         showTotals: true,
         kundenNr: "K260001",
+        anrede: "Herr",
+        ansprechpersonIntern: "Max Muster",
+        ansprechpersonExtern: "Max Muster",
         ...(qrInlineBlock ? { extraHtmlFullWidth: qrInlineBlock } : {}),
       }, previewVorlage);
 

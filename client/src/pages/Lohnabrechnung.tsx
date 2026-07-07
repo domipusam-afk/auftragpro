@@ -16,6 +16,7 @@ import {
 import { Download, Clock } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { downloadPdf } from "@/lib/pdf";
 
 const openPdfInTab = (url: string, filename = "dokument.pdf") => { downloadPdf(url, filename); };
 

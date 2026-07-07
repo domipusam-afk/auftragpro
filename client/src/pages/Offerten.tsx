@@ -14,6 +14,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirm } from "@/hooks/use-confirm";
 import type { Offerte, OffertePosition, Auftrag } from "@shared/schema";
+import { downloadPdf } from "@/lib/pdf";
 
 const openPdfInTab = (url: string, filename = "dokument.pdf") => { downloadPdf(url, filename); };
 
