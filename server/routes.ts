@@ -1642,7 +1642,13 @@ export async function registerRoutes(
     "--safebrowsing-disable-auto-update",
     "--single-process",          // ← wichtigste Speicher-Optimierung
     "--memory-pressure-off",
-    "--js-flags=--max-old-space-size=128"
+    "--js-flags=--max-old-space-size=128",
+    // Minimaler Docker-Container hat keinen D-Bus/System-Bus laufen —
+    // ohne diese Flags versucht Chromium sich damit zu verbinden und crasht
+    // beim Start ("Failed to connect to the bus").
+    "--disable-dbus",
+    "--disable-features=Translate,BackForwardCache,AudioServiceOutOfProcess",
+    "--no-zygote",
   ];
 
   async function getBrowser(): Promise<any> {

@@ -6,6 +6,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
   chromium \
   poppler-utils \
+  dbus \
   fonts-liberation \
   libasound2 \
   libatk-bridge2.0-0 \
@@ -22,6 +23,9 @@ RUN apt-get update && apt-get install -y \
   xdg-utils \
   --no-install-recommends && \
   rm -rf /var/lib/apt/lists/*
+
+# System-D-Bus fuer Chromium bereitstellen (minimaler Container hat sonst keinen)
+RUN mkdir -p /run/dbus
 
 # Puppeteer soll NICHT seinen eigenen Chromium downloaden
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
