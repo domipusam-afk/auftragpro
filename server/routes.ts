@@ -1651,8 +1651,18 @@ export async function registerRoutes(
     // Containern (fuehrt zu stillen Abstuerzen "Failed to launch the browser
     // process: Code: null" ohne verwertbare Fehlermeldung). --no-zygote
     // allein reicht fuer die Prozess-Reduktion und ist stabil.
-    "--memory-pressure-off",
-    "--js-flags=--max-old-space-size=256",
+    //
+    // --memory-pressure-off wurde entfernt: dieses Flag weist Chrome an,
+    // Speicherdruck-Warnungen zu IGNORIEREN und eben NICHT automatisch
+    // Speicher freizugeben. Auf einem RAM-begrenzten Plan (Render Starter,
+    // 512MB) ist das kontraproduktiv und kann den OOM-Kill sogar begünstigen.
+    "--js-flags=--max-old-space-size=192",
+    "--disable-background-timer-throttling",
+    "--disable-backgrounding-occluded-windows",
+    "--disable-renderer-backgrounding",
+    "--disable-ipc-flooding-protection",
+    "--renderer-process-limit=1",
+    "--window-size=1024,1400",
     // Minimaler Docker-Container hat urspruenglich keinen D-Bus/System-Bus
     // laufen gehabt — wird jetzt via docker-entrypoint.sh vor dem Start
     // hochgefahren. --no-zygote reduziert zusaetzlich Prozess-Spawning-
@@ -1676,6 +1686,12 @@ export async function registerRoutes(
     _browser = await puppeteer.default.launch({
       executablePath: execPath,
       args: CHROMIUM_ARGS,
+      // dumpio: leitet Chromiums komplette stdout/stderr-Ausgabe in die
+      // Server-Logs (Render "Application logs") weiter. Ohne dieses Flag
+      // wird bei einem stillen Absturz (z.B. OOM-Kill auf einem RAM-
+      // begrenzten Plan wie Render "Starter", 512MB) oft nur "Code: null"
+      // ohne echten Grund angezeigt.
+      dumpio: true,
     });
     _browser.on("disconnected", () => { _browser = null; });
     return _browser;
