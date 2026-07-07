@@ -725,7 +725,34 @@ function FileUploadField({ label, dataUrl, onUpload, onRemove, previewSize = 48 
     const reader = new FileReader();
     reader.onload = (ev) => {
       const result = ev.target?.result as string;
-      if (result) onUpload(result);
+      if (!result) return;
+      // Bild auf max. 900px Breite/Höhe verkleinern (via Canvas), BEVOR es als
+      // Data-URL gespeichert wird. So bleibt die freie Logo-Skalierung bis 400%
+      // in der Vorlage voll erhalten, aber Chromium muss beim PDF-Rendern kein
+      // unnötig riesiges Original-Bild dekodieren — das war die Ursache für
+      // 502-Abstürze (Speicherüberlastung) bei hoher Logo-Skalierung auf dem
+      // RAM-begrenzten Render-Server.
+      const img = new Image();
+      img.onload = () => {
+        const MAX_DIM = 900;
+        let { width, height } = img;
+        if (width > MAX_DIM || height > MAX_DIM) {
+          const ratio = Math.min(MAX_DIM / width, MAX_DIM / height);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { onUpload(result); return; }
+        ctx.drawImage(img, 0, 0, width, height);
+        const isPng = file.type === "image/png" || result.startsWith("data:image/png");
+        const compressed = isPng ? canvas.toDataURL("image/png") : canvas.toDataURL("image/jpeg", 0.9);
+        onUpload(compressed);
+      };
+      img.onerror = () => onUpload(result);
+      img.src = result;
     };
     reader.readAsDataURL(file);
     // Reset input so same file can be re-uploaded
