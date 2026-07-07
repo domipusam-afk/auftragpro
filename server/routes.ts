@@ -1050,16 +1050,23 @@ export async function registerRoutes(
     ansprechpersonManuell?: string;
     kundenNr?: string;
     anrede?: string;
-  }): Promise<string> {
+  }, vorlageOverride?: any): Promise<string> {
     // Vorlage aus DB laden (mit Retry + Logo-Fallback aus Offerte-Vorlage)
+    // vorlageOverride: wird z.B. von der Live-Vorschau genutzt, damit dort
+    // NIE in die Datenbank geschrieben werden muss — die echte gespeicherte
+    // Vorlage von Offerte/Rechnung bleibt so garantiert unangetastet.
     let vd: any = null;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const { data: vdTry, error: vdErr } = await supabase.from("pdf_vorlagen").select("*").eq("doc_typ", docTyp).single();
-      if (vdTry) { vd = vdTry; break; }
-      if (vdErr) console.warn(`[PDF] Vorlage Laden Versuch ${attempt+1} (doc_typ=${docTyp}):`, vdErr.message);
-      if (attempt < 2) await new Promise(r => setTimeout(r, 600));
+    if (vorlageOverride) {
+      vd = vorlageOverride;
+    } else {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const { data: vdTry, error: vdErr } = await supabase.from("pdf_vorlagen").select("*").eq("doc_typ", docTyp).single();
+        if (vdTry) { vd = vdTry; break; }
+        if (vdErr) console.warn(`[PDF] Vorlage Laden Versuch ${attempt+1} (doc_typ=${docTyp}):`, vdErr.message);
+        if (attempt < 2) await new Promise(r => setTimeout(r, 600));
+      }
+      if (!vd) console.error(`[PDF] Vorlage nach 3 Versuchen nicht gefunden (doc_typ=${docTyp})`);
     }
-    if (!vd) console.error(`[PDF] Vorlage nach 3 Versuchen nicht gefunden (doc_typ=${docTyp})`);
     const v = vd || {};
     // Logo-Fallback: wenn aktuelle Vorlage kein Logo hat, hole es aus der Offerte-Vorlage
     if (!v.logo_data_url && docTyp !== "offerte") {
@@ -1640,9 +1647,12 @@ export async function registerRoutes(
     "--mute-audio",
     "--no-first-run",
     "--safebrowsing-disable-auto-update",
-    "--single-process",          // ← wichtigste Speicher-Optimierung
+    // --single-process wurde entfernt: bekannt instabil in Docker/Linux-
+    // Containern (fuehrt zu stillen Abstuerzen "Failed to launch the browser
+    // process: Code: null" ohne verwertbare Fehlermeldung). --no-zygote
+    // allein reicht fuer die Prozess-Reduktion und ist stabil.
     "--memory-pressure-off",
-    "--js-flags=--max-old-space-size=128",
+    "--js-flags=--max-old-space-size=256",
     // Minimaler Docker-Container hat urspruenglich keinen D-Bus/System-Bus
     // laufen gehabt — wird jetzt via docker-entrypoint.sh vor dem Start
     // hochgefahren. --no-zygote reduziert zusaetzlich Prozess-Spawning-
@@ -5662,12 +5672,6 @@ export async function registerRoutes(
       const mwstBetrag = Math.round(subtotal * mwstPct) / 100;
       const total = subtotal + mwstBetrag;
 
-      // buildPdfHtml überschreibt Vorlage mit unseren Muster-vorlage-Daten:
-      // Wir patchen die Supabase-Vorlage temporär in der Route, indem wir
-      // die Vorlage direkt als Override-Objekt an buildPdfHtml weitergeben.
-      // buildPdfHtml liest die Vorlage aus DB — wir müssen sie kurz überschreiben.
-      // Einfachste Lösung: HTML direkt generieren mit der Vorlage aus dem Request.
-
       // Firma-Daten aus Einstellungen
       const firma       = einMap["firma_name"]       || "Schneggenburger GmbH";
       const firmaAdr    = einMap["firma_adresse"]    || "Hefenhoferstrasse 7";
@@ -5675,20 +5679,17 @@ export async function registerRoutes(
       const firmaTel    = einMap["firma_tel"]        || "071 411 16 87";
       const firmaEmail  = einMap["firma_email"]      || "info@schneggenburger.ch";
 
-      // Vorlage temporär in DB speichern (überschreiben) — NEIN, zu riskant.
-      // Stattdessen: baue das HTML direkt (inline-Variante von buildPdfHtml).
-      // Wir rufen buildPdfHtml auf mit doc_typ, aber NACH dem DB-Load patchen
-      // wir den Vorlage-Override via vorübergehenden upsert → Render → Restore.
-      // Sauberste Lösung: vorübergehend upserten, rendern, dann Restore.
-      // Da Vorschau schnell sein soll: Wir cachen die originale Vorlage vorher.
-
-      // Original laden
+      // WICHTIG: Die echte gespeicherte Vorlage (Offerte/Rechnung) darf durch
+      // die Live-Vorschau NIE verändert werden — auch nicht kurzzeitig. Statt
+      // die Vorlage in der Datenbank zu überschreiben und danach wieder
+      // zurückzusetzen (riskant bei Absturz oder Parallelzugriff), laden wir
+      // die Original-Vorlage nur lesend, mergen die Vorschau-Overrides rein
+      // Arbeitsspeicher und übergeben das Ergebnis direkt an buildPdfHtml.
+      // Die Datenbank wird dabei zu keinem Zeitpunkt beschrieben.
       const { data: originalVorlage } = await supabase
         .from("pdf_vorlagen").select("*").eq("doc_typ", doc_typ).single();
 
-      // Preview-Vorlage upserten (merged: original + Vorschau-Overrides)
       const previewVorlage = { ...(originalVorlage || {}), ...vorlage, doc_typ };
-      await supabase.from("pdf_vorlagen").upsert(previewVorlage, { onConflict: "doc_typ" });
 
       // Muster-HTML generieren
       const docTitle = doc_typ === "offerte" ? "OFFERTE"
@@ -5715,15 +5716,10 @@ export async function registerRoutes(
         schluss: vorlage.schluss || "Mit freundlichen Grüssen\n" + firma,
         showTotals: true,
         kundenNr: "K260001",
-      });
+      }, previewVorlage);
 
-      // PDF rendern
+      // PDF rendern — Datenbank wurde zu keinem Zeitpunkt verändert.
       const pdfBuf = await renderPdfFromHtml(html);
-
-      // Original-Vorlage wiederherstellen
-      if (originalVorlage) {
-        await supabase.from("pdf_vorlagen").upsert(originalVorlage, { onConflict: "doc_typ" });
-      }
 
       // Seite 1 als JPEG via pdftoppm
       const { execSync } = await import("child_process");
