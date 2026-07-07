@@ -1275,12 +1275,16 @@ export async function registerRoutes(
     // Logo-Höhe in mm (bei 96dpi: 1mm ≈ 3.78px) — wird für dynamische Header-Höhe benötigt,
     // damit ein bis auf 400% skaliertes Logo nicht mit dem Inhalt darunter kollidiert.
     const logoHmm = Math.round(34 * logoScale / 100) / 3.78;
+    // Zusätzliche Höhe (mm) für einen mehrzeiligen Slogan unter dem Logo (Design A),
+    // damit der Header mitwächst und nichts mit der Trennlinie/dem Inhalt kollidiert.
+    const sloganLinesForHdr = slogan ? String(slogan).split("\n").filter((l: string) => l.length > 0) : [];
+    const sloganExtraMm = sloganLinesForHdr.length > 1 ? (sloganLinesForHdr.length - 1) * 2.6 : 0;
     // Gemeinsame Höhen für @page-Margins (Header/Footer nicht überlappen)
     const hdrH = (design === "B") ? (logoUrl ? Math.max(26, logoHmm + 12) : 20)
                : (design === "C") ? (logoUrl ? Math.max(18, logoHmm + 8) : 10)
                : (design === "E") ? (logoUrl ? Math.max(22, logoHmm + 10) : 14)
                : (design === "G") ? (logoUrl ? Math.max(26, logoHmm + 12) : 18)
-               : (logoUrl ? Math.max(22, logoHmm + 10) : 22); // Design A — Firma links + Logo frei positioniert (wächst mit Logo-Grösse)
+               : (logoUrl ? Math.max(22, logoHmm + 10) + sloganExtraMm : 22); // Design A — Firma links + Logo frei positioniert (wächst mit Logo-Grösse + Slogan-Zeilen)
     const ftrH = (design === "E") ? 16 : 12;
     const padMm = 10; // Seitenrand in mm
 
@@ -1490,7 +1494,10 @@ export async function registerRoutes(
     const pptrLogoW = Math.round(60 * logoScale / 100);
     const pptrLogoH = Math.round(34 * logoScale / 100);
     // Reservierte Höhe für den Slogan unterhalb des Logos (verhindert Overlap mit der Trennlinie).
-    const pptrSloganReserve = slogan ? 20 : 0;
+    // Wächst mit der Anzahl Zeilen (Slogan kann mehrzeilig sein, per Zeilenumbruch getrennt).
+    const sloganLines = sloganLinesForHdr;
+    const pptrSloganReserve = sloganLines.length > 0 ? (10 + sloganLines.length * 10) : 0;
+    const sloganHtml = sloganLines.map((l: string) => l.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")).join("<br/>");
     // Header-Box-Höhe leitet sich direkt von hdrH (mm) ab — so bleibt die sichtbare Box
     // exakt so hoch wie der reservierte Seiten-Rand (kein Clipping, kein Overlap mit Inhalt).
     const pptrHeaderBoxH = Math.round(hdrH * 3.78);
@@ -1515,7 +1522,7 @@ export async function registerRoutes(
           <div style="font-size:7.5pt;">${data.firmaAdresse}, ${data.firmaPlzOrt} · ${data.firmaTel}</div>
         </div>
         ${logoUrl ? `<img src="${logoUrl}" style="position:absolute;left:${pptrLogoLeft};top:${pptrLogoTop};max-width:${pptrLogoW}px;max-height:${pptrLogoH}px;object-fit:contain;display:block;">` : ""}
-        ${slogan ? `<div style="position:absolute;top:calc(${pptrLogoTop} + ${pptrLogoH}px + 2px);${pptrSloganStyle}max-width:${pptrLogoW+40}px;font-size:7pt;color:#aaa;">${slogan}</div>` : ""}
+        ${sloganLines.length > 0 ? `<div style="position:absolute;top:calc(${pptrLogoTop} + ${pptrLogoH}px + 2px);${pptrSloganStyle}max-width:${pptrLogoW+40}px;font-size:7pt;color:#aaa;line-height:1.3;">${sloganHtml}</div>` : ""}
       </div>
       <div style="height:2px;background:${hc};margin:0 40px;"></div>
     </div>`;

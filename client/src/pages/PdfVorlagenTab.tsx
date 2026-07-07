@@ -1097,13 +1097,14 @@ export default function PdfVorlagenTab() {
                 />
                 <div className="space-y-1">
                   <Label className="text-xs text-gray-600">Slogan / Untertitel</Label>
-                  <input
-                    type="text"
+                  <textarea
                     value={vorlage.slogan}
                     onChange={(e) => updateVorlage({ slogan: e.target.value })}
-                    placeholder="z.B. Qualität & Verlässlichkeit"
-                    className="w-full h-8 border border-gray-200 rounded-md px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gray-300"
+                    placeholder={"z.B. Qualit\u00e4t & Verl\u00e4sslichkeit\nIhr Partner f\u00fcr Metallbau"}
+                    rows={2}
+                    className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gray-300 resize-y"
                   />
+                  <p className="text-xs text-gray-400">Enter für Zeilenumbruch — der Slogan erscheint dann untereinander unter dem Logo.</p>
                 </div>
               </div>
             </AccordionSection>
