@@ -893,6 +893,12 @@ export default function PdfVorlagenTab() {
           body: JSON.stringify({ vorlage: v, doc_typ: docTyp }),
         });
         if (!resp.ok) throw new Error("Fehler beim Rendern");
+        const contentType = resp.headers.get("Content-Type") || "";
+        if (!contentType.startsWith("image/")) {
+          // Backend konnte kein Bild erzeugen (z.B. pdftoppm fehlt) und hat stattdessen
+          // das rohe PDF zurückgegeben — das kann <img> nicht darstellen.
+          throw new Error("Server hat kein Bild geliefert (Content-Type: " + contentType + ")");
+        }
         const blob = await resp.blob();
         // Alte Objekt-URL freigeben
         setPreviewImgUrl((old) => { if (old) URL.revokeObjectURL(old); return URL.createObjectURL(blob); });

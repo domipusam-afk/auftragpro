@@ -2,8 +2,10 @@ FROM node:20-slim
 WORKDIR /app
 
 # Chromium + alle System-Dependencies für Puppeteer
+# poppler-utils liefert `pdftoppm`, das die PDF-Live-Vorschau (Seite 1 als JPEG) benötigt
 RUN apt-get update && apt-get install -y \
   chromium \
+  poppler-utils \
   fonts-liberation \
   libasound2 \
   libatk-bridge2.0-0 \
