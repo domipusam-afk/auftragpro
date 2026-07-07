@@ -809,8 +809,9 @@ export default function PdfVorlagenTab() {
   const { toast } = useToast();
 
   const [activeDoc, setActiveDoc] = useState<string>("offerte");
-  // Echte PDF-Vorschau: Bild-URL vom Backend (Puppeteer-gerendert)
-  const [previewImgUrl, setPreviewImgUrl] = useState<string | null>(null);
+  // Echte PDF-Vorschau: Bilder vom Backend (Puppeteer-gerendert) — mehrseitig (Rechnung: Seite 2 = QR-Zahlschein)
+  const [previewPages, setPreviewPages] = useState<string[]>([]);
+  const [previewPageIdx, setPreviewPageIdx] = useState(0);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -893,15 +894,12 @@ export default function PdfVorlagenTab() {
           body: JSON.stringify({ vorlage: v, doc_typ: docTyp }),
         });
         if (!resp.ok) throw new Error("Fehler beim Rendern");
-        const contentType = resp.headers.get("Content-Type") || "";
-        if (!contentType.startsWith("image/")) {
-          // Backend konnte kein Bild erzeugen (z.B. pdftoppm fehlt) und hat stattdessen
-          // das rohe PDF zurückgegeben — das kann <img> nicht darstellen.
-          throw new Error("Server hat kein Bild geliefert (Content-Type: " + contentType + ")");
+        const data = await resp.json();
+        if (!data.pages || data.pages.length === 0) {
+          throw new Error("Server hat kein Bild geliefert");
         }
-        const blob = await resp.blob();
-        // Alte Objekt-URL freigeben
-        setPreviewImgUrl((old) => { if (old) URL.revokeObjectURL(old); return URL.createObjectURL(blob); });
+        setPreviewPages(data.pages);
+        setPreviewPageIdx((old) => (old >= data.pages.length ? 0 : old));
       } catch {
         setPreviewError(true);
       } finally {
@@ -912,6 +910,7 @@ export default function PdfVorlagenTab() {
 
   // Vorschau neu laden wenn sich Vorlage oder Dokumenttyp ändert
   useEffect(() => {
+    setPreviewPageIdx(0);
     fetchPreview(vorlage, activeDoc);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vorlage, activeDoc]);
@@ -919,7 +918,6 @@ export default function PdfVorlagenTab() {
   // Cleanup bei Unmount
   useEffect(() => () => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (previewImgUrl) URL.revokeObjectURL(previewImgUrl);
   }, []);
 
   // ─── Design preview mini content ─────────────────────
@@ -1516,10 +1514,10 @@ export default function PdfVorlagenTab() {
               }}
             >
               {/* Vorheriges Bild als Hintergrund (verhindert Flackern) */}
-              {previewImgUrl && (
+              {previewPages.length > 0 && (
                 <img
-                  src={previewImgUrl}
-                  alt="PDF-Vorschau"
+                  src={previewPages[Math.min(previewPageIdx, previewPages.length - 1)]}
+                  alt={`PDF-Vorschau Seite ${previewPageIdx + 1}`}
                   style={{
                     width: "100%",
                     height: "100%",
@@ -1531,6 +1529,63 @@ export default function PdfVorlagenTab() {
                   }}
                 />
               )}
+              {/* Seiten-Navigation (z.B. Rechnung: Seite 1 Inhalt, Seite 2 QR-Zahlschein) */}
+              {previewPages.length > 1 && (
+                <div style={{
+                  position: "absolute",
+                  bottom: 8,
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  background: "rgba(0,0,0,0.55)",
+                  borderRadius: 20,
+                  padding: "4px 8px",
+                  zIndex: 5,
+                }}>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewPageIdx((i) => Math.max(0, i - 1))}
+                    disabled={previewPageIdx === 0}
+                    style={{
+                      width: 20, height: 20, borderRadius: "50%", border: "none",
+                      background: "transparent", color: "#fff",
+                      opacity: previewPageIdx === 0 ? 0.35 : 1,
+                      cursor: previewPageIdx === 0 ? "default" : "pointer",
+                      fontSize: 13, lineHeight: 1,
+                    }}
+                  >&#8249;</button>
+                  {previewPages.map((_, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => setPreviewPageIdx(i)}
+                      title={i === 1 && activeDoc === "rechnung" ? "Seite 2 — QR-Zahlschein" : `Seite ${i + 1}`}
+                      style={{
+                        width: 7, height: 7, borderRadius: "50%", border: "none", padding: 0,
+                        background: i === previewPageIdx ? "#fff" : "rgba(255,255,255,0.4)",
+                        cursor: "pointer",
+                      }}
+                    />
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setPreviewPageIdx((i) => Math.min(previewPages.length - 1, i + 1))}
+                    disabled={previewPageIdx === previewPages.length - 1}
+                    style={{
+                      width: 20, height: 20, borderRadius: "50%", border: "none",
+                      background: "transparent", color: "#fff",
+                      opacity: previewPageIdx === previewPages.length - 1 ? 0.35 : 1,
+                      cursor: previewPageIdx === previewPages.length - 1 ? "default" : "pointer",
+                      fontSize: 13, lineHeight: 1,
+                    }}
+                  >&#8250;</button>
+                  <span style={{ color: "#fff", fontSize: 10, marginLeft: 2 }}>
+                    {previewPageIdx + 1}/{previewPages.length}
+                  </span>
+                </div>
+              )}
               {/* Ladeindikator */}
               {previewLoading && (
                 <div style={{
@@ -1541,7 +1596,7 @@ export default function PdfVorlagenTab() {
                   alignItems: "center",
                   justifyContent: "center",
                   gap: 10,
-                  background: previewImgUrl ? "rgba(255,255,255,0.4)" : "#f8f7f5",
+                  background: previewPages.length > 0 ? "rgba(255,255,255,0.4)" : "#f8f7f5",
                 }}>
                   <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#6b4c2a" strokeWidth="2" strokeLinecap="round">
                     <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83">
@@ -1573,7 +1628,7 @@ export default function PdfVorlagenTab() {
                 </div>
               )}
               {/* Initialer Leerzustand (noch kein Bild, kein Fehler) */}
-              {!previewImgUrl && !previewLoading && !previewError && (
+              {previewPages.length === 0 && !previewLoading && !previewError && (
                 <div style={{ fontSize: 11, color: "#999", textAlign: "center" }}>Vorschau wird geladen…</div>
               )}
             </div>

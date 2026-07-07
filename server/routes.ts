@@ -1779,6 +1779,142 @@ export async function registerRoutes(
     return Buffer.from(await doc.save());
   }
 
+  // Swiss QR-Bill Inline-Block — gemeinsam genutzt von echter Rechnungserzeugung UND Live-Vorschau,
+  // damit beide exakt dasselbe Ergebnis produzieren.
+  async function buildQrInlineBlock(params: {
+    sMap: Record<string, string>;
+    totalInkl: number;
+    rechnungsNr: string;
+    faelligStr?: string;
+    empfaenger?: string;
+    empStrasse?: string;
+    empPlzOrt?: string;
+  }): Promise<string> {
+    const { sMap, totalInkl, rechnungsNr, faelligStr, empfaenger = "", empStrasse = "", empPlzOrt = "" } = params;
+    const ibanRaw = sMap.bank_iban || "";
+    const ibanMissing = !ibanRaw || ibanRaw.trim() === "";
+    const iban = ibanRaw || "CH00 0000 0000 0000 0000 0";
+    const ibanClean = iban.replace(/\s/g, "");
+    const betragFormatted = totalInkl.toFixed(2);
+    const firmaPlzOrtRaw = sMap.plz_ort || "8580 Sommeri";
+    const firmaPlzMatch = firmaPlzOrtRaw.match(/^(\d{4})\s+(.+)$/);
+    const firmaPlz  = firmaPlzMatch ? parseInt(firmaPlzMatch[1]) : 8580;
+    const firmaOrt  = firmaPlzMatch ? firmaPlzMatch[2] : firmaPlzOrtRaw;
+
+    const empPlzMatch = empPlzOrt.match(/^(\d{4,5})\s+(.+)$/);
+    const empPlzNum = empPlzMatch ? parseInt(empPlzMatch[1]) : 0;
+    const empOrtOnly = empPlzMatch ? empPlzMatch[2] : (empPlzOrt || "");
+
+    let qrCodeSvg = "";
+    let qrIbanError = "";
+    const ibanValid = /^(CH|LI)[0-9]{19}$/.test(ibanClean);
+    if (!ibanClean) {
+      qrIbanError = "Keine IBAN hinterlegt — bitte in Einstellungen → Bank eintragen.";
+    } else if (!ibanValid) {
+      qrIbanError = `IBAN ungültig (${ibanClean}) — CH-IBAN hat 21 Zeichen, z.B. CH56 0483 5012 3456 7800 9. Bitte in Einstellungen korrigieren.`;
+    }
+    if (!qrIbanError) {
+      try {
+        const { SwissQRCode } = await import("swissqrbill/svg") as any;
+        const iidNum = parseInt(ibanClean.substring(4, 9));
+        const isQrIban = iidNum >= 30000 && iidNum <= 31999;
+
+        function genQrRef(nr: string): string {
+          const digits = nr.replace(/\D/g, "").padStart(26, "0").slice(0, 26);
+          const table = [0,9,4,6,8,2,7,1,3,5];
+          let carry = 0;
+          for (const d of digits) carry = table[(carry + parseInt(d)) % 10];
+          return digits + ((10 - carry) % 10);
+        }
+
+        const qrRef = isQrIban ? genQrRef(rechnungsNr) : undefined;
+
+        const qrBillData: any = {
+          currency: "CHF" as const,
+          amount: totalInkl,
+          creditor: {
+            account: ibanClean,
+            name: sMap.firmenname || "Schneggenburger GmbH",
+            address: sMap.adresse || "Hefenhoferstrasse 7",
+            zip: firmaPlz,
+            city: firmaOrt,
+            country: "CH"
+          },
+        };
+        if (qrRef) {
+          qrBillData.reference = qrRef;
+        } else {
+          qrBillData.message = "Rechnung " + rechnungsNr;
+        }
+        if (empfaenger && empPlzNum && empOrtOnly) {
+          qrBillData.debtor = {
+            name: empfaenger,
+            address: empStrasse || "",
+            zip: empPlzNum,
+            city: empOrtOnly,
+            country: "CH"
+          };
+        }
+        const qrInstance = new SwissQRCode(qrBillData, 46);
+        qrCodeSvg = qrInstance.toString();
+      } catch (e: any) {
+        qrIbanError = "QR-Code Fehler: " + (e?.message || String(e));
+        console.error("SwissQRCode error:", e);
+      }
+    }
+
+    const firmaName = sMap.firmenname || "Schneggenburger GmbH";
+    const firmaAdr  = sMap.adresse    || "Hefenhoferstrasse 7";
+    const ibanFormatted = ibanClean.replace(/(.{4})/g, "$1 ").trim();
+
+    return `
+<div style="page-break-inside:avoid;font-family:Arial,Helvetica,sans-serif;margin-top:8mm;">
+  ${(ibanMissing || qrIbanError) ? `<div style="background:#fff3cd;border:1px solid #ffc107;padding:6px 10px;margin-bottom:5mm;font-size:8pt;color:#856404;">&#9888; ${qrIbanError || "Bitte IBAN in Einstellungen hinterlegen."}</div>` : ""}
+  <div style="display:flex;align-items:center;margin-bottom:3mm;">
+    <div style="flex:1;border-top:1px dashed #000;"></div>
+    <div style="padding:0 2mm;font-size:11pt;line-height:1;">&#9986;</div>
+  </div>
+  <div style="display:flex;align-items:flex-start;width:100%;min-height:85mm;">
+    <div style="width:62mm;flex-shrink:0;padding:0 4mm;border-right:1px solid #000;min-height:85mm;display:flex;flex-direction:column;">
+      <div style="font-size:11pt;font-weight:700;margin-bottom:4mm;">Empfangsschein</div>
+      <div style="font-size:6pt;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;">Konto / Zahlbar an</div>
+      <div style="font-size:8pt;line-height:1.35;margin-bottom:3mm;">${ibanFormatted}<br>${firmaName}<br>${firmaAdr}<br>${firmaPlz} ${firmaOrt}</div>
+      ${empfaenger ? `<div style="font-size:6pt;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;">Zahlbar durch</div><div style="font-size:8pt;line-height:1.35;margin-bottom:3mm;">${empfaenger}${empStrasse ? "<br>" + empStrasse : ""}${empPlzOrt ? "<br>" + empPlzOrt : ""}</div>` : ""}
+      <div style="margin-top:auto;">
+        <div style="display:flex;gap:4mm;align-items:flex-end;">
+          <div><div style="font-size:6pt;font-weight:700;text-transform:uppercase;">Währung</div><div style="font-size:9pt;font-weight:700;">CHF</div></div>
+          <div><div style="font-size:6pt;font-weight:700;text-transform:uppercase;">Betrag</div><div style="font-size:9pt;font-weight:700;">${betragFormatted}</div></div>
+        </div>
+        <div style="font-size:6pt;font-weight:700;text-transform:uppercase;text-align:right;margin-top:6mm;">Annahmestelle</div>
+      </div>
+    </div>
+    <div style="width:90mm;flex-shrink:0;padding:0 5mm;display:flex;flex-direction:column;align-items:flex-start;">
+      <div style="font-size:11pt;font-weight:700;margin-bottom:4mm;">Zahlteil</div>
+      ${qrCodeSvg ? `<div style="width:46mm;height:46mm;margin-bottom:4mm;flex-shrink:0;">${qrCodeSvg}</div>` : `<div style="width:46mm;height:46mm;border:1.5px dashed #bbb;display:flex;align-items:center;justify-content:center;font-size:7pt;color:#999;text-align:center;margin-bottom:4mm;flex-shrink:0;">QR-Code<br>IBAN prüfen</div>`}
+      <div style="display:flex;gap:8mm;align-items:flex-end;">
+        <div><div style="font-size:6pt;font-weight:700;text-transform:uppercase;">Währung</div><div style="font-size:11pt;font-weight:700;">CHF</div></div>
+        <div><div style="font-size:6pt;font-weight:700;text-transform:uppercase;">Betrag</div><div style="font-size:11pt;font-weight:700;">${betragFormatted}</div></div>
+      </div>
+    </div>
+    <div style="flex:1;min-width:0;padding:0 4mm;display:flex;flex-direction:column;gap:4mm;">
+      <div>
+        <div style="font-size:6pt;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:1mm;">Konto / Zahlbar an</div>
+        <div style="font-size:8.5pt;line-height:1.4;">${ibanFormatted}<br>${firmaName}<br>${firmaAdr}<br>${firmaPlz} ${firmaOrt}</div>
+      </div>
+      <div>
+        <div style="font-size:6pt;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:1mm;">Zusätzliche Informationen</div>
+        <div style="font-size:8.5pt;line-height:1.4;">Rechnung ${rechnungsNr}${faelligStr ? "<br>Zahlbar bis: " + faelligStr : ""}</div>
+      </div>
+      ${empfaenger ? `<div><div style="font-size:6pt;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:1mm;">Zahlbar durch</div><div style="font-size:8.5pt;line-height:1.4;">${empfaenger}${empStrasse ? "<br>" + empStrasse : ""}${empPlzOrt ? "<br>" + empPlzOrt : ""}</div></div>` : ""}
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;margin-top:2mm;">
+    <div style="padding:0 2mm;font-size:11pt;line-height:1;">&#9986;</div>
+    <div style="flex:1;border-top:1px dashed #000;"></div>
+  </div>
+</div>`;
+  }
+
   // ─── Rechnung PDF (Vorlage aus DB) ──────────────────────────────────────────
   app.post("/api/auftraege/:id/rechnungen/:rid/pdf", async (req, res) => {
     try {
@@ -1838,145 +1974,17 @@ export async function registerRoutes(
         ? new Date(rechnung.faellig_datum).toLocaleDateString("de-CH", { day:"2-digit", month:"long", year:"numeric" })
         : undefined;
 
-      // QR-Zahlschein (Schweizer Standard)
-      const ibanRaw = sMap.bank_iban || "";
-      const ibanMissing = !ibanRaw || ibanRaw.trim() === "";
-      const iban = ibanRaw || "CH00 0000 0000 0000 0000 0";
-      const ibanClean = iban.replace(/\s/g, "");
-      const betragFormatted = totalInkl.toFixed(2);
-      // Swiss QR Bill — via swissqrbill Library (korrekt validiert, ISO 20022 konform)
-      const firmaPlzOrtRaw = sMap.plz_ort || "8580 Sommeri";
-      const firmaPlzMatch = firmaPlzOrtRaw.match(/^(\d{4})\s+(.+)$/);
-      const firmaPlz  = firmaPlzMatch ? parseInt(firmaPlzMatch[1]) : 8580;
-      const firmaOrt  = firmaPlzMatch ? firmaPlzMatch[2] : firmaPlzOrtRaw;
-
-      // Kunden PLZ/Ort aufteilen
-      const empPlzMatch = empPlzOrt.match(/^(\d{4,5})\s+(.+)$/);
-      const empPlzNum = empPlzMatch ? parseInt(empPlzMatch[1]) : 0;
-      const empOrtOnly = empPlzMatch ? empPlzMatch[2] : (empPlzOrt || "");
-
-      let qrCodeSvg = "";
-      let qrIbanError = "";
-      // IBAN Vorab-Validierung (CH/LI, exakt 21 Zeichen, nur Ziffern nach Ländercode)
-      const ibanValid = /^(CH|LI)[0-9]{19}$/.test(ibanClean);
-      if (!ibanClean) {
-        qrIbanError = "Keine IBAN hinterlegt — bitte in Einstellungen → Bank eintragen.";
-      } else if (!ibanValid) {
-        qrIbanError = `IBAN ungültig (${ibanClean}) — CH-IBAN hat 21 Zeichen, z.B. CH56 0483 5012 3456 7800 9. Bitte in Einstellungen korrigieren.`;
-      }
-      if (!qrIbanError) {
-        try {
-          const { SwissQRCode } = await import("swissqrbill/svg") as any;
-
-          // Prüfen ob QR-IBAN (IID 30000–31999) → braucht QR-Referenz
-          const iidNum = parseInt(ibanClean.substring(4, 9));
-          const isQrIban = iidNum >= 30000 && iidNum <= 31999;
-
-          // QR-Referenz aus Rechnungsnummer generieren (Modulo-10 rekursiv)
-          function genQrRef(nr: string): string {
-            const digits = nr.replace(/\D/g, "").padStart(26, "0").slice(0, 26);
-            const table = [0,9,4,6,8,2,7,1,3,5];
-            let carry = 0;
-            for (const d of digits) carry = table[(carry + parseInt(d)) % 10];
-            return digits + ((10 - carry) % 10);
-          }
-
-          const rechnungsNr = rechnung.nr || rid.substring(0, 8);
-          const qrRef = isQrIban ? genQrRef(rechnungsNr) : undefined;
-
-          const qrBillData: any = {
-            currency: "CHF" as const,
-            amount: totalInkl,
-            creditor: {
-              account: ibanClean,
-              name: sMap.firmenname || "Schneggenburger GmbH",
-              address: sMap.adresse || "Hefenhoferstrasse 7",
-              zip: firmaPlz,
-              city: firmaOrt,
-              country: "CH"
-            },
-          };
-          // Referenz oder Mitteilung setzen
-          if (qrRef) {
-            qrBillData.reference = qrRef;
-          } else {
-            qrBillData.message = "Rechnung " + rechnungsNr;
-          }
-          if (empfaenger && empPlzNum && empOrtOnly) {
-            qrBillData.debtor = {
-              name: empfaenger,
-              address: empStrasse || "",
-              zip: empPlzNum,
-              city: empOrtOnly,
-              country: "CH"
-            };
-          }
-          const qrInstance = new SwissQRCode(qrBillData, 46);
-          qrCodeSvg = qrInstance.toString();
-        } catch (e: any) {
-          qrIbanError = "QR-Code Fehler: " + (e?.message || String(e));
-          console.error("SwissQRCode error:", e);
-        }
-      }
-      const qrCodeDataUrl = ""; // nicht mehr verwendet — SVG direkt eingebettet
-
-      // Swiss QR Bill Layout — offizielles Format (links QR + Betrag, rechts Infos)
-      const firmaName = sMap.firmenname || "Schneggenburger GmbH";
-      const firmaAdr  = sMap.adresse    || "Hefenhoferstrasse 7";
-      const firmaPlzOrt = (sMap.plz_ort || "8580 Sommeri");
-      // IBAN formatiert für Anzeige: Gruppen à 4 Zeichen
-      const ibanFormatted = ibanClean.replace(/(.{4})/g, "$1 ").trim();
-
-      // QR-Bill — Header/Footer wird durch Puppeteer displayHeaderFooter des Hauptdokuments übernommen
-      // QR-Bill als inline HTML-Block (wird als extraHtmlFullWidth in buildPdfHtml übergeben)
-      // Kein separates HTML-Dokument, kein pdf-lib Merge — alles ein Puppeteer-Render
-      // page-break-inside:avoid → QR bleibt auf aktueller Seite wenn Platz, sonst nächste Seite
-      const qrInlineBlock = `
-<div style="page-break-inside:avoid;font-family:Arial,Helvetica,sans-serif;margin-top:8mm;">
-  ${(ibanMissing || qrIbanError) ? `<div style="background:#fff3cd;border:1px solid #ffc107;padding:6px 10px;margin-bottom:5mm;font-size:8pt;color:#856404;">&#9888; ${qrIbanError || "Bitte IBAN in Einstellungen hinterlegen."}</div>` : ""}
-  <div style="display:flex;align-items:center;margin-bottom:3mm;">
-    <div style="flex:1;border-top:1px dashed #000;"></div>
-    <div style="padding:0 2mm;font-size:11pt;line-height:1;">&#9986;</div>
-  </div>
-  <div style="display:flex;align-items:flex-start;width:100%;min-height:85mm;">
-    <div style="width:62mm;flex-shrink:0;padding:0 4mm;border-right:1px solid #000;min-height:85mm;display:flex;flex-direction:column;">
-      <div style="font-size:11pt;font-weight:700;margin-bottom:4mm;">Empfangsschein</div>
-      <div style="font-size:6pt;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;">Konto / Zahlbar an</div>
-      <div style="font-size:8pt;line-height:1.35;margin-bottom:3mm;">${ibanFormatted}<br>${firmaName}<br>${firmaAdr}<br>${firmaPlz} ${firmaOrt}</div>
-      ${empfaenger ? `<div style="font-size:6pt;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;">Zahlbar durch</div><div style="font-size:8pt;line-height:1.35;margin-bottom:3mm;">${empfaenger}${empStrasse ? "<br>" + empStrasse : ""}${empPlzOrt ? "<br>" + empPlzOrt : ""}</div>` : ""}
-      <div style="margin-top:auto;">
-        <div style="display:flex;gap:4mm;align-items:flex-end;">
-          <div><div style="font-size:6pt;font-weight:700;text-transform:uppercase;">Währung</div><div style="font-size:9pt;font-weight:700;">CHF</div></div>
-          <div><div style="font-size:6pt;font-weight:700;text-transform:uppercase;">Betrag</div><div style="font-size:9pt;font-weight:700;">${betragFormatted}</div></div>
-        </div>
-        <div style="font-size:6pt;font-weight:700;text-transform:uppercase;text-align:right;margin-top:6mm;">Annahmestelle</div>
-      </div>
-    </div>
-    <div style="width:90mm;flex-shrink:0;padding:0 5mm;display:flex;flex-direction:column;align-items:flex-start;">
-      <div style="font-size:11pt;font-weight:700;margin-bottom:4mm;">Zahlteil</div>
-      ${qrCodeSvg ? `<div style="width:46mm;height:46mm;margin-bottom:4mm;flex-shrink:0;">${qrCodeSvg}</div>` : `<div style="width:46mm;height:46mm;border:1.5px dashed #bbb;display:flex;align-items:center;justify-content:center;font-size:7pt;color:#999;text-align:center;margin-bottom:4mm;flex-shrink:0;">QR-Code<br>IBAN prüfen</div>`}
-      <div style="display:flex;gap:8mm;align-items:flex-end;">
-        <div><div style="font-size:6pt;font-weight:700;text-transform:uppercase;">Währung</div><div style="font-size:11pt;font-weight:700;">CHF</div></div>
-        <div><div style="font-size:6pt;font-weight:700;text-transform:uppercase;">Betrag</div><div style="font-size:11pt;font-weight:700;">${betragFormatted}</div></div>
-      </div>
-    </div>
-    <div style="flex:1;min-width:0;padding:0 4mm;display:flex;flex-direction:column;gap:4mm;">
-      <div>
-        <div style="font-size:6pt;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:1mm;">Konto / Zahlbar an</div>
-        <div style="font-size:8.5pt;line-height:1.4;">${ibanFormatted}<br>${firmaName}<br>${firmaAdr}<br>${firmaPlz} ${firmaOrt}</div>
-      </div>
-      <div>
-        <div style="font-size:6pt;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:1mm;">Zusätzliche Informationen</div>
-        <div style="font-size:8.5pt;line-height:1.4;">Rechnung ${rechnung.nr || ""}${faelligStr ? "<br>Zahlbar bis: " + faelligStr : ""}</div>
-      </div>
-      ${empfaenger ? `<div><div style="font-size:6pt;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:1mm;">Zahlbar durch</div><div style="font-size:8.5pt;line-height:1.4;">${empfaenger}${empStrasse ? "<br>" + empStrasse : ""}${empPlzOrt ? "<br>" + empPlzOrt : ""}</div></div>` : ""}
-    </div>
-  </div>
-  <div style="display:flex;align-items:center;margin-top:2mm;">
-    <div style="padding:0 2mm;font-size:11pt;line-height:1;">&#9986;</div>
-    <div style="flex:1;border-top:1px dashed #000;"></div>
-  </div>
-</div>`;
+      // QR-Zahlschein (Schweizer Standard) — gemeinsame Hilfsfunktion (auch von Live-Vorschau genutzt)
+      const rechnungsNrFuerQr = rechnung.nr || rid.substring(0, 8);
+      const qrInlineBlock = await buildQrInlineBlock({
+        sMap,
+        totalInkl,
+        rechnungsNr: rechnungsNrFuerQr,
+        faelligStr,
+        empfaenger,
+        empStrasse,
+        empPlzOrt,
+      });
 
       const html = await buildPdfHtml("rechnung", {
         titel: "RECHNUNG",
@@ -5666,16 +5674,18 @@ export async function registerRoutes(
 
   // ─── PDF Live-Vorschau (echtes Puppeteer-Rendering, Seite 1 als JPEG) ────────
   // POST /api/pdf-vorlagen/vorschau  — body: { vorlage: {...}, doc_typ: string }
-  // Gibt JPEG-Bild (Seite 1) des gerenderten PDFs zurück — 1:1 identisch mit echtem PDF
+  // Gibt JSON { pages: ["data:image/jpeg;base64,...", ...] } zurück — 1:1 identisch mit echtem PDF,
+  // inkl. QR-Rechnung Seite 2 bei doc_typ === "rechnung".
   app.post("/api/pdf-vorlagen/vorschau", async (req, res) => {
     try {
       const { vorlage, doc_typ = "rechnung" } = req.body as { vorlage: any; doc_typ?: string };
       if (!vorlage) return res.status(400).json({ message: "vorlage fehlt" });
 
-      // Firmen-Einstellungen für Musterdaten
+      // Firmen-Einstellungen für Musterdaten — SELBE Keys wie bei echter Rechnungs-/Offerten-Erzeugung
+      // (firmenname / adresse / plz_ort / telefon / email — NICHT firma_name/firma_adresse/...)
       const { data: einArr } = await supabase.from("einstellungen").select("schluessel,wert");
-      const einMap: Record<string, string> = {};
-      for (const e of (einArr || [])) einMap[e.schluessel] = e.wert;
+      const sMap: Record<string, string> = {};
+      for (const e of (einArr || [])) sMap[e.schluessel] = e.wert;
 
       // Musterpositionen
       const musterpositionen = [
@@ -5688,12 +5698,12 @@ export async function registerRoutes(
       const mwstBetrag = Math.round(subtotal * mwstPct) / 100;
       const total = subtotal + mwstBetrag;
 
-      // Firma-Daten aus Einstellungen
-      const firma       = einMap["firma_name"]       || "Schneggenburger GmbH";
-      const firmaAdr    = einMap["firma_adresse"]    || "Hefenhoferstrasse 7";
-      const firmaPlzOrt = einMap["firma_plz_ort"]    || "8580 Sommeri";
-      const firmaTel    = einMap["firma_tel"]        || "071 411 16 87";
-      const firmaEmail  = einMap["firma_email"]      || "info@schneggenburger.ch";
+      // Firma-Daten aus Einstellungen — identische Keys wie in den echten PDF-Routen
+      const firma       = sMap.firmenname || "Schneggenburger GmbH";
+      const firmaAdr    = sMap.adresse    || "Hefenhoferstrasse 7";
+      const firmaPlzOrt = sMap.plz_ort    || "8580 Sommeri";
+      const firmaTel    = sMap.telefon    || "071 411 16 87";
+      const firmaEmail  = sMap.email      || "info@schneggenburger.ch";
 
       // WICHTIG: Die echte gespeicherte Vorlage (Offerte/Rechnung) darf durch
       // die Live-Vorschau NIE verändert werden — auch nicht kurzzeitig. Statt
@@ -5714,14 +5724,34 @@ export async function registerRoutes(
         : doc_typ === "auftragsbestaetigung" ? "AUFTRAGSBESTÄTIGUNG"
         : "RECHNUNG";
 
+      const musterEmpfaenger = "Musterfirma AG";
+      const musterEmpStrasse = "Musterstrasse 42";
+      const musterEmpPlzOrt  = "8001 Zürich";
+      const musterFaelligStr = "31. Juli 2026";
+      const musterNummer = doc_typ === "offerte" ? "O260001" : "R260001";
+
+      // Bei Rechnung: echten QR-Zahlschein-Block bauen (identisch zur echten Rechnungserzeugung),
+      // damit die Vorschau die tatsächliche Seite 2 mit Swiss-QR-Code zeigt.
+      const qrInlineBlock = doc_typ === "rechnung"
+        ? await buildQrInlineBlock({
+            sMap,
+            totalInkl: total,
+            rechnungsNr: musterNummer,
+            faelligStr: musterFaelligStr,
+            empfaenger: musterEmpfaenger,
+            empStrasse: musterEmpStrasse,
+            empPlzOrt: musterEmpPlzOrt,
+          })
+        : undefined;
+
       const html = await buildPdfHtml(doc_typ, {
         titel: docTitle,
-        nummer: doc_typ === "offerte" ? "O260001" : "R260001",
+        nummer: musterNummer,
         datum: "01. Juli 2026",
-        faelligDatum: "31. Juli 2026",
-        empfaenger: "Musterfirma AG",
-        empfaengerStrasse: "Musterstrasse 42",
-        empfaengerPlzOrt: "8001 Zürich",
+        faelligDatum: musterFaelligStr,
+        empfaenger: musterEmpfaenger,
+        empfaengerStrasse: musterEmpStrasse,
+        empfaengerPlzOrt: musterEmpPlzOrt,
         firma, firmaAdresse: firmaAdr, firmaPlzOrt, firmaTel, firmaEmail,
         positionen: musterpositionen,
         subtotal,
@@ -5732,35 +5762,44 @@ export async function registerRoutes(
         schluss: vorlage.schluss || "Mit freundlichen Grüssen\n" + firma,
         showTotals: true,
         kundenNr: "K260001",
+        ...(qrInlineBlock ? { extraHtmlFullWidth: qrInlineBlock } : {}),
       }, previewVorlage);
 
       // PDF rendern — Datenbank wurde zu keinem Zeitpunkt verändert.
-      const pdfBuf = await renderPdfFromHtml(html);
+      // Bei Rechnung: dieselbe Render-Funktion wie bei der echten Rechnung (Seitenzahlen etc.)
+      const pdfBuf = doc_typ === "rechnung"
+        ? await renderRechnungPdfFromHtml(html)
+        : await renderPdfFromHtml(html);
 
-      // Seite 1 als JPEG via pdftoppm
+      // Alle Seiten als JPEG via pdftoppm (Rechnung hat 2 Seiten: Inhalt + QR-Zahlschein)
       const { execSync } = await import("child_process");
-      const { writeFileSync, readFileSync, unlinkSync } = await import("fs");
-      const tmpPdf  = `/tmp/vorschau_${Date.now()}.pdf`;
-      const tmpBase = `/tmp/vorschau_${Date.now()}_out`;
+      const { writeFileSync, readFileSync, unlinkSync, readdirSync } = await import("fs");
+      const tmpPdf  = `/tmp/vorschau_${Date.now()}_${Math.random().toString(36).slice(2)}.pdf`;
+      const tmpBase = `${tmpPdf}_out`;
       writeFileSync(tmpPdf, pdfBuf);
       try {
-        execSync(`pdftoppm -jpeg -r 150 -f 1 -l 1 "${tmpPdf}" "${tmpBase}"`, { timeout: 15000 });
-        // Dateiname: tmpBase-1.jpg oder tmpBase-01.jpg (abhängig von Seitenzahl)
-        const { readdirSync } = await import("fs");
-        const files = readdirSync("/tmp").filter(f => f.startsWith(tmpBase.replace("/tmp/", "")) && f.endsWith(".jpg"));
+        execSync(`pdftoppm -jpeg -r 150 "${tmpPdf}" "${tmpBase}"`, { timeout: 20000 });
+        const dir = "/tmp";
+        const baseName = tmpBase.replace("/tmp/", "");
+        const files = readdirSync(dir)
+          .filter(f => f.startsWith(baseName) && f.endsWith(".jpg"))
+          .sort(); // z.B. ..._out-1.jpg, ..._out-2.jpg — alphabetisch = Seitenreihenfolge
         if (files.length === 0) throw new Error("pdftoppm hat kein Bild erzeugt");
-        const jpgBuf = readFileSync(`/tmp/${files[0]}`);
+        const pages = files.map(f => {
+          const buf = readFileSync(`${dir}/${f}`);
+          return `data:image/jpeg;base64,${buf.toString("base64")}`;
+        });
         // Aufräumen
-        try { unlinkSync(tmpPdf); unlinkSync(`/tmp/${files[0]}`); } catch {}
-        res.set("Content-Type", "image/jpeg");
+        try { unlinkSync(tmpPdf); files.forEach(f => unlinkSync(`${dir}/${f}`)); } catch {}
+        res.set("Content-Type", "application/json");
         res.set("Cache-Control", "no-cache");
-        return res.send(jpgBuf);
+        return res.json({ pages });
       } catch (imgErr) {
-        // Fallback: PDF direkt senden
         try { unlinkSync(tmpPdf); } catch {}
         console.error("[PDF Vorschau] pdftoppm error:", imgErr);
-        res.set("Content-Type", "application/pdf");
-        return res.send(pdfBuf);
+        // Fallback: PDF direkt als Base64 in JSON (Frontend kann zumindest Fehler klar anzeigen)
+        res.set("Content-Type", "application/json");
+        return res.status(200).json({ pages: [], pdfFallback: true });
       }
     } catch (e) {
       console.error("[PDF Vorschau] Error:", e);
