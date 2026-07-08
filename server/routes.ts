@@ -1562,7 +1562,7 @@ export async function registerRoutes(
     </div>`;
     const pptrFooterHtml = `<div style="width:100%;font-family:Arial,Helvetica,sans-serif;box-sizing:border-box;">
       <div style="background:${fc};color:${fcText};padding:5px 40px;font-size:8pt;display:flex;justify-content:space-between;align-items:center;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
-        ${showContact ? `<span>${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt} · ${data.firmaTel}</span>` : "<span></span>"}
+        ${showContact ? `<span>${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt} · ${data.firmaTel}${data.firmaUid ? " · " + data.firmaUid : ""}</span>` : "<span></span>"}
         <span style="font-size:8pt;opacity:0.9;"></span>
       </div>
     </div>`;
