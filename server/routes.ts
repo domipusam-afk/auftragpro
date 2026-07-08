@@ -5816,10 +5816,12 @@ export async function registerRoutes(
       }, previewVorlage);
 
       // PDF rendern — Datenbank wurde zu keinem Zeitpunkt verändert.
-      // Bei Rechnung: dieselbe Render-Funktion wie bei der echten Rechnung (Seitenzahlen etc.)
-      const pdfBuf = doc_typ === "rechnung"
-        ? await renderRechnungPdfFromHtml(html)
-        : await renderPdfFromHtml(html);
+      // WICHTIG: renderRechnungPdfFromHtml() ist die einzige Render-Funktion, die den
+      // Puppeteer-Header/Footer (pptr-header/pptr-footer Meta-Tags — Firma, Logo, Slogan)
+      // tatsächlich einbaut. Sie wird auch von ALLEN echten PDF-Routen (Offerte, Rechnung,
+      // Mahnung, etc.) verwendet — die Vorschau MUSS denselben Pfad nutzen, sonst fehlt der
+      // komplette Header in der Live-Vorschau (renderPdfFromHtml liest diese Meta-Tags nicht).
+      const pdfBuf = await renderRechnungPdfFromHtml(html);
 
       // Alle Seiten als JPEG via pdftoppm (Rechnung hat 2 Seiten: Inhalt + QR-Zahlschein)
       const { execSync } = await import("child_process");
