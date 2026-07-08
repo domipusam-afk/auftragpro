@@ -1943,7 +1943,7 @@ export async function registerRoutes(
     const ibanFormatted = ibanClean.replace(/(.{4})/g, "$1 ").trim();
 
     return `
-<div style="page-break-inside:avoid;font-family:Arial,Helvetica,sans-serif;margin-top:8mm;">
+<div style="page-break-before:always;page-break-inside:avoid;font-family:Arial,Helvetica,sans-serif;margin-top:8mm;">
   ${(ibanMissing || qrIbanError) ? `<div style="background:#fff3cd;border:1px solid #ffc107;padding:6px 10px;margin-bottom:5mm;font-size:8pt;color:#856404;">&#9888; ${qrIbanError || "Bitte IBAN in Einstellungen hinterlegen."}</div>` : ""}
   <div style="display:flex;align-items:center;margin-bottom:3mm;">
     <div style="flex:1;border-top:1px dashed #000;"></div>
