@@ -1501,7 +1501,11 @@ export async function registerRoutes(
     // Wächst mit der Anzahl Zeilen (Slogan kann mehrzeilig sein, per Zeilenumbruch getrennt).
     const sloganLines = sloganLinesForHdr;
     const pptrSloganReserve = sloganLines.length > 0 ? (10 + sloganLines.length * 10) : 0;
-    const sloganHtml = sloganLines.map((l: string) => l.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")).join("<br/>");
+    // Jede Zeile wird einzeln in ein eigenes div mit white-space:nowrap gerendert (statt
+    // per <br/> in einem gemeinsamen Block), damit der Browser NIE innerhalb einer vom
+    // Nutzer eingegebenen Zeile zusätzlich umbricht — nur die expliziten Enter-Umbrüche
+    // aus der Textarea erzeugen neue Zeilen.
+    const sloganHtml = sloganLines.map((l: string) => `<div style="white-space:nowrap;">${l.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>`).join("");
     // Header-Box-Höhe leitet sich direkt von hdrH (mm) ab — so bleibt die sichtbare Box
     // exakt so hoch wie der reservierte Seiten-Rand (kein Clipping, kein Overlap mit Inhalt).
     const pptrHeaderBoxH = Math.round(hdrH * 3.78);
@@ -1514,7 +1518,10 @@ export async function registerRoutes(
     // der Slider bei 100% den Text wirklich bis an den rechten Rand schieben kann —
     // eine zu breite Box liess den linksbündigen Text bei 100% optisch "gebremst" wirken.
     const pptrSloganLongestLine = sloganLines.reduce((max: number, l: string) => Math.max(max, l.length), 0);
-    const pptrSloganW = Math.max(50, Math.min(220, pptrSloganLongestLine * 4.2));
+    // Grosszuegig bemessen (6px/Zeichen, kein Cap nach oben) - da jede Zeile jetzt per
+    // white-space:nowrap gerendert wird, darf die Box ruhig breiter sein als der Text;
+    // wichtig ist nur, dass sie NIE schmaler ist als die laengste eingegebene Zeile.
+    const pptrSloganW = Math.max(50, pptrSloganLongestLine * 6);
     // Freie horizontale Slogan-Position (0-100%), unabhängig von der Logo-Position
     // verschiebbar — analog zur Logo-X-Positionierung, aber mit eigenem Offset.
     const pptrSloganLeft = `calc(40px + (100% - 80px - ${pptrSloganW}px) * ${(sloganOffX/100).toFixed(3)})`;
