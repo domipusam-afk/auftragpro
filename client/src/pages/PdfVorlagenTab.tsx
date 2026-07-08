@@ -27,6 +27,7 @@ interface PdfVorlage {
   logo_scale: number;
   logo_offset_x: number; // 0-100%, freie horizontale Logo-Position im Header
   logo_offset_y: number; // 0-100%, freie vertikale Logo-Position im Header
+  slogan_offset_x: number; // 0-100%, freie horizontale Slogan-Position (unabhängig vom Logo)
   watermark_data_url: string | null;
   watermark_opacity: number;
   watermark_size: number;
@@ -96,6 +97,7 @@ const DEFAULT_VORLAGE = (doc_typ: string): PdfVorlage => ({
   logo_scale: 100,
   logo_offset_x: 100,
   logo_offset_y: 0,
+  slogan_offset_x: 0,
   watermark_data_url: null,
   watermark_opacity: 15,
   watermark_size: 60,
@@ -1105,6 +1107,13 @@ export default function PdfVorlagenTab() {
                     className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gray-300 resize-y"
                   />
                   <p className="text-xs text-gray-400">Enter für Zeilenumbruch — der Slogan erscheint dann untereinander unter dem Logo.</p>
+                  <StyledSlider
+                    label="Slogan-Position horizontal"
+                    value={vorlage.slogan_offset_x ?? 0}
+                    min={0}
+                    max={100}
+                    onChange={(v) => updateVorlage({ slogan_offset_x: v })}
+                  />
                 </div>
               </div>
             </AccordionSection>

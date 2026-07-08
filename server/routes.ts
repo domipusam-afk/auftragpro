@@ -1092,6 +1092,10 @@ export async function registerRoutes(
     // Links/Rechts in einen sinnvollen X-Wert übersetzen (Rückwärtskompatibilität).
     const logoOffX   = v.logo_offset_x != null ? Number(v.logo_offset_x) : (logoPos === "rechts" ? 100 : 0);
     const logoOffY   = v.logo_offset_y != null ? Number(v.logo_offset_y) : 0;
+    // Freie horizontale Slogan-Position (0-100%), unabhängig vom Logo verschiebbar,
+    // damit der Slogan exakt unter dem Logo (oder woanders) platziert werden kann.
+    // Fallback: folgt der Logo-X-Position, falls (noch) nicht explizit gesetzt.
+    const sloganOffX = v.slogan_offset_x != null ? Number(v.slogan_offset_x) : logoOffX;
     const einl       = (v.einleitung !== undefined && v.einleitung !== null) ? v.einleitung : (data.einleitung || "");
     const schl       = (v.schluss !== undefined && v.schluss !== null) ? v.schluss : (data.schluss || "");
     const showContact= v.show_contact !== false;
@@ -1506,12 +1510,12 @@ export async function registerRoutes(
     // Slogan-Reserve, damit Logo+Slogan nie mit der Trennlinie kollidieren.
     const pptrLogoLeft = `calc(40px + (100% - 80px - ${pptrLogoW}px) * ${(logoOffX/100).toFixed(3)})`;
     const pptrLogoTop  = `calc(2px + (${pptrHeaderBoxH}px - 4px - ${pptrSloganReserve}px - ${pptrLogoH}px) * ${(logoOffY/100).toFixed(3)})`;
-    // Slogan wird direkt unter dem Logo platziert (folgt der Logo-Position), damit er bei
-    // freier X/Y-Platzierung nie mit dem Firmenblock oder dem Logo selbst kollidiert.
-    const pptrLogoRightGap = `calc(100% - ${pptrLogoLeft} - ${pptrLogoW}px)`;
-    const pptrSloganStyle = logoOffX >= 50
-      ? `right:${pptrLogoRightGap};text-align:right;`
-      : `left:${pptrLogoLeft};text-align:left;`;
+    // Slogan-Breite: etwas breiter als das Logo, damit auch längere Texte Platz haben.
+    const pptrSloganW = pptrLogoW + 60;
+    // Freie horizontale Slogan-Position (0-100%), unabhängig von der Logo-Position
+    // verschiebbar — analog zur Logo-X-Positionierung, aber mit eigenem Offset.
+    const pptrSloganLeft = `calc(40px + (100% - 80px - ${pptrSloganW}px) * ${(sloganOffX/100).toFixed(3)})`;
+    const pptrSloganStyle = `left:${pptrSloganLeft};text-align:left;`;
     // Firmenblock (links oben) weicht dem Logo horizontal aus, falls das Logo in der linken
     // Hälfte platziert ist — sonst würden sich Firmentext und Logo überlappen.
     const pptrFirmaLeft = logoOffX < 50 ? `calc(${pptrLogoLeft} + ${pptrLogoW}px + 12px)` : "40px";
@@ -1522,7 +1526,7 @@ export async function registerRoutes(
           <div style="font-size:7.5pt;">${data.firmaAdresse}, ${data.firmaPlzOrt} · ${data.firmaTel}</div>
         </div>
         ${logoUrl ? `<img src="${logoUrl}" style="position:absolute;left:${pptrLogoLeft};top:${pptrLogoTop};max-width:${pptrLogoW}px;max-height:${pptrLogoH}px;object-fit:contain;display:block;">` : ""}
-        ${sloganLines.length > 0 ? `<div style="position:absolute;top:calc(${pptrLogoTop} + ${pptrLogoH}px + 2px);${pptrSloganStyle}max-width:${pptrLogoW+40}px;font-size:7pt;color:#aaa;line-height:1.3;">${sloganHtml}</div>` : ""}
+        ${sloganLines.length > 0 ? `<div style="position:absolute;top:calc(${pptrLogoTop} + ${pptrLogoH}px + 2px);${pptrSloganStyle}max-width:${pptrSloganW}px;font-size:7pt;color:#aaa;line-height:1.3;">${sloganHtml}</div>` : ""}
       </div>
       <div style="height:2px;background:${hc};margin:0 40px;"></div>
     </div>`;
@@ -5636,6 +5640,7 @@ export async function registerRoutes(
           logo_scale: 100,
           logo_offset_x: 100,
           logo_offset_y: 0,
+          slogan_offset_x: 0,
           watermark_data_url: null,
           watermark_opacity: 15,
           watermark_size: 60,
