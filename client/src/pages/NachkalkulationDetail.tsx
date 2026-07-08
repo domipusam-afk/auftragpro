@@ -630,7 +630,9 @@ function SollIstVergleich({ auftragId }: { auftragId: string }) {
   const rb = num(vkCfg?.rabatt_prozent) / 100;
   const sk = num(vkCfg?.skonto_prozent) / 100;
   const mwst = num(vkCfg?.mwst_prozent) / 100 || 0.081;
-  const sollNetto = sollSelbstkosten * (1 + rg) * (1 - rb) * (1 - sk);
+  // Rabatt/Skonto werden gemäss Firmen-Kalkulationslogik (Sheet 10, siehe VorkalkulationDetail)
+  // AUFGESCHLAGEN, nicht abgezogen.
+  const sollNetto = sollSelbstkosten * (1 + rg) * (1 + rb) * (1 + sk);
   const sollBrutto = sollNetto * (1 + mwst);
 
   // IST

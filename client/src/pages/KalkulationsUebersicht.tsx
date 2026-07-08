@@ -359,7 +359,9 @@ export default function KalkulationsUebersicht() {
   // Gemeinkosten sind bereits im Risiko-/Gewinnzuschlag auf die Selbstkosten enthalten,
   // exakt wie in der Nachkalkulation-Detailseite gerechnet).
   const vkSelbstkosten = vkLohnkosten + vkTotalMaterial + vkTotalFremd + vkTotalSoek;
-  const vkNetto = vkSelbstkosten * (1 + risikoGewinnPct / 100) * (1 - rabattPct / 100) * (1 - skontoPct / 100);
+  // Rabatt/Skonto werden gemäss Firmen-Kalkulationslogik (Sheet 10, siehe VorkalkulationDetail.tsx)
+  // AUFGESCHLAGEN, nicht abgezogen — exakt wie in der Vorkalkulation-Preisberechnung.
+  const vkNetto = vkSelbstkosten * (1 + risikoGewinnPct / 100) * (1 + rabattPct / 100) * (1 + skontoPct / 100);
   const vkBrutto = vkNetto * (1 + mwstPct / 100);
 
   const vkStundenTotal = vkStunden.reduce((s, r) => s + Number(r.soll_stunden), 0);
@@ -716,14 +718,14 @@ export default function KalkulationsUebersicht() {
                     </div>
                     {rabattPct > 0 && (
                       <div className="flex justify-between items-center text-sm py-1 border-b border-dashed text-muted-foreground">
-                        <span>− Rabatt ({rabattPct}%)</span>
-                        <span className="tabular-nums">− {formatCHF(vkSelbstkosten * (1 + risikoGewinnPct / 100) * (rabattPct / 100))}</span>
+                        <span>+ Rabatt ({rabattPct}%)</span>
+                        <span className="tabular-nums">+ {formatCHF(vkSelbstkosten * (1 + risikoGewinnPct / 100) * (rabattPct / 100))}</span>
                       </div>
                     )}
                     {skontoPct > 0 && (
                       <div className="flex justify-between items-center text-sm py-1 border-b border-dashed text-muted-foreground">
-                        <span>− Skonto ({skontoPct}%)</span>
-                        <span className="tabular-nums">− {formatCHF(vkSelbstkosten * (1 + risikoGewinnPct / 100) * (1 - rabattPct / 100) * (skontoPct / 100))}</span>
+                        <span>+ Skonto ({skontoPct}%)</span>
+                        <span className="tabular-nums">+ {formatCHF(vkSelbstkosten * (1 + risikoGewinnPct / 100) * (1 + rabattPct / 100) * (skontoPct / 100))}</span>
                       </div>
                     )}
                     <div className="flex justify-between items-center text-sm py-1 border-b border-dashed text-muted-foreground">
