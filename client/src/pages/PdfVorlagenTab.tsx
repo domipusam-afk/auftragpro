@@ -21,6 +21,7 @@ interface PdfVorlage {
   mahngebuehr: string;
   einleitung: string;
   schluss: string;
+  fusstext: string; // Text unterhalb des QR-Zahlscheins (nur Rechnung, Seite 2)
   show_contact: boolean;
   show_page_num: boolean;
   logo_data_url: string | null;
@@ -91,6 +92,7 @@ const DEFAULT_VORLAGE = (doc_typ: string): PdfVorlage => ({
   mahngebuehr: "30.00",
   einleitung: "Sehr geehrte Damen und Herren,\n\nvielen Dank für Ihr Vertrauen.",
   schluss: "Wir freuen uns auf Ihre Rückmeldung.\n\nMit freundlichen Grüssen\nSchneggenburger GmbH",
+  fusstext: "",
   show_contact: true,
   show_page_num: true,
   logo_data_url: null,
@@ -1279,6 +1281,18 @@ export default function PdfVorlagenTab() {
                     placeholder="Schlusstext..."
                   />
                 </div>
+                {activeDoc === "rechnung" && (
+                  <div className="space-y-1">
+                    <Label className="text-xs text-gray-600">Fusstext (erscheint unter dem QR-Zahlschein, Seite 2)</Label>
+                    <textarea
+                      value={vorlage.fusstext}
+                      onChange={(e) => updateVorlage({ fusstext: e.target.value })}
+                      rows={6}
+                      className="w-full border border-gray-200 rounded-md p-2 text-xs resize-y focus:outline-none focus:ring-1"
+                      placeholder="z.B. Zahlungsbedingungen, Eigentumsvorbehalt, Reklamationsfrist, MWST-Nummer..."
+                    />
+                  </div>
+                )}
               </div>
             </AccordionSection>
 

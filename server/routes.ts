@@ -1117,6 +1117,7 @@ export async function registerRoutes(
     const sloganOffX = v.slogan_offset_x != null ? Number(v.slogan_offset_x) : logoOffX;
     const einl       = (v.einleitung !== undefined && v.einleitung !== null) ? v.einleitung : (data.einleitung || "");
     const schl       = (v.schluss !== undefined && v.schluss !== null) ? v.schluss : (data.schluss || "");
+    const fusstext   = v.fusstext || "";
     const showContact= v.show_contact !== false;
     const showPageNum= v.show_page_num !== false;
     const wmUrl      = v.watermark_data_url || null;
@@ -1632,6 +1633,7 @@ export async function registerRoutes(
         ${data.extraHtml || ""}
       </div>
       ${data.extraHtmlFullWidth ? `<div style="font-family:Arial,Helvetica,sans-serif;">${data.extraHtmlFullWidth}</div>` : ""}
+      ${fusstext ? `<div style="page-break-inside:avoid;font-family:Arial,Helvetica,sans-serif;font-size:8pt;color:#444;white-space:pre-line;margin:6mm 40px 0;line-height:1.4;">${fusstext}</div>` : ""}
     </body></html>`;
     return aHtml;
   }
