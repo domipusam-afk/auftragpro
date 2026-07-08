@@ -1048,6 +1048,7 @@ export async function registerRoutes(
     firmaPlzOrt: string;
     firmaTel: string;
     firmaEmail: string;
+    firmaUid?: string;
     positionen: any[];
     subtotal: number;
     rabattPct?: number;
@@ -1283,13 +1284,13 @@ export async function registerRoutes(
       ? `<div>
           <div style="height:2px;background:linear-gradient(90deg,${fc},${hc});margin:0 40px;border-radius:2px;"></div>
           <div style="padding:8px 40px 14px;font-size:8pt;color:#999;font-style:italic;display:flex;justify-content:space-between;">
-            ${showContact ? `<div>${data.firma} · ${data.firmaTel} · ${data.firmaEmail}</div>` : "<div></div>"}
+            ${showContact ? `<div>${data.firma} · ${data.firmaTel} · ${data.firmaEmail}${data.firmaUid ? " · " + data.firmaUid : ""}</div>` : "<div></div>"}
             ${showPageNum ? `<div style="font-size:8pt;"></div>` : ""}
           </div>
         </div>`
       : `<div>
           <div style="background:${fc};color:${fcText};padding:6px 40px;font-size:8pt;display:flex;justify-content:space-between;align-items:center;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
-            ${showContact ? `<div>${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt} · ${data.firmaTel}</div>` : "<div></div>"}
+            ${showContact ? `<div>${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt} · ${data.firmaTel}${data.firmaUid ? " · " + data.firmaUid : ""}</div>` : "<div></div>"}
             <div style="font-size:8pt;opacity:0.85;" class="page-num-holder"></div>
           </div>
         </div>`;
@@ -2071,6 +2072,7 @@ export async function registerRoutes(
         firmaPlzOrt:  sMap.plz_ort   || "8580 Sommeri",
         firmaTel:     sMap.telefon   || "071 411 16 87",
         firmaEmail:   sMap.email     || "info@schneggenburger.ch",
+        firmaUid:     sMap.uid_nummer || "",
         positionen,
         subtotal, mwstPct, mwstBetrag, total: totalInkl,
         showTotals: true,
@@ -3214,6 +3216,7 @@ export async function registerRoutes(
         firmaPlzOrt:  sMap.plz_ort   || "8580 Sommeri",
         firmaTel:     sMap.telefon   || "071 411 16 87",
         firmaEmail:   sMap.email     || "info@schneggenburger.ch",
+        firmaUid:     sMap.uid_nummer || "",
         positionen,
         subtotal, mwstPct, mwstBetrag,
         mahngebuehr: mahngebuehr > 0 ? mahngebuehr : undefined,
@@ -3538,6 +3541,7 @@ export async function registerRoutes(
         firmaPlzOrt:  sMap.plz_ort   || "8580 Sommeri",
         firmaTel:     sMap.telefon   || "071 411 16 87",
         firmaEmail:   sMap.email     || "info@schneggenburger.ch",
+        firmaUid:     sMap.uid_nummer || "",
         positionen,
         subtotal, rabattPct, rabattBetrag, mwstPct, mwstBetrag, total: totalInkl,
         einleitung: offerte.intro_text || "",
@@ -3608,6 +3612,7 @@ export async function registerRoutes(
         firmaPlzOrt:  sMap.plz_ort   || "8580 Sommeri",
         firmaTel:     sMap.telefon   || "071 411 16 87",
         firmaEmail:   sMap.email     || "info@schneggenburger.ch",
+        firmaUid:     sMap.uid_nummer || "",
         positionen,
         subtotal, rabattPct, rabattBetrag, mwstPct, mwstBetrag, total: totalInkl,
         einleitung: offerte.intro_text || "",
@@ -3713,6 +3718,7 @@ export async function registerRoutes(
         firmaPlzOrt:  sMap.plz_ort   || "8580 Sommeri",
         firmaTel:     sMap.telefon   || "071 411 16 87",
         firmaEmail:   sMap.email     || "info@schneggenburger.ch",
+        firmaUid:     sMap.uid_nummer || "",
         positionen,
         subtotal: bruttoLohn,
         mwstPct: 0,
@@ -3791,6 +3797,7 @@ export async function registerRoutes(
         firmaPlzOrt:  sMap.plz_ort   || "8580 Sommeri",
         firmaTel:     sMap.telefon   || "071 411 16 87",
         firmaEmail:   sMap.email     || "info@schneggenburger.ch",
+        firmaUid:     sMap.uid_nummer || "",
         positionen,
         subtotal: 0, mwstPct: 0, mwstBetrag: 0, total: 0,
         showTotals: false,
@@ -5434,6 +5441,7 @@ export async function registerRoutes(
         firmaPlzOrt:  sMap.plz_ort   || "8580 Sommeri",
         firmaTel:     sMap.telefon   || "071 411 16 87",
         firmaEmail:   sMap.email     || "info@schneggenburger.ch",
+        firmaUid:     sMap.uid_nummer || "",
         positionen,
         subtotal: 0, mwstPct: 0, mwstBetrag: 0, total: 0,
         showTotals: false,
@@ -5497,6 +5505,7 @@ export async function registerRoutes(
         firmaPlzOrt:  sMap.plz_ort   || "8580 Sommeri",
         firmaTel:     sMap.telefon   || "071 411 16 87",
         firmaEmail:   sMap.email     || "info@schneggenburger.ch",
+        firmaUid:     sMap.uid_nummer || "",
         positionen,
         subtotal, mwstPct, mwstBetrag, total: totalInkl,
         showTotals: positionen.length > 0,
@@ -5781,6 +5790,7 @@ export async function registerRoutes(
       const firmaPlzOrt = sMap.plz_ort    || "8580 Sommeri";
       const firmaTel    = sMap.telefon    || "071 411 16 87";
       const firmaEmail  = sMap.email      || "info@schneggenburger.ch";
+      const firmaUid    = sMap.uid_nummer || "";
 
       // WICHTIG: Die echte gespeicherte Vorlage (Offerte/Rechnung) darf durch
       // die Live-Vorschau NIE verändert werden — auch nicht kurzzeitig. Statt
@@ -5829,7 +5839,7 @@ export async function registerRoutes(
         empfaenger: musterEmpfaenger,
         empfaengerStrasse: musterEmpStrasse,
         empfaengerPlzOrt: musterEmpPlzOrt,
-        firma, firmaAdresse: firmaAdr, firmaPlzOrt, firmaTel, firmaEmail,
+        firma, firmaAdresse: firmaAdr, firmaPlzOrt, firmaTel, firmaEmail, firmaUid,
         positionen: musterpositionen,
         subtotal,
         mwstPct,
