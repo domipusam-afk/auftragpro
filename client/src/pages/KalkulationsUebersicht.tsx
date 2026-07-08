@@ -555,7 +555,7 @@ export default function KalkulationsUebersicht() {
                       <VergleichsZeile
                         label="Sondereinzelkosten (SOEK)"
                         vk={vkTotalSoek}
-                        nk={0}
+                        nk={nkIstSoek}
                         icon={Receipt}
                         iconColor="text-amber-600"
                       />
