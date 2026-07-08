@@ -954,6 +954,23 @@ export async function registerRoutes(
   });
 
   // ============= RECHNUNGEN =============
+
+  // Summiert alle Rechnungen eines Auftrags (Netto-Positionensumme, inkl. 8.1% MWST
+  // wie im Rechnungs-PDF) und schreibt das Ergebnis nach auftraege.rechnungs_betrag,
+  // damit der Vergleich Angebot/Rechnung/Ist-Kosten immer konsistent aktuell ist.
+  async function syncRechnungsBetrag(auftragId: string) {
+    const { data: alleRechnungen } = await supabase
+      .from("rechnungen")
+      .select("betrag")
+      .eq("auftrag_id", auftragId);
+    const nettoSumme = (alleRechnungen || []).reduce((s: number, r: any) => s + (Number(r.betrag) || 0), 0);
+    const bruttoSumme = nettoSumme * 1.081;
+    await supabase
+      .from("auftraege")
+      .update({ rechnungs_betrag: bruttoSumme })
+      .eq("id", auftragId);
+  }
+
   app.get("/api/auftraege/:id/rechnungen", async (req, res) => {
     try {
       const { data, error } = await supabase
@@ -1005,6 +1022,7 @@ export async function registerRoutes(
         .select()
         .single();
       if (error) throw error;
+      await syncRechnungsBetrag(id);
       res.json(data);
     } catch (e) {
       res.status(500).json({ message: asError(e) });
@@ -2114,8 +2132,10 @@ export async function registerRoutes(
   app.delete("/api/rechnungen/:id", async (req, res) => {
     try {
       const { id } = req.params;
+      const { data: existingR } = await supabase.from("rechnungen").select("auftrag_id").eq("id", id).maybeSingle();
       const { error } = await supabase.from("rechnungen").delete().eq("id", id);
       if (error) throw error;
+      if (existingR?.auftrag_id) await syncRechnungsBetrag(existingR.auftrag_id);
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });

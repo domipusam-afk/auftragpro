@@ -2647,6 +2647,15 @@ export default function AuftragDetail({ id }: Props) {
                   {formatCHF(data.rechnungs_betrag, data.waehrung)}
                 </dd>
               </div>
+              {Number(data.angebots_betrag) > 0 && Number(data.rechnungs_betrag) > 0 && (
+                <div className="flex justify-between gap-2 pt-2 border-t">
+                  <dt className="text-muted-foreground">Differenz (Rechnung − Angebot)</dt>
+                  <dd className={`font-semibold tabular-nums ${Number(data.rechnungs_betrag) - Number(data.angebots_betrag) >= 0 ? "text-green-600" : "text-red-600"}`}>
+                    {Number(data.rechnungs_betrag) - Number(data.angebots_betrag) >= 0 ? "+" : ""}
+                    {formatCHF(Number(data.rechnungs_betrag) - Number(data.angebots_betrag), data.waehrung)}
+                  </dd>
+                </div>
+              )}
               <div className="flex justify-between gap-2">
                 <dt className="text-muted-foreground">Währung</dt>
                 <dd className="font-medium">{data.waehrung}</dd>

@@ -618,6 +618,7 @@ function SollIstVergleich({ auftragId }: { auftragId: string }) {
   const { data: nkMat = [] } = useQuery<NkMaterial[]>({ queryKey: ["/api/nk-material", auftragId], queryFn: async () => { const r = await apiRequest("GET", `/api/kalkulation/${auftragId}/nk-material`); return r.json(); } });
   const { data: nkFremd = [] } = useQuery<NkFremd[]>({ queryKey: ["/api/nk-fremd", auftragId], queryFn: async () => { const r = await apiRequest("GET", `/api/kalkulation/${auftragId}/nk-fremd`); return r.json(); } });
   const { data: nkSoek = [] } = useQuery<NkSoek[]>({ queryKey: ["/api/nk-soek", auftragId], queryFn: async () => { const r = await apiRequest("GET", `/api/kalkulation/${auftragId}/nk-soek`); return r.json(); } });
+  const { data: auftrag } = useQuery<any>({ queryKey: ["/api/auftraege", auftragId], queryFn: async () => { const r = await apiRequest("GET", `/api/auftraege/${auftragId}`); return r.json(); } });
 
   // SOLL
   const sollStunden = vkStunden.reduce((s, r) => s + num(r.soll_stunden), 0);
@@ -643,6 +644,14 @@ function SollIstVergleich({ auftragId }: { auftragId: string }) {
   const istSoek = nkSoek.reduce((s, r) => s + num(r.total_chf), 0);
   const istSelbstkosten = istLohn + istMat + istFremd + istSoek;
   const gewinnVerlust = sollNetto - istSelbstkosten;
+
+  // Effektiver Gewinn: basiert auf dem tatsächlich fakturierten Rechnungsbetrag
+  // (Brutto, inkl. MWST — automatisch aus allen Rechnungen des Auftrags summiert),
+  // umgerechnet auf Netto zum Vergleich mit den IST-Selbstkosten.
+  const rechnungsBruttoIst = num(auftrag?.rechnungs_betrag);
+  const hatRechnung = rechnungsBruttoIst > 0;
+  const rechnungsNettoIst = hatRechnung ? rechnungsBruttoIst / (1 + mwst) : 0;
+  const gewinnEffektiv = rechnungsNettoIst - istSelbstkosten;
 
   const Row = ({ label, soll, ist, unit = "CHF" }: { label: string; soll: number; ist: number; unit?: string }) => {
     const diff = ist - soll;
@@ -740,6 +749,40 @@ function SollIstVergleich({ auftragId }: { auftragId: string }) {
           </div>
         </div>
       </Card>
+
+      {/* Effektiver Gewinn (basiert auf tatsächlich gestellten Rechnungen) */}
+      {hatRechnung && (
+        <Card className="p-4" style={{ borderColor: gewinnEffektiv >= 0 ? "#16a34a" : "#dc2626", borderWidth: 2 }}>
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold text-sm flex items-center gap-2">
+                {gewinnEffektiv >= 0 ? <CheckCircle2 className="h-5 w-5 text-green-600" /> : <AlertTriangle className="h-5 w-5 text-red-600" />}
+                {gewinnEffektiv >= 0 ? "Gewinn" : "Verlust"} — Effektiv (Rechnung)
+              </h3>
+              <p className="text-xs text-muted-foreground mt-1">Rechnungsbetrag netto (IST) − IST-Selbstkosten</p>
+            </div>
+            <div className={`text-2xl font-bold font-mono ${gewinnEffektiv >= 0 ? "text-green-700" : "text-red-700"}`}>
+              {gewinnEffektiv >= 0 ? "+" : ""}{chf(gewinnEffektiv)}
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t">
+            <div className="text-center">
+              <div className="text-xs text-muted-foreground">Rechnungsbetrag netto</div>
+              <div className="font-mono font-semibold text-sm">{chf(rechnungsNettoIst)}</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xs text-muted-foreground">IST Selbstkosten</div>
+              <div className="font-mono font-semibold text-sm">{chf(istSelbstkosten)}</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xs text-muted-foreground">Marge %</div>
+              <div className={`font-mono font-semibold text-sm ${gewinnEffektiv >= 0 ? "text-green-700" : "text-red-700"}`}>
+                {rechnungsNettoIst > 0 ? ((gewinnEffektiv / rechnungsNettoIst) * 100).toFixed(1) + " %" : "—"}
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
