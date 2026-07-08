@@ -1272,7 +1272,7 @@ export async function registerRoutes(
           ${(data.rabattPct && data.rabattPct > 0 && data.rabattBetrag) ? `<div style="display:flex;justify-content:space-between;padding:3px 0"><span>Rabatt ${data.rabattPct}%</span><span>- ${fmtCHF(data.rabattBetrag)}</span></div>` : ""}
           <div style="display:flex;justify-content:space-between;padding:3px 0"><span>MWST ${data.mwstPct.toFixed(1)}%</span><span>${fmtCHF(data.mwstBetrag)}</span></div>
           ${data.mahngebuehr ? `<div style="display:flex;justify-content:space-between;padding:3px 0"><span>Mahngebühr</span><span>${fmtCHF(data.mahngebuehr)}</span></div>` : ""}
-          <div style="display:flex;justify-content:space-between;padding:5px 0;border-top:1.5px solid ${fc};margin-top:3px;font-weight:700;font-size:11pt;color:${fc}">
+          <div style="display:flex;justify-content:space-between;padding:5px 0;border-top:1.5px solid ${hc};margin-top:3px;font-weight:700;font-size:11pt;color:${hc}">
             <span>Total</span><span>${fmtCHF(data.total)}</span>
           </div>
         </div>
