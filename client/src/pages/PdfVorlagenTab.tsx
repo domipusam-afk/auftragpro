@@ -420,7 +420,7 @@ function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
   const sampleDatum = "29. Mai 2026";
   const datumLabel = docTyp === "offerte" ? "Offertendatum" : docTyp === "rechnung" ? "Rechnungsdatum" : docTyp === "mahnung" ? "Mahndatum" : "Datum";
   const gueltigLabel = docTyp === "offerte" ? "G&uuml;ltig bis" : "Zahlbar bis";
-  const gueltigVal = docTyp === "offerte" ? "60 Tage" : `${zahlungsfrist} Tage`;
+  const gueltigVal = docTyp === "offerte" ? "30 Tage" : `${zahlungsfrist} Tage`;
   const tdL = `padding:${Math.round(1.5*S)}px ${Math.round(5*S)}px ${Math.round(1.5*S)}px 0;color:#666;white-space:nowrap;font-size:${Math.round(8*S)}pt;`;
   const tdR = `padding:${Math.round(1.5*S)}px 0;font-weight:600;color:#222;font-size:${Math.round(8*S)}pt;`;
   const docInfoHtml = `

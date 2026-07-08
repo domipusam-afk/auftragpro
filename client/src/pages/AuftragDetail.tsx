@@ -796,7 +796,7 @@ function OffertenTab({ id, auftrag }: { id: string; auftrag: Auftrag }) {
   const [introText, setIntroText] = useState("Wir danken für Ihre Anfrage und erlauben uns, Ihnen für die beschriebenen Arbeiten folgende Offerte zu unterbreiten.");
   const [liefertermin, setLiefertermin] = useState("nach Absprache");
   const [zahlungsbed, setZahlungsbed] = useState("30 Tage netto");
-  const [gueltigkeit, setGueltigkeit] = useState("60 Tage");
+  const [gueltigkeit, setGueltigkeit] = useState("30 Tage");
   const [schlussText, setSchlussText] = useState("");
   const [datum, setDatum] = useState(new Date().toISOString().slice(0, 10));
   const [rabatt, setRabatt] = useState(0);
