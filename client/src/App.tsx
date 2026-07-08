@@ -41,7 +41,6 @@ import Ferienplanung from "@/pages/Ferienplanung";
 import Stundenauswertung from "@/pages/Stundenauswertung";
 import Lieferanten from "@/pages/Lieferanten";
 import GarantieUebersicht from "@/pages/GarantieUebersicht";
-import KalkulationsUebersicht from "@/pages/KalkulationsUebersicht";
 import VorkalkulationDetail from "@/pages/VorkalkulationDetail";
 import NachkalkulationDetail from "@/pages/NachkalkulationDetail";
 import VorkalkulationUebersicht from "@/pages/VorkalkulationUebersicht";
@@ -98,7 +97,6 @@ function AppRouter() {
       <Route path="/garantien" component={GarantieUebersicht} />
       <Route path="/vorkalkulation-uebersicht">{() => <Geschuetzt modul="kalkulation" label="Vorkalkulation"><VorkalkulationUebersicht /></Geschuetzt>}</Route>
       <Route path="/nachkalkulation-uebersicht">{() => <Geschuetzt modul="kalkulation" label="Nachkalkulation"><NachkalkulationUebersicht /></Geschuetzt>}</Route>
-      <Route path="/kalkulations-uebersicht">{() => <Geschuetzt modul="kalkulation" label="Kalkulation"><KalkulationsUebersicht /></Geschuetzt>}</Route>
 
       <Route path="/lager">{() => <Geschuetzt modul="einkauf" label="Lagerverwaltung"><Lagerverwaltung /></Geschuetzt>}</Route>
 

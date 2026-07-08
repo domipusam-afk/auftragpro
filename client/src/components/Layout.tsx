@@ -77,7 +77,6 @@ const FINANZ_NAV = [
 const KALKULATION_NAV = [
   { href: "/vorkalkulation-uebersicht", label: "Vorkalkulation", icon: Calculator },
   { href: "/nachkalkulation", label: "Nachkalkulation", icon: TrendingUp },
-  { href: "/kalkulations-uebersicht", label: "Übersicht VK/NK", icon: BarChart3 },
 ];
 
 const RESSOURCE_NAV = [
