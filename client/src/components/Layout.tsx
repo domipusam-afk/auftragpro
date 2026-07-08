@@ -579,30 +579,9 @@ export default function Layout({ children }: { children: ReactNode }) {
           {/* Dashboard */}
           <NavItem href="/" label="Dashboard" icon={LayoutDashboard} collapsed={!show} />
 
-          {/* Aufträge mit aufklappbarem Untermenü */}
+          {/* Aufträge — direkter Link, kein Untermenü (nur ein einziger Unterpunkt vorhanden) */}
           {hatZugriff("auftraege") && show && (
-            <div>
-              <button
-                onClick={() => setAuftraegeOpen((o) => !o)}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
-                  (location === "/auftraege" || location.startsWith("/auftraege/"))
-                    ? "bg-white/10 text-white font-medium"
-                    : "text-white/80 hover:bg-white/5 hover:text-white"
-                )}
-              >
-                <ListChecks className="h-4 w-4 shrink-0" />
-                <span className="flex-1 text-left">Aufträge</span>
-                {auftraegeOpen
-                  ? <ChevronDown className="h-3 w-3 shrink-0" />
-                  : <ChevronRightSmall className="h-3 w-3 shrink-0" />}
-              </button>
-              {auftraegeOpen && (
-                <div className="flex flex-col gap-0.5 mt-0.5">
-                  <NavItem href="/auftraege" label="Alle Aufträge" icon={ListChecks} collapsed={false} indent />
-                </div>
-              )}
-            </div>
+            <NavItem href="/auftraege" label="Aufträge" icon={ListChecks} collapsed={false} />
           )}
           {/* Sidebar eingeklappt: nur Icon */}
           {hatZugriff("auftraege") && !show && (
