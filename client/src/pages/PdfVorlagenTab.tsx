@@ -581,11 +581,12 @@ interface SliderProps {
   value: number;
   min: number;
   max: number;
+  step?: number;
   unit?: string;
   onChange: (v: number) => void;
 }
 
-function StyledSlider({ label, value, min, max, unit = "%", onChange }: SliderProps) {
+function StyledSlider({ label, value, min, max, step = 1, unit = "%", onChange }: SliderProps) {
   return (
     <div className="space-y-1">
       <div className="flex justify-between items-center">
@@ -596,6 +597,7 @@ function StyledSlider({ label, value, min, max, unit = "%", onChange }: SliderPr
         type="range"
         min={min}
         max={max}
+        step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
         className="w-full h-1.5 rounded-lg appearance-none cursor-pointer"
@@ -1112,6 +1114,7 @@ export default function PdfVorlagenTab() {
                     value={vorlage.slogan_offset_x ?? 0}
                     min={0}
                     max={100}
+                    step={5}
                     onChange={(v) => updateVorlage({ slogan_offset_x: v })}
                   />
                 </div>

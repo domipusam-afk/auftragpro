@@ -1510,8 +1510,11 @@ export async function registerRoutes(
     // Slogan-Reserve, damit Logo+Slogan nie mit der Trennlinie kollidieren.
     const pptrLogoLeft = `calc(40px + (100% - 80px - ${pptrLogoW}px) * ${(logoOffX/100).toFixed(3)})`;
     const pptrLogoTop  = `calc(2px + (${pptrHeaderBoxH}px - 4px - ${pptrSloganReserve}px - ${pptrLogoH}px) * ${(logoOffY/100).toFixed(3)})`;
-    // Slogan-Breite: etwas breiter als das Logo, damit auch längere Texte Platz haben.
-    const pptrSloganW = pptrLogoW + 60;
+    // Slogan-Breite: an der längsten Zeile orientiert (statt an der Logo-Breite), damit
+    // der Slider bei 100% den Text wirklich bis an den rechten Rand schieben kann —
+    // eine zu breite Box liess den linksbündigen Text bei 100% optisch "gebremst" wirken.
+    const pptrSloganLongestLine = sloganLines.reduce((max: number, l: string) => Math.max(max, l.length), 0);
+    const pptrSloganW = Math.max(50, Math.min(220, pptrSloganLongestLine * 4.2));
     // Freie horizontale Slogan-Position (0-100%), unabhängig von der Logo-Position
     // verschiebbar — analog zur Logo-X-Positionierung, aber mit eigenem Offset.
     const pptrSloganLeft = `calc(40px + (100% - 80px - ${pptrSloganW}px) * ${(sloganOffX/100).toFixed(3)})`;
