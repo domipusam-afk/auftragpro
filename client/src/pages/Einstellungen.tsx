@@ -81,6 +81,25 @@ function AllgemeinTab({ settings }: { settings: EinstellungMap }) {
     bank_name:    settings.bank_name    || "",
   });
 
+  // Sobald die Einstellungen (nach)geladen sind (z.B. nach Hard-Reload, wo die Query beim
+  // ersten Render noch leer ist), Felder mit den echten Werten aus der DB synchronisieren.
+  // useState greift nur beim ersten Mount — ohne diesen Effekt blieben Felder dauerhaft leer.
+  useEffect(() => {
+    if (Object.keys(settings).length === 0) return;
+    setFelder({
+      firmenname:   settings.firmenname   || "Schneggenburger GmbH",
+      adresse:      settings.adresse      || "Hefenhoferstrasse 7",
+      plz_ort:      settings.plz_ort      || "8580 Sommeri",
+      telefon:      settings.telefon      || "071 411 16 87",
+      email:        settings.email        || "info@schneggenburger.ch",
+      mwst_satz:    settings.mwst_satz    || "8.1",
+      uid_nummer:   settings.uid_nummer   || "",
+      bank_iban:    settings.bank_iban    || "",
+      bank_name:    settings.bank_name    || "",
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.firmenname, settings.adresse, settings.plz_ort, settings.telefon, settings.email, settings.mwst_satz, settings.uid_nummer, settings.bank_iban, settings.bank_name]);
+
   function handleChange(field: keyof typeof felder, val: string) {
     setFelder((p) => ({ ...p, [field]: val }));
   }
