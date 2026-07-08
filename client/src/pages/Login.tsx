@@ -131,7 +131,7 @@ export default function Login() {
                     placeholder="vorname.nachname@schneggenburger.ch"
                     value={benutzername}
                     onChange={(e) => setBenutzername(e.target.value)}
-                    className="pl-9 h-11"
+                    className="pl-9 h-11 placeholder:text-[13px] sm:placeholder:text-sm"
                     autoFocus
                     autoComplete="username"
                     data-testid="input-benutzername"

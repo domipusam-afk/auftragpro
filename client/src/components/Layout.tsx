@@ -855,8 +855,8 @@ export default function Layout({ children }: { children: ReactNode }) {
           <Menu className="h-5 w-5" />
         </button>
         <Logo size={28} />
-        <div className="font-bold text-sm" style={{ fontFamily: "var(--font-display)" }}>Schneggenburger GmbH</div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="font-bold text-sm truncate min-w-0" style={{ fontFamily: "var(--font-display)" }}>Schneggenburger GmbH</div>
+        <div className="ml-auto flex items-center gap-2 shrink-0">
           {/* Chat Badge im Mobile Header */}
           <Link href="/chat">
             <a className="relative text-white/80 hover:text-white" title="Chat & Historie">

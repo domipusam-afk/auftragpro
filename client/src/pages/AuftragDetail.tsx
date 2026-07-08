@@ -134,7 +134,7 @@ function StatusPipeline({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-1 flex-wrap">
+      <div className="flex items-stretch gap-1.5 flex-wrap">
         {steps.map((s, i) => {
           const done = currentIdx >= i && !isCancelled;
           const active = currentIdx === i && !isCancelled;
@@ -151,7 +151,7 @@ function StatusPipeline({
                 if (matchKey) onChange(matchKey);
               }}
               className={cn(
-                "min-w-0 flex-1 px-1 sm:px-3 py-2 text-[10px] sm:text-xs font-medium rounded-md border transition-colors",
+                "min-w-[calc(50%-0.2rem)] sm:min-w-0 sm:flex-1 basis-[calc(50%-0.2rem)] sm:basis-0 px-2 sm:px-3 py-2 text-xs font-medium rounded-md border transition-colors",
                 active
                   ? "bg-primary text-primary-foreground border-primary"
                   : done
@@ -161,8 +161,8 @@ function StatusPipeline({
               data-testid={`pipeline-${s.id}`}
             >
               <div className="flex items-center gap-1.5 justify-center">
-                {done && <Check className="h-3 w-3" />}
-                <span className="text-[10px] opacity-70">{i + 1}.</span>
+                {done && <Check className="h-3 w-3 shrink-0" />}
+                <span className="text-[10px] opacity-70 shrink-0">{i + 1}.</span>
                 <span className="truncate">{s.label}</span>
               </div>
             </button>
@@ -2057,7 +2057,7 @@ function WiederkehrendBlock({ auftragId, interval, naechste, refetch }: {
   };
 
   return (
-    <div className="mt-4 p-4 rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-800">
+    <div className="w-full mt-4 p-4 rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-800">
       <div className="flex items-center gap-2 mb-3">
         <RefreshCw className="h-4 w-4 text-blue-700 dark:text-blue-300" />
         <span className="text-sm font-semibold text-blue-800 dark:text-blue-300">Wiederkehrender Auftrag</span>

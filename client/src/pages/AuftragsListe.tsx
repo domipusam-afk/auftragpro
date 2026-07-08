@@ -159,6 +159,78 @@ export default function AuftragsListe() {
   // Status-Filter-Optionen: nur aktive Status anzeigen (abgeschlossen im Archiv)
   const activeStatusOptions = STATUS_ORDER.filter((s) => !DONE_STATUSES.includes(s));
 
+  // Mobile-Kartenansicht einer Auftragszeile (< md), ersetzt die Tabelle auf schmalen Screens
+  function AuftragCard({ a, showReactivate = false, extraBadge }: { a: Auftrag; showReactivate?: boolean; extraBadge?: React.ReactNode }) {
+    return (
+      <div
+        data-testid={`row-${a.id}`}
+        className="p-4 space-y-2"
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="font-mono text-xs text-muted-foreground">{a.nr}</div>
+            <div className="flex items-center flex-wrap gap-1 mt-0.5">
+              <Link href={`/auftraege/${a.id}`}>
+                <a className="font-medium hover:text-primary">{a.titel}</a>
+              </Link>
+              {extraBadge}
+            </div>
+            <div className="text-sm text-muted-foreground mt-0.5">{a.kunde}</div>
+          </div>
+          <div className="font-medium tabular-nums text-right shrink-0">
+            {formatCHF(a.angebots_betrag, a.waehrung)}
+          </div>
+        </div>
+        <div className="flex items-center flex-wrap gap-1.5">
+          <Badge variant="outline" className={cn(STATUS_BADGE[a.status])}>
+            {STATUS_LABEL[a.status]}
+          </Badge>
+          <Badge variant="outline" className={cn(PRIO_BADGE[a.prioritaet])}>
+            {a.prioritaet}
+          </Badge>
+          <span className="text-xs text-muted-foreground ml-auto">{formatDate(a.erstellt)}</span>
+        </div>
+        <div className="flex items-center justify-end gap-1 pt-1">
+          <Link href={`/auftraege/${a.id}`}>
+            <a>
+              <Button size="icon" variant="ghost" data-testid={`button-view-${a.id}`}>
+                <Eye className="h-4 w-4" />
+              </Button>
+            </a>
+          </Link>
+          <Link href={`/auftraege/${a.id}/bearbeiten`}>
+            <a>
+              <Button size="icon" variant="ghost" data-testid={`button-edit-${a.id}`}>
+                <Pencil className="h-4 w-4" />
+              </Button>
+            </a>
+          </Link>
+          {showReactivate ? (
+            <Button
+              size="icon"
+              variant="ghost"
+              data-testid={`button-reactivate-${a.id}`}
+              onClick={() => reactivateMut.mutate(a.id)}
+              disabled={reactivateMut.isPending}
+              className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+              title="Zu aktiven Aufträgen zurückschieben"
+            >
+              <ArchiveRestore className="h-4 w-4" />
+            </Button>
+          ) : null}
+          <Button
+            size="icon"
+            variant="ghost"
+            data-testid={`button-delete-${a.id}`}
+            onClick={() => setToDelete(a)}
+          >
+            <Trash2 className="h-4 w-4 text-destructive" />
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   function AuftragRow({ a, showReactivate = false, extraBadge }: { a: Auftrag; showReactivate?: boolean; extraBadge?: React.ReactNode }) {
     return (
       <tr
@@ -341,16 +413,25 @@ export default function AuftragsListe() {
               : "Alle Aufträge sind abgeschlossen."}
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              {tableHead}
-              <tbody className="divide-y">
-                {aktiveFiltered.map((a) => (
-                  <AuftragRow key={a.id} a={a} showReactivate={false} />
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <>
+            {/* Mobile: Karten-Layout */}
+            <div className="md:hidden divide-y">
+              {aktiveFiltered.map((a) => (
+                <AuftragCard key={a.id} a={a} showReactivate={false} />
+              ))}
+            </div>
+            {/* Desktop: Tabelle */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-sm">
+                {tableHead}
+                <tbody className="divide-y">
+                  {aktiveFiltered.map((a) => (
+                    <AuftragRow key={a.id} a={a} showReactivate={false} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </Card>
 
@@ -397,7 +478,12 @@ export default function AuftragsListe() {
                       zurück zu aktiven Aufträgen schieben
                     </p>
                   </div>
-                  <div className="overflow-x-auto">
+                  <div className="md:hidden divide-y opacity-80">
+                    {archivFiltered.map((a) => (
+                      <AuftragCard key={a.id} a={a} showReactivate={true} />
+                    ))}
+                  </div>
+                  <div className="hidden md:block overflow-x-auto">
                     <table className="w-full text-sm opacity-80">
                       {tableHead}
                       <tbody className="divide-y">
@@ -452,7 +538,17 @@ export default function AuftragsListe() {
                       Aufträge mit automatischem Intervall — Wartungsverträge, Jahresservice etc.
                     </p>
                   </div>
-                  <div className="overflow-x-auto">
+                  <div className="md:hidden divide-y opacity-90">
+                    {wiederkehrendAuftraege.map((a) => (
+                      <AuftragCard key={a.id} a={a} showReactivate={false} extraBadge={
+                        <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200 ml-1">
+                          <RefreshCw className="h-3 w-3 mr-1" />
+                          {INTERVAL_LABEL[(a as any).wiederkehrend_interval] || (a as any).wiederkehrend_interval}
+                        </Badge>
+                      } />
+                    ))}
+                  </div>
+                  <div className="hidden md:block overflow-x-auto">
                     <table className="w-full text-sm opacity-90">
                       {tableHead}
                       <tbody className="divide-y">
