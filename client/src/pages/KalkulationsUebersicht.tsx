@@ -111,6 +111,38 @@ interface NakaFremd {
   betrag_chf: number;
 }
 
+interface NkStundeRow {
+  id?: string;
+  auftrag_id: string;
+  bereich: string;
+  unterkategorie?: string;
+  mitarbeiter_name: string;
+  datum: string;
+  ist_stunden: number;
+  stundensatz: number;
+  total_chf: number;
+  quelle?: string;
+}
+
+interface NkSoekRow {
+  id?: string;
+  auftrag_id: string;
+  bezeichnung: string;
+  total_chf: number;
+}
+
+interface VkMatFlaeche {
+  id?: string;
+  auftrag_id: string;
+  total_chf: number;
+}
+
+interface VkHilfsmaterial {
+  id?: string;
+  auftrag_id: string;
+  total_chf: number;
+}
+
 interface Eingangsrechnung {
   id: string;
   lieferant: string;
@@ -264,103 +296,115 @@ export default function KalkulationsUebersicht() {
     enabled: !!selectedAuftrag,
   });
 
-  // NK-Daten (IST)
-  const { data: zeiteintraege = [], isLoading: zeitLoading } = useQuery<Zeiteintrag[]>({
-    queryKey: ["/api/auftraege", selectedAuftrag, "zeit"],
-    queryFn: () => apiRequest("GET", `/api/auftraege/${selectedAuftrag}/zeit`).then(r => r.json()),
+  const { data: vkMatFlaeche = [] } = useQuery<VkMatFlaeche[]>({
+    queryKey: ["/api/vk-hauptmat-flaeche", selectedAuftrag],
+    queryFn: () => apiRequest("GET", `/api/kalkulation/${selectedAuftrag}/hauptmaterial-flaeche`).then(r => r.json()),
+    enabled: !!selectedAuftrag,
+  });
+
+  const { data: vkHilfsmaterial = [] } = useQuery<VkHilfsmaterial[]>({
+    queryKey: ["/api/vk-hilfsmaterial", selectedAuftrag],
+    queryFn: () => apiRequest("GET", `/api/kalkulation/${selectedAuftrag}/hilfsmaterial`).then(r => r.json()),
+    enabled: !!selectedAuftrag,
+  });
+
+  // NK-Daten (IST) — dieselben Endpunkte wie die Nachkalkulation-Detailseite,
+  // damit Übersicht und Detail immer exakt dieselben Zahlen zeigen.
+  const { data: nkStunden = [], isLoading: nkStdLoading } = useQuery<NkStundeRow[]>({
+    queryKey: ["/api/nk-stunden", selectedAuftrag],
+    queryFn: () => apiRequest("GET", `/api/kalkulation/${selectedAuftrag}/nk-stunden`).then(r => r.json()),
     enabled: !!selectedAuftrag,
   });
 
   const { data: nakaMaterial = [], isLoading: nakaMatLoading } = useQuery<NakaMaterial[]>({
-    queryKey: ["/api/nachkalkulation/material", selectedAuftrag],
-    queryFn: () => apiRequest("GET", `/api/nachkalkulation/${selectedAuftrag}/material`).then(r => r.json()),
+    queryKey: ["/api/nk-material", selectedAuftrag],
+    queryFn: () => apiRequest("GET", `/api/kalkulation/${selectedAuftrag}/nk-material`).then(r => r.json()),
     enabled: !!selectedAuftrag,
   });
 
   const { data: nakaFremd = [], isLoading: nakaFremdLoading } = useQuery<NakaFremd[]>({
-    queryKey: ["/api/nachkalkulation/fremdleistungen", selectedAuftrag],
-    queryFn: () => apiRequest("GET", `/api/nachkalkulation/${selectedAuftrag}/fremdleistungen`).then(r => r.json()),
+    queryKey: ["/api/nk-fremd", selectedAuftrag],
+    queryFn: () => apiRequest("GET", `/api/kalkulation/${selectedAuftrag}/nk-fremd`).then(r => r.json()),
     enabled: !!selectedAuftrag,
   });
 
-  const { data: eingangsrechnungen = [] } = useQuery<Eingangsrechnung[]>({
-    queryKey: ["/api/eingangsrechnungen"],
-    queryFn: () => apiRequest("GET", "/api/eingangsrechnungen").then(r => r.json()),
+  const { data: nkSoek = [], isLoading: nkSoekLoading } = useQuery<NkSoekRow[]>({
+    queryKey: ["/api/nk-soek", selectedAuftrag],
+    queryFn: () => apiRequest("GET", `/api/kalkulation/${selectedAuftrag}/nk-soek`).then(r => r.json()),
+    enabled: !!selectedAuftrag,
   });
 
-  const isLoading = vkStdLoading || vkMatLoading || vkFremdLoading || vkSoekLoading || zeitLoading || nakaMatLoading || nakaFremdLoading;
+  const isLoading = vkStdLoading || vkMatLoading || vkFremdLoading || vkSoekLoading || nkStdLoading || nakaMatLoading || nakaFremdLoading || nkSoekLoading;
 
   const selectedAuftragData = auftraege.find(a => a.id === selectedAuftrag);
 
-  // ─── VK-Berechnungen ────────────────────────────────────────────────────────
+  // ─── VK-Berechnungen (identisch zur Nachkalkulation-Detailseite) ────────────
+  // Bereichs-Mapping: VK-Stunden nutzen "ort" (Avor/Werkstatt/Montage), NK-Stunden
+  // nutzen "bereich" (Planung/AVOR, Werkstatt, Montage) - wie in NachkalkulationDetail.tsx.
 
-  const vkLohnkosten = vkStunden.reduce((s, r) => {
-    const satz = getOrtSatz(stundensaetze, r.ort, (r as any).maschinenpark ?? null);
-    return s + Number(r.soll_stunden) * satz;
-  }, 0);
+  const vkLohnkosten = vkStunden.reduce((s, r) => s + Number(r.soll_stunden) * Number(r.stundensatz), 0);
 
-  const vkTotalMaterial = vkMaterial.reduce((s, m) => s + Number(m.total_chf), 0);
+  const vkTotalMaterial = vkMaterial.reduce((s, m) => s + Number(m.total_chf), 0)
+    + vkMatFlaeche.reduce((s, m) => s + Number(m.total_chf), 0)
+    + vkHilfsmaterial.reduce((s, m) => s + Number(m.total_chf), 0);
   const vkTotalFremd = vkFremd.reduce((s, f) => s + Number(f.total_chf), 0);
   const vkTotalSoek = vkSoek.reduce((s, s2) => s + Number(s2.total_chf), 0);
 
-  const risikoGewinnPct = vkConfig?.risiko_gewinn_prozent ?? 0;
+  const risikoGewinnPct = vkConfig?.risiko_gewinn_prozent ?? 10;
   const rabattPct = vkConfig?.rabatt_prozent ?? 0;
+  const skontoPct = (vkConfig as any)?.skonto_prozent ?? 0;
   const mwstPct = vkConfig?.mwst_prozent ?? 8.1;
-  const gemeinkostensatz = 25; // Standard
 
-  const vkGemeinkosten = vkLohnkosten * (gemeinkostensatz / 100);
-  const vkSelbstkosten = vkTotalMaterial + vkTotalFremd + vkLohnkosten + vkGemeinkosten + vkTotalSoek;
-  const vkRisikoGewinn = vkSelbstkosten * (risikoGewinnPct / 100);
-  const vkNetto = vkSelbstkosten + vkRisikoGewinn;
-  const vkRabatt = vkNetto * (rabattPct / 100);
-  const vkNacRabatt = vkNetto - vkRabatt;
-  const vkMwst = vkNacRabatt * (mwstPct / 100);
-  const vkBrutto = vkNacRabatt + vkMwst;
+  // Selbstkosten = Lohn + Material + Fremd + SOEK (KEINE separaten "Gemeinkosten" -
+  // Gemeinkosten sind bereits im Risiko-/Gewinnzuschlag auf die Selbstkosten enthalten,
+  // exakt wie in der Nachkalkulation-Detailseite gerechnet).
+  const vkSelbstkosten = vkLohnkosten + vkTotalMaterial + vkTotalFremd + vkTotalSoek;
+  const vkNetto = vkSelbstkosten * (1 + risikoGewinnPct / 100) * (1 - rabattPct / 100) * (1 - skontoPct / 100);
+  const vkBrutto = vkNetto * (1 + mwstPct / 100);
 
   const vkStundenTotal = vkStunden.reduce((s, r) => s + Number(r.soll_stunden), 0);
 
-  // Stunden nach Bereich
+  // Stunden nach Bereich (VK nutzt "ort": Avor/Werkstatt/Montage)
   const vkStdByOrt = {
     avor: vkStunden.filter(r => r.ort === "Avor").reduce((s, r) => s + Number(r.soll_stunden), 0),
     werkstatt: vkStunden.filter(r => r.ort === "Werkstatt").reduce((s, r) => s + Number(r.soll_stunden), 0),
     montage: vkStunden.filter(r => r.ort === "Montage").reduce((s, r) => s + Number(r.soll_stunden), 0),
   };
   const vkKostByOrt = {
-    avor: vkStunden.filter(r => r.ort === "Avor").reduce((s, r) => s + Number(r.soll_stunden) * getOrtSatz(stundensaetze, r.ort, null), 0),
-    werkstatt: vkStunden.filter(r => r.ort === "Werkstatt").reduce((s, r) => s + Number(r.soll_stunden) * getOrtSatz(stundensaetze, r.ort, (r as any).maschinenpark ?? null), 0),
-    montage: vkStunden.filter(r => r.ort === "Montage").reduce((s, r) => s + Number(r.soll_stunden) * getOrtSatz(stundensaetze, r.ort, null), 0),
+    avor: vkStunden.filter(r => r.ort === "Avor").reduce((s, r) => s + Number(r.soll_stunden) * Number(r.stundensatz), 0),
+    werkstatt: vkStunden.filter(r => r.ort === "Werkstatt").reduce((s, r) => s + Number(r.soll_stunden) * Number(r.stundensatz), 0),
+    montage: vkStunden.filter(r => r.ort === "Montage").reduce((s, r) => s + Number(r.soll_stunden) * Number(r.stundensatz), 0),
   };
 
-  // ─── NK-Berechnungen ────────────────────────────────────────────────────────
+  // ─── NK-Berechnungen (identisch zur Nachkalkulation-Detailseite) ────────────
 
-  const totalZeitMin = zeiteintraege.reduce((s, z) => s + (z.dauer_minuten || 0), 0);
-  const nkIstArbeit = zeiteintraege.reduce((sum, z) => {
-    const satz = getNachkalkSatz(stundensaetze, mitarbeiterListe, z.mitarbeiter, z.ort, z.maschinenpark);
-    return sum + ((z.dauer_minuten || 0) / 60) * satz;
-  }, 0);
+  const totalZeitMin = nkStunden.reduce((s, r) => s + Number(r.ist_stunden) * 60, 0);
+  const nkIstArbeit = nkStunden.reduce((s, r) => s + Number(r.total_chf), 0);
 
+  // NK-Stunden nutzen "bereich": "Planung/AVOR", "Werkstatt", "Montage"
   const nkIstStdByOrt = {
-    avor: zeiteintraege.filter(z => z.ort === "Avor").reduce((s, z) => s + z.dauer_minuten / 60, 0),
-    werkstatt: zeiteintraege.filter(z => z.ort === "Werkstatt").reduce((s, z) => s + z.dauer_minuten / 60, 0),
-    montage: zeiteintraege.filter(z => z.ort === "Montage").reduce((s, z) => s + z.dauer_minuten / 60, 0),
+    avor: nkStunden.filter(r => r.bereich === "Planung/AVOR").reduce((s, r) => s + Number(r.ist_stunden), 0),
+    werkstatt: nkStunden.filter(r => r.bereich === "Werkstatt").reduce((s, r) => s + Number(r.ist_stunden), 0),
+    montage: nkStunden.filter(r => r.bereich === "Montage").reduce((s, r) => s + Number(r.ist_stunden), 0),
   };
   const nkIstKostByOrt = {
-    avor: zeiteintraege.filter(z => z.ort === "Avor").reduce((s, z) => s + (z.dauer_minuten / 60) * getNachkalkSatz(stundensaetze, mitarbeiterListe, z.mitarbeiter, z.ort, z.maschinenpark), 0),
-    werkstatt: zeiteintraege.filter(z => z.ort === "Werkstatt").reduce((s, z) => s + (z.dauer_minuten / 60) * getNachkalkSatz(stundensaetze, mitarbeiterListe, z.mitarbeiter, z.ort, z.maschinenpark), 0),
-    montage: zeiteintraege.filter(z => z.ort === "Montage").reduce((s, z) => s + (z.dauer_minuten / 60) * getNachkalkSatz(stundensaetze, mitarbeiterListe, z.mitarbeiter, z.ort, z.maschinenpark), 0),
+    avor: nkStunden.filter(r => r.bereich === "Planung/AVOR").reduce((s, r) => s + Number(r.total_chf), 0),
+    werkstatt: nkStunden.filter(r => r.bereich === "Werkstatt").reduce((s, r) => s + Number(r.total_chf), 0),
+    montage: nkStunden.filter(r => r.bereich === "Montage").reduce((s, r) => s + Number(r.total_chf), 0),
   };
 
-  // IST-Material: aus Nachkalkulation + Eingangsrechnungen
-  const nkIstMaterial = nakaMaterial.reduce((s, m) => s + Number(m.betrag_chf), 0)
-    + eingangsrechnungen.filter(e => e.auftrag_id === selectedAuftrag).reduce((s, e) => s + e.betrag, 0);
+  // IST-Material/Fremd/SOEK: exakt dieselben Nachkalkulations-Tabellen wie in der Detailseite.
+  const nkIstMaterial = nakaMaterial.reduce((s, m) => s + Number(m.betrag_chf), 0);
   const nkIstFremd = nakaFremd.reduce((s, f) => s + Number(f.betrag_chf), 0);
-  const nkSelbstkosten = nkIstMaterial + nkIstFremd + nkIstArbeit;
+  const nkIstSoek = nkSoek.reduce((s, r) => s + Number(r.total_chf), 0);
+  const nkSelbstkosten = nkIstMaterial + nkIstFremd + nkIstArbeit + nkIstSoek;
 
   const angebotsBetrag = selectedAuftragData?.angebots_betrag || 0;
 
   // ─── Gewinn/Verlust ──────────────────────────────────────────────────────────
+  // Gleiche Formel wie Detailseite: Netto-Offertpreis (SOLL) - IST-Selbstkosten.
 
-  const gewinnVsVk = vkBrutto - nkSelbstkosten; // positiv = Gewinn besser als geplant
+  const gewinnVsVk = vkNetto - nkSelbstkosten; // positiv = Gewinn besser als geplant
   const gewinnVsAngebot = angebotsBetrag > 0 ? angebotsBetrag - nkSelbstkosten : null;
 
   const hasData = vkStundenTotal > 0 || vkTotalMaterial > 0 || vkTotalFremd > 0 || vkTotalSoek > 0 || totalZeitMin > 0;
@@ -509,13 +553,6 @@ export default function KalkulationsUebersicht() {
                         iconColor="text-orange-600"
                       />
                       <VergleichsZeile
-                        label="Gemeinkosten"
-                        vk={vkGemeinkosten}
-                        nk={0}
-                        icon={Calculator}
-                        iconColor="text-gray-500"
-                      />
-                      <VergleichsZeile
                         label="Sondereinzelkosten (SOEK)"
                         vk={vkTotalSoek}
                         nk={0}
@@ -660,7 +697,6 @@ export default function KalkulationsUebersicht() {
                       { label: "Hilfsmaterial (2.)", value: 0, note: "in Material enthalten" },
                       { label: "Fremdleistungen (3.)", value: vkTotalFremd },
                       { label: "Lohneinzelkosten (4.+5.+7.)", value: vkLohnkosten },
-                      { label: `Gemeinkosten (${gemeinkostensatz}% auf LEK)`, value: vkGemeinkosten },
                       { label: "Sondereinzelkosten (9.)", value: vkTotalSoek },
                     ].map(({ label, value, note }) => (
                       <div key={label} className="flex justify-between items-center text-sm py-1 border-b border-dashed last:border-0">
@@ -676,21 +712,27 @@ export default function KalkulationsUebersicht() {
                     </div>
                     <div className="flex justify-between items-center text-sm py-1 border-b border-dashed text-muted-foreground">
                       <span>+ Risiko & Gewinn ({risikoGewinnPct}%)</span>
-                      <span className="tabular-nums">+ {formatCHF(vkRisikoGewinn)}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-sm py-1 border-b border-dashed text-muted-foreground">
-                      <span>Nettooffertpreis</span>
-                      <span className="tabular-nums font-medium">{formatCHF(vkNetto)}</span>
+                      <span className="tabular-nums">+ {formatCHF(vkSelbstkosten * (risikoGewinnPct / 100))}</span>
                     </div>
                     {rabattPct > 0 && (
                       <div className="flex justify-between items-center text-sm py-1 border-b border-dashed text-muted-foreground">
                         <span>− Rabatt ({rabattPct}%)</span>
-                        <span className="tabular-nums">− {formatCHF(vkRabatt)}</span>
+                        <span className="tabular-nums">− {formatCHF(vkSelbstkosten * (1 + risikoGewinnPct / 100) * (rabattPct / 100))}</span>
+                      </div>
+                    )}
+                    {skontoPct > 0 && (
+                      <div className="flex justify-between items-center text-sm py-1 border-b border-dashed text-muted-foreground">
+                        <span>− Skonto ({skontoPct}%)</span>
+                        <span className="tabular-nums">− {formatCHF(vkSelbstkosten * (1 + risikoGewinnPct / 100) * (1 - rabattPct / 100) * (skontoPct / 100))}</span>
                       </div>
                     )}
                     <div className="flex justify-between items-center text-sm py-1 border-b border-dashed text-muted-foreground">
+                      <span>Nettooffertpreis</span>
+                      <span className="tabular-nums font-medium">{formatCHF(vkNetto)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm py-1 border-b border-dashed text-muted-foreground">
                       <span>+ MWST ({mwstPct}%)</span>
-                      <span className="tabular-nums">+ {formatCHF(vkMwst)}</span>
+                      <span className="tabular-nums">+ {formatCHF(vkNetto * (mwstPct / 100))}</span>
                     </div>
                     <div className="flex justify-between items-center py-2 border-t-2 font-bold">
                       <span className="text-base">Bruttooffertpreis</span>
