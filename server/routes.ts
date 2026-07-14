@@ -929,10 +929,15 @@ export async function registerRoutes(
           .single();
         if (e2) throw e2;
         const buf = Buffer.from(dd.data, "base64");
-        res.setHeader("Content-Type", doc.mime || "application/octet-stream");
+        const mime = doc.mime || "application/octet-stream";
+        // PDFs und Bilder direkt im Browser/Tab anzeigen (inline), alles andere als Download anbieten.
+        // "attachment" fuehrt v.a. auf Mobile (iOS Safari) dazu, dass beim Klick scheinbar nichts passiert,
+        // da die Datei im Hintergrund heruntergeladen wird statt sich zu oeffnen.
+        const isViewable = mime === "application/pdf" || mime.startsWith("image/");
+        res.setHeader("Content-Type", mime);
         res.setHeader(
           "Content-Disposition",
-          `attachment; filename="${encodeURIComponent(doc.name)}"`
+          `${isViewable ? "inline" : "attachment"}; filename="${encodeURIComponent(doc.name)}"`
         );
         res.send(buf);
       } catch (e) {
