@@ -92,6 +92,21 @@ function nextNr(prefix: string, list: { nr?: string }[]): string {
   return `${yearPrefix}${String(max + 1).padStart(4, "0")}`;
 }
 
+// Werkstatt-Sätze setzen sich aus Grundsatz + maschinenpark-spezifischem Zuschlag
+// zusammen, alle anderen Orte haben einen einzelnen Satz.
+function stundensatzFuer(saetze: any[], ort?: string | null, maschinenpark?: string | null): number {
+  const o = ort || "Montage";
+  if (o !== "Werkstatt") {
+    const match = saetze.find((s: any) => s.ort === o && !s.maschinenpark);
+    return match ? (match.satz || 0) : 0;
+  }
+  const spezifisch = maschinenpark
+    ? saetze.find((s: any) => s.ort === "Werkstatt" && s.maschinenpark === maschinenpark)
+    : undefined;
+  const basis = spezifisch || saetze.find((s: any) => s.ort === "Werkstatt" && !s.maschinenpark);
+  return basis ? ((basis.grundsatz || 0) + (basis.satz || 0)) : 0;
+}
+
 function asError(e: unknown): string {
   if (e instanceof Error) return e.message;
   if (e && typeof e === 'object') {
@@ -5126,18 +5141,7 @@ export async function registerRoutes(
       const bereichMap: Record<string, string> = { "Avor": "Planung/AVOR", "Werkstatt": "Werkstatt", "Montage": "Montage" };
       const zeitRows = (zeitData as any[]).map((ze: any) => {
         const ortZe = ze.ort || "Montage";
-        let satz = 0;
-        if (ortZe === "Werkstatt") {
-          const ws = (saetze as any[]).find((s: any) => s.ort === "Werkstatt" && !s.maschinenpark);
-          satz = ws ? ((ws.grundsatz || 0) + (ws.satz || 0)) : 0;
-          if (ze.maschinenpark) {
-            const wm = (saetze as any[]).find((s: any) => s.ort === "Werkstatt" && s.maschinenpark === ze.maschinenpark);
-            if (wm) satz = (wm.grundsatz || 0) + (wm.satz || 0);
-          }
-        } else {
-          const match = (saetze as any[]).find((s: any) => s.ort === ortZe && !s.maschinenpark);
-          satz = match ? (match.satz || 0) : 0;
-        }
+        const satz = stundensatzFuer(saetze as any[], ze.ort, ze.maschinenpark);
         const stunden = (ze.dauer_minuten || 0) / 60;
         const bereich = ze.bereich || bereichMap[ortZe] || ortZe;
         return {
@@ -5178,20 +5182,8 @@ export async function registerRoutes(
     for (const ze of zeitData) {
       const { data: existing } = await supabase.from("nachkalkulation_stunden").select("id").eq("zeiterfassung_id", ze.id).single();
       if (existing) continue;
-      // Korrekten Stundensatz nach Ort ermitteln
       const ortZe = ze.ort || "Montage";
-      let satz = 0;
-      if (ortZe === "Werkstatt") {
-        const ws = (saetze as any[]).find((s: any) => s.ort === "Werkstatt" && !s.maschinenpark);
-        satz = ws ? ((ws.grundsatz || 0) + (ws.satz || 0)) : 0;
-        if (ze.maschinenpark) {
-          const wm = (saetze as any[]).find((s: any) => s.ort === "Werkstatt" && s.maschinenpark === ze.maschinenpark);
-          if (wm) satz = (wm.grundsatz || 0) + (wm.satz || 0);
-        }
-      } else {
-        const match = (saetze as any[]).find((s: any) => s.ort === ortZe && !s.maschinenpark);
-        satz = match ? (match.satz || 0) : 0;
-      }
+      const satz = stundensatzFuer(saetze as any[], ze.ort, ze.maschinenpark);
       const stunden = (ze.dauer_minuten || 0) / 60;
       // Bereich aus Ort ableiten
       const bereichMap: Record<string, string> = { "Avor": "Planung/AVOR", "Werkstatt": "Werkstatt", "Montage": "Montage" };
@@ -5323,6 +5315,89 @@ export async function registerRoutes(
   });
 
   // ═══ END KALKULATION V6 ═══════════════════════════════════════════
+
+  // ─── Finanzen-Übersicht: Umsatz & Reingewinn je abgeschlossenem Auftrag ───────
+  // Spiegelt die "Effektiver Gewinn"-Rechnung aus der Nachkalkulation (SollIstVergleich):
+  // Rechnungsbetrag ist brutto und wird zum Vergleich mit den IST-Selbstkosten auf
+  // netto zurückgerechnet.
+  app.get("/api/finanzen/uebersicht", async (_req, res) => {
+    try {
+      const { data: auftraege, error } = await supabase
+        .from("auftraege")
+        .select("id, nr, titel, kunde, waehrung, angebots_betrag, rechnungs_betrag, end_datum, erstellt")
+        .eq("status", "abgeschlossen");
+      if (error) throw error;
+
+      const ids = (auftraege || []).map((a: any) => a.id);
+      if (ids.length === 0) return res.json([]);
+
+      const [saetze, nkStunden, zeiteintraege, nkMaterial, nkFremd, nkSoek, vkConfigs] = await Promise.all([
+        supabase.from("stundensaetze").select("*"),
+        supabase.from("nachkalkulation_stunden").select("auftrag_id, total_chf").in("auftrag_id", ids).eq("quelle", "manuell"),
+        supabase.from("zeiteintraege").select("auftrag_id, dauer_minuten, ort, maschinenpark").in("auftrag_id", ids),
+        supabase.from("nachkalkulation_material").select("auftrag_id, betrag_chf").in("auftrag_id", ids),
+        supabase.from("nachkalkulation_fremdleistungen").select("auftrag_id, betrag_chf").in("auftrag_id", ids),
+        supabase.from("nachkalkulation_soek").select("auftrag_id, total_chf").in("auftrag_id", ids),
+        supabase.from("vorkalkulation_config").select("auftrag_id, mwst_prozent").in("auftrag_id", ids),
+      ]);
+
+      const summieren = (rows: any[] | null, feld: string) => {
+        const map = new Map<string, number>();
+        for (const r of rows || []) {
+          map.set(r.auftrag_id, (map.get(r.auftrag_id) || 0) + (Number(r[feld]) || 0));
+        }
+        return map;
+      };
+
+      const lohnManuell = summieren(nkStunden.data, "total_chf");
+      const material = summieren(nkMaterial.data, "betrag_chf");
+      const fremd = summieren(nkFremd.data, "betrag_chf");
+      const soek = summieren(nkSoek.data, "total_chf");
+
+      const lohnZeiterfassung = new Map<string, number>();
+      for (const ze of zeiteintraege.data || []) {
+        const satz = stundensatzFuer(saetze.data || [], ze.ort, ze.maschinenpark);
+        const betrag = ((ze.dauer_minuten || 0) / 60) * satz;
+        lohnZeiterfassung.set(ze.auftrag_id, (lohnZeiterfassung.get(ze.auftrag_id) || 0) + betrag);
+      }
+
+      const mwstSatz = new Map<string, number>();
+      for (const c of vkConfigs.data || []) {
+        mwstSatz.set(c.auftrag_id, (Number(c.mwst_prozent) || 8.1) / 100);
+      }
+
+      const sortSchluessel = (a: any) => String(a.end_datum || a.erstellt || "");
+      const result = [...(auftraege || [])]
+        .sort((a: any, b: any) => sortSchluessel(b).localeCompare(sortSchluessel(a)))
+        .map((a: any) => {
+          const kosten =
+            (lohnManuell.get(a.id) || 0) +
+            (lohnZeiterfassung.get(a.id) || 0) +
+            (material.get(a.id) || 0) +
+            (fremd.get(a.id) || 0) +
+            (soek.get(a.id) || 0);
+          const mwst = mwstSatz.get(a.id) ?? 0.081;
+          const umsatzBrutto = Number(a.rechnungs_betrag) || 0;
+          const umsatzNetto = umsatzBrutto / (1 + mwst);
+          return {
+            id: a.id,
+            nr: a.nr,
+            titel: a.titel,
+            kunde: a.kunde,
+            waehrung: a.waehrung || "CHF",
+            umsatz_netto: umsatzNetto,
+            kosten,
+            reingewinn: umsatzNetto - kosten,
+            hat_rechnung: umsatzBrutto > 0,
+            hat_kosten: kosten > 0,
+          };
+        });
+
+      res.json(result);
+    } catch (e) {
+      res.status(500).json({ message: asError(e) });
+    }
+  });
 
   // ─── Garantien ────────────────────────────────────────────────────────────────
   app.get("/api/garantien", async (req, res) => {

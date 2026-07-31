@@ -23,6 +23,7 @@ import Einstellungen from "@/pages/Einstellungen";
 import Zeiterfassung from "@/pages/Zeiterfassung";
 import Mahnwesen from "@/pages/Mahnwesen";
 import MwstAuswertung from "@/pages/MwstAuswertung";
+import FinanzenUebersicht from "@/pages/FinanzenUebersicht";
 import Vorkalkulation from "@/pages/Vorkalkulation";
 import Eingangsrechnungen from "@/pages/Eingangsrechnungen";
 import Nachkalkulation from "@/pages/Nachkalkulation";
@@ -74,6 +75,7 @@ function AppRouter() {
       <Route path="/2fa" component={ZweiFA} />
       <Route path="/mahnwesen">{() => <Geschuetzt modul="finanzmanagement" label="Mahnwesen"><Mahnwesen /></Geschuetzt>}</Route>
       <Route path="/mwst">{() => <Geschuetzt modul="finanzmanagement" label="MWST-Auswertung"><MwstAuswertung /></Geschuetzt>}</Route>
+      <Route path="/finanzen-uebersicht">{() => <Geschuetzt modul="finanzmanagement" label="Finanzen-Übersicht"><FinanzenUebersicht /></Geschuetzt>}</Route>
       <Route path="/vorkalkulation">{() => <Geschuetzt modul="kalkulation" label="Vorkalkulation"><Vorkalkulation /></Geschuetzt>}</Route>
       <Route path="/auftraege/:id/kalkulation">{() => <Geschuetzt modul="kalkulation" label="Kalkulation"><Vorkalkulation /></Geschuetzt>}</Route>
       <Route path="/eingangsrechnungen">{() => <Geschuetzt modul="finanzmanagement" label="Eingangsrechnungen"><Eingangsrechnungen /></Geschuetzt>}</Route>

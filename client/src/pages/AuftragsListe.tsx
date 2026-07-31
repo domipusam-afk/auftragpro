@@ -177,8 +177,15 @@ export default function AuftragsListe() {
             </div>
             <div className="text-sm text-muted-foreground mt-0.5">{a.kunde}</div>
           </div>
-          <div className="font-medium tabular-nums text-right shrink-0">
-            {formatCHF(a.angebots_betrag, a.waehrung)}
+          <div className="text-right shrink-0 space-y-0.5">
+            <div>
+              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Angebot</div>
+              <div className="font-medium tabular-nums text-sm">{formatCHF(a.angebots_betrag, a.waehrung)}</div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Rechnung</div>
+              <div className="font-medium tabular-nums text-sm">{formatCHF(a.rechnungs_betrag, a.waehrung)}</div>
+            </div>
           </div>
         </div>
         <div className="flex items-center flex-wrap gap-1.5">
@@ -261,6 +268,9 @@ export default function AuftragsListe() {
         <td className="px-4 py-3 text-right font-medium tabular-nums">
           {formatCHF(a.angebots_betrag, a.waehrung)}
         </td>
+        <td className="px-4 py-3 text-right font-medium tabular-nums">
+          {formatCHF(a.rechnungs_betrag, a.waehrung)}
+        </td>
         <td className="px-4 py-3 text-right text-muted-foreground text-xs">
           {formatDate(a.erstellt)}
         </td>
@@ -323,7 +333,8 @@ export default function AuftragsListe() {
         <th className="text-left px-4 py-3 font-medium">Kunde</th>
         <th className="text-left px-4 py-3 font-medium">Status</th>
         <th className="text-left px-4 py-3 font-medium">Priorität</th>
-        <th className="text-right px-4 py-3 font-medium">Betrag</th>
+        <th className="text-right px-4 py-3 font-medium">Angebot</th>
+        <th className="text-right px-4 py-3 font-medium">Rechnung</th>
         <th className="text-right px-4 py-3 font-medium">Erstellt</th>
         <th className="px-4 py-3"></th>
       </tr>

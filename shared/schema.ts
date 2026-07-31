@@ -40,6 +40,22 @@ export interface Auftrag {
   aktualisiert?: string;
 }
 
+/** Zeile der Finanzen-Übersicht (GET /api/finanzen/uebersicht) — abgeschlossene Aufträge. */
+export interface FinanzenUebersichtZeile {
+  id: string;
+  nr: string;
+  titel: string;
+  kunde: string;
+  waehrung: string;
+  /** Rechnungsbetrag exkl. MWST. */
+  umsatz_netto: number;
+  /** IST-Selbstkosten aus der Nachkalkulation (Lohn + Material + Fremdleistungen + SOEK). */
+  kosten: number;
+  reingewinn: number;
+  hat_rechnung: boolean;
+  hat_kosten: boolean;
+}
+
 export interface VerlaufEintrag {
   id: string;
   auftrag_id: string;
