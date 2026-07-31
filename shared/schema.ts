@@ -33,11 +33,18 @@ export interface Auftrag {
   start_datum?: string | null;
   end_datum?: string | null;
   angebots_betrag?: number | null;
+  /** Spiegel der Tabelle "rechnungen" (brutto). Serverseitig abgeleitet, nicht beschreibbar. */
   rechnungs_betrag?: number | null;
   waehrung: string;
   verantwortlicher?: string | null;
   erstellt?: string;
   aktualisiert?: string;
+  /** Von GET /api/auftraege ergänzt: Anzahl zugehöriger Rechnungen. */
+  anzahl_rechnungen?: number;
+  /** true, wenn mindestens eine Rechnung existiert und alle bezahlt sind. */
+  rechnung_bezahlt?: boolean;
+  /** Datum der letzten Zahlung. */
+  rechnung_bezahlt_am?: string | null;
 }
 
 /** Zeile der Finanzen-Übersicht (GET /api/finanzen/uebersicht) — abgeschlossene Aufträge. */
@@ -47,8 +54,17 @@ export interface FinanzenUebersichtZeile {
   titel: string;
   kunde: string;
   waehrung: string;
-  /** Rechnungsbetrag exkl. MWST. */
+  /** Summe aller Rechnungen exkl. MWST (direkt aus der Tabelle "rechnungen"). */
   umsatz_netto: number;
+  /** Anteil davon, der bereits bezahlt ist. */
+  bezahlt_netto: number;
+  /** Noch offener Betrag (umsatz_netto − bezahlt_netto). */
+  offen_netto: number;
+  /** Datum der letzten Zahlung, sonst null. */
+  bezahlt_am: string | null;
+  /** true, wenn alle Rechnungen des Auftrags bezahlt sind. */
+  voll_bezahlt: boolean;
+  anzahl_rechnungen: number;
   /** IST-Selbstkosten aus der Nachkalkulation (Lohn + Material + Fremdleistungen + SOEK). */
   kosten: number;
   reingewinn: number;

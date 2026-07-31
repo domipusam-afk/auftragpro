@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/popover";
 import { ArrowLeft, Save, ChevronsUpDown, Check, UserPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatCHF } from "@/lib/format";
 import type { Auftrag, Status, Prioritaet } from "@shared/schema";
 import {
   STATUS_LABEL,
@@ -66,7 +67,6 @@ const empty = {
   start_datum: "",
   end_datum: "",
   angebots_betrag: "",
-  rechnungs_betrag: "",
   waehrung: "CHF",
   verantwortlicher: "",
   wiederkehrend_interval: null as string | null,
@@ -105,8 +105,6 @@ export default function AuftragForm({ id }: Props) {
         start_datum: existing.start_datum?.slice(0, 10) || "",
         end_datum: existing.end_datum?.slice(0, 10) || "",
         angebots_betrag: existing.angebots_betrag != null ? String(existing.angebots_betrag) : "",
-        rechnungs_betrag:
-          existing.rechnungs_betrag != null ? String(existing.rechnungs_betrag) : "",
         waehrung: existing.waehrung || "CHF",
         verantwortlicher: existing.verantwortlicher || "",
         wiederkehrend_interval: (existing as any).wiederkehrend_interval || null,
@@ -383,8 +381,13 @@ export default function AuftragForm({ id }: Props) {
               <Input id="angebots_betrag" type="number" step="0.01" data-testid="input-angebots-betrag" value={form.angebots_betrag} onChange={(e) => setField("angebots_betrag", e.target.value)} className="mt-1" />
             </div>
             <div>
-              <Label htmlFor="rechnungs_betrag">Rechnungsbetrag</Label>
-              <Input id="rechnungs_betrag" type="number" step="0.01" data-testid="input-rechnungs-betrag" value={form.rechnungs_betrag} onChange={(e) => setField("rechnungs_betrag", e.target.value)} className="mt-1" />
+              <Label>Rechnungsbetrag</Label>
+              <div className="mt-1 h-10 flex items-center px-3 rounded-md border border-dashed bg-muted/40 text-sm tabular-nums text-muted-foreground">
+                {formatCHF(existing?.rechnungs_betrag, form.waehrung)}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Ergibt sich automatisch aus den erfassten Rechnungen.
+              </p>
             </div>
             <div>
               <Label>Währung</Label>

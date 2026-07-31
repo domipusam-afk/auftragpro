@@ -159,6 +159,23 @@ export default function AuftragsListe() {
   // Status-Filter-Optionen: nur aktive Status anzeigen (abgeschlossen im Archiv)
   const activeStatusOptions = STATUS_ORDER.filter((s) => !DONE_STATUSES.includes(s));
 
+  // Zahlungsstatus der Rechnungen eines Auftrags — nur sichtbar, wenn es Rechnungen gibt.
+  function BezahltHinweis({ a }: { a: Auftrag }) {
+    if (!a.anzahl_rechnungen) return null;
+    if (a.rechnung_bezahlt) {
+      return (
+        <span
+          className="inline-flex items-center gap-1 text-[10px] text-green-700 dark:text-green-400"
+          title={a.rechnung_bezahlt_am ? `Bezahlt am ${formatDate(a.rechnung_bezahlt_am)}` : "Bezahlt"}
+        >
+          <CheckCircle2 className="h-3 w-3" />
+          {a.rechnung_bezahlt_am ? formatDate(a.rechnung_bezahlt_am) : "Bezahlt"}
+        </span>
+      );
+    }
+    return <span className="text-[10px] text-amber-700 dark:text-amber-500">offen</span>;
+  }
+
   // Mobile-Kartenansicht einer Auftragszeile (< md), ersetzt die Tabelle auf schmalen Screens
   function AuftragCard({ a, showReactivate = false, extraBadge }: { a: Auftrag; showReactivate?: boolean; extraBadge?: React.ReactNode }) {
     return (
@@ -185,6 +202,7 @@ export default function AuftragsListe() {
             <div>
               <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Rechnung</div>
               <div className="font-medium tabular-nums text-sm">{formatCHF(a.rechnungs_betrag, a.waehrung)}</div>
+              <BezahltHinweis a={a} />
             </div>
           </div>
         </div>
@@ -269,7 +287,8 @@ export default function AuftragsListe() {
           {formatCHF(a.angebots_betrag, a.waehrung)}
         </td>
         <td className="px-4 py-3 text-right font-medium tabular-nums">
-          {formatCHF(a.rechnungs_betrag, a.waehrung)}
+          <div>{formatCHF(a.rechnungs_betrag, a.waehrung)}</div>
+          <BezahltHinweis a={a} />
         </td>
         <td className="px-4 py-3 text-right text-muted-foreground text-xs">
           {formatDate(a.erstellt)}

@@ -618,12 +618,39 @@ export async function registerRoutes(
   // ============= AUFTRAEGE =============
   app.get("/api/auftraege", async (_req, res) => {
     try {
-      const { data, error } = await supabase
-        .from("auftraege")
-        .select("*")
-        .order("erstellt", { ascending: false });
+      const [{ data, error }, { data: rechnungen, error: rFehler }] = await Promise.all([
+        supabase.from("auftraege").select("*").order("erstellt", { ascending: false }),
+        supabase.from("rechnungen").select("auftrag_id, betrag, bezahlt_am"),
+      ]);
       if (error) throw error;
-      res.json(data || []);
+      if (rFehler) throw rFehler;
+
+      // Rechnungsbetrag und Zahlungsstatus je Auftrag aus der Rechnungstabelle ableiten.
+      // Die Liste zeigt damit immer den tatsaechlichen Stand, auch wenn das gespiegelte
+      // auftraege.rechnungs_betrag (noch) veraltet ist.
+      const jeAuftrag = new Map<string, { anzahl: number; bezahlt: number; netto: number; letztes: string | null }>();
+      for (const r of rechnungen || []) {
+        const e = jeAuftrag.get(r.auftrag_id) || { anzahl: 0, bezahlt: 0, netto: 0, letztes: null };
+        e.anzahl += 1;
+        e.netto += Number(r.betrag) || 0;
+        if (r.bezahlt_am) {
+          e.bezahlt += 1;
+          const d = String(r.bezahlt_am);
+          if (!e.letztes || d > e.letztes) e.letztes = d;
+        }
+        jeAuftrag.set(r.auftrag_id, e);
+      }
+
+      res.json((data || []).map((a: any) => {
+        const e = jeAuftrag.get(a.id);
+        return {
+          ...a,
+          rechnungs_betrag: e ? Math.round(e.netto * 1.081 * 100) / 100 : a.rechnungs_betrag,
+          anzahl_rechnungen: e?.anzahl || 0,
+          rechnung_bezahlt: !!e && e.bezahlt === e.anzahl,
+          rechnung_bezahlt_am: e?.letztes || null,
+        };
+      }));
     } catch (e) {
       res.status(500).json({ message: asError(e) });
     }
@@ -657,10 +684,9 @@ export async function registerRoutes(
           body.angebots_betrag !== undefined && body.angebots_betrag !== ""
             ? Number(body.angebots_betrag)
             : null,
-        rechnungs_betrag:
-          body.rechnungs_betrag !== undefined && body.rechnungs_betrag !== ""
-            ? Number(body.rechnungs_betrag)
-            : null,
+        // Immer null: ein neuer Auftrag hat per Definition noch keine Rechnung.
+        // Gefuellt wird ausschliesslich durch syncRechnungsBetrag().
+        rechnungs_betrag: null,
         waehrung: body.waehrung || "CHF",
         verantwortlicher: body.verantwortlicher || null,
         erstellt: now,
@@ -740,17 +766,19 @@ export async function registerRoutes(
         "start_datum",
         "end_datum",
         "angebots_betrag",
-        "rechnungs_betrag",
         "waehrung",
         "verantwortlicher",
         "wiederkehrend_interval",
         "naechste_faelligkeit",
         "public_token",
       ];
+      // rechnungs_betrag fehlt hier bewusst: es wird ausschliesslich aus der Tabelle
+      // "rechnungen" via syncRechnungsBetrag() abgeleitet. Manuelles Setzen hat früher
+      // Betraege ohne zugehörige Rechnung erzeugt, die als Umsatz gezaehlt wurden.
       for (const f of fields) {
         if (f in body) {
           let v = body[f];
-          if ((f === "angebots_betrag" || f === "rechnungs_betrag") && v !== null && v !== "") {
+          if (f === "angebots_betrag" && v !== null && v !== "") {
             v = Number(v);
           }
           if (v === "") v = null;
@@ -976,19 +1004,30 @@ export async function registerRoutes(
   // ============= RECHNUNGEN =============
 
   // Summiert alle Rechnungen eines Auftrags (Netto-Positionensumme, inkl. 8.1% MWST
-  // wie im Rechnungs-PDF) und schreibt das Ergebnis nach auftraege.rechnungs_betrag,
-  // damit der Vergleich Angebot/Rechnung/Ist-Kosten immer konsistent aktuell ist.
+  // wie im Rechnungs-PDF) und schreibt das Ergebnis nach auftraege.rechnungs_betrag.
+  //
+  // auftraege.rechnungs_betrag ist ein reiner Spiegel der Tabelle "rechnungen" — diese
+  // Funktion ist der EINZIGE Schreiber. Wer eine Rechnung anlegt, ändert oder löscht,
+  // MUSS sie aufrufen, sonst zeigen Auftragsliste und Finanzen-Übersicht veraltete Werte.
   async function syncRechnungsBetrag(auftragId: string) {
-    const { data: alleRechnungen } = await supabase
+    if (!auftragId) return;
+    const { data: alleRechnungen, error: leseFehler } = await supabase
       .from("rechnungen")
       .select("betrag")
       .eq("auftrag_id", auftragId);
+    if (leseFehler) throw leseFehler;
     const nettoSumme = (alleRechnungen || []).reduce((s: number, r: any) => s + (Number(r.betrag) || 0), 0);
-    const bruttoSumme = nettoSumme * 1.081;
-    await supabase
+    // Ohne Rechnung muss NULL stehen, nicht 0 — sonst ist "keine Rechnung" nicht mehr
+    // von "Rechnung über 0.00" unterscheidbar und die Liste zeigt 0.00 statt "—".
+    const bruttoSumme = (alleRechnungen || []).length === 0
+      ? null
+      : Math.round(nettoSumme * 1.081 * 100) / 100;
+    const { error: schreibFehler } = await supabase
       .from("auftraege")
       .update({ rechnungs_betrag: bruttoSumme })
       .eq("id", auftragId);
+    if (schreibFehler) throw schreibFehler;
+    return bruttoSumme;
   }
 
   app.get("/api/auftraege/:id/rechnungen", async (req, res) => {
@@ -3498,6 +3537,7 @@ export async function registerRoutes(
       const { data: rechnung, error: e2 } = await supabase
         .from("rechnungen").insert(row).select().single();
       if (e2) throw e2;
+      await syncRechnungsBetrag(offerte.auftrag_id);
 
       // Offerte als "angenommen" markieren
       await supabase.from("offerten").update({ status: "angenommen" }).eq("id", req.params.id);
@@ -5317,28 +5357,28 @@ export async function registerRoutes(
   // ═══ END KALKULATION V6 ═══════════════════════════════════════════
 
   // ─── Finanzen-Übersicht: Umsatz & Reingewinn je abgeschlossenem Auftrag ───────
-  // Spiegelt die "Effektiver Gewinn"-Rechnung aus der Nachkalkulation (SollIstVergleich):
-  // Rechnungsbetrag ist brutto und wird zum Vergleich mit den IST-Selbstkosten auf
-  // netto zurückgerechnet.
+  // Der Umsatz kommt direkt aus der Tabelle "rechnungen" (rechnungen.betrag ist netto,
+  // das PDF schlaegt die MWST erst auf). Bewusst NICHT aus auftraege.rechnungs_betrag:
+  // dieses Spiegelfeld kann veraltet sein, waehrend die Rechnung die Wahrheit ist.
   app.get("/api/finanzen/uebersicht", async (_req, res) => {
     try {
       const { data: auftraege, error } = await supabase
         .from("auftraege")
-        .select("id, nr, titel, kunde, waehrung, angebots_betrag, rechnungs_betrag, end_datum, erstellt")
+        .select("id, nr, titel, kunde, waehrung, end_datum, erstellt")
         .eq("status", "abgeschlossen");
       if (error) throw error;
 
       const ids = (auftraege || []).map((a: any) => a.id);
       if (ids.length === 0) return res.json([]);
 
-      const [saetze, nkStunden, zeiteintraege, nkMaterial, nkFremd, nkSoek, vkConfigs] = await Promise.all([
+      const [saetze, nkStunden, zeiteintraege, nkMaterial, nkFremd, nkSoek, rechnungen] = await Promise.all([
         supabase.from("stundensaetze").select("*"),
         supabase.from("nachkalkulation_stunden").select("auftrag_id, total_chf").in("auftrag_id", ids).eq("quelle", "manuell"),
         supabase.from("zeiteintraege").select("auftrag_id, dauer_minuten, ort, maschinenpark").in("auftrag_id", ids),
         supabase.from("nachkalkulation_material").select("auftrag_id, betrag_chf").in("auftrag_id", ids),
         supabase.from("nachkalkulation_fremdleistungen").select("auftrag_id, betrag_chf").in("auftrag_id", ids),
         supabase.from("nachkalkulation_soek").select("auftrag_id, total_chf").in("auftrag_id", ids),
-        supabase.from("vorkalkulation_config").select("auftrag_id, mwst_prozent").in("auftrag_id", ids),
+        supabase.from("rechnungen").select("auftrag_id, betrag, bezahlt_am").in("auftrag_id", ids),
       ]);
 
       const summieren = (rows: any[] | null, feld: string) => {
@@ -5361,9 +5401,12 @@ export async function registerRoutes(
         lohnZeiterfassung.set(ze.auftrag_id, (lohnZeiterfassung.get(ze.auftrag_id) || 0) + betrag);
       }
 
-      const mwstSatz = new Map<string, number>();
-      for (const c of vkConfigs.data || []) {
-        mwstSatz.set(c.auftrag_id, (Number(c.mwst_prozent) || 8.1) / 100);
+      // rechnungen.betrag ist bereits netto — keine MWST-Rueckrechnung noetig.
+      const rechnungenJeAuftrag = new Map<string, any[]>();
+      for (const r of rechnungen.data || []) {
+        const liste = rechnungenJeAuftrag.get(r.auftrag_id) || [];
+        liste.push(r);
+        rechnungenJeAuftrag.set(r.auftrag_id, liste);
       }
 
       const sortSchluessel = (a: any) => String(a.end_datum || a.erstellt || "");
@@ -5376,9 +5419,16 @@ export async function registerRoutes(
             (material.get(a.id) || 0) +
             (fremd.get(a.id) || 0) +
             (soek.get(a.id) || 0);
-          const mwst = mwstSatz.get(a.id) ?? 0.081;
-          const umsatzBrutto = Number(a.rechnungs_betrag) || 0;
-          const umsatzNetto = umsatzBrutto / (1 + mwst);
+          const rs = rechnungenJeAuftrag.get(a.id) || [];
+          const summe = (liste: any[]) => liste.reduce((s, r) => s + (Number(r.betrag) || 0), 0);
+          const bezahlteRechnungen = rs.filter((r) => r.bezahlt_am);
+          const umsatzNetto = summe(rs);
+          const bezahltNetto = summe(bezahlteRechnungen);
+          // Letztes Zahlungsdatum, damit die UI "Bezahlt am ..." anzeigen kann.
+          const bezahltAm = bezahlteRechnungen
+            .map((r) => String(r.bezahlt_am))
+            .sort()
+            .pop() || null;
           return {
             id: a.id,
             nr: a.nr,
@@ -5386,14 +5436,78 @@ export async function registerRoutes(
             kunde: a.kunde,
             waehrung: a.waehrung || "CHF",
             umsatz_netto: umsatzNetto,
+            bezahlt_netto: bezahltNetto,
+            offen_netto: umsatzNetto - bezahltNetto,
+            bezahlt_am: bezahltAm,
+            voll_bezahlt: rs.length > 0 && bezahlteRechnungen.length === rs.length,
+            anzahl_rechnungen: rs.length,
             kosten,
             reingewinn: umsatzNetto - kosten,
-            hat_rechnung: umsatzBrutto > 0,
+            hat_rechnung: rs.length > 0,
             hat_kosten: kosten > 0,
           };
         });
 
       res.json(result);
+    } catch (e) {
+      res.status(500).json({ message: asError(e) });
+    }
+  });
+
+  // ─── Reparatur: auftraege.rechnungs_betrag aus "rechnungen" neu aufbauen ──────
+  // Heilt Auftraege, deren Spiegelfeld von der Rechnungstabelle abweicht — etwa weil
+  // eine Rechnung frueher ohne Sync angelegt oder ein Betrag manuell gesetzt wurde.
+  //   ?dry=1              meldet die Abweichungen nur, ohne zu schreiben
+  //   ?entfernePhantome=1 setzt zusaetzlich Betraege auf null, hinter denen gar keine
+  //                       Rechnung steht. Standardmaessig bleiben diese unangetastet:
+  //                       der Betrag ist der einzige Hinweis darauf, dass fakturiert
+  //                       wurde, und darf nicht ungefragt geloescht werden.
+  app.post("/api/wartung/rechnungsbetraege-neu-berechnen", async (req, res) => {
+    try {
+      const nurAnzeigen = req.query.dry === "1";
+      const entfernePhantome = req.query.entfernePhantome === "1";
+      const [{ data: auftraege, error: aFehler }, { data: rechnungen, error: rFehler }] = await Promise.all([
+        supabase.from("auftraege").select("id, nr, rechnungs_betrag"),
+        supabase.from("rechnungen").select("auftrag_id, betrag"),
+      ]);
+      if (aFehler) throw aFehler;
+      if (rFehler) throw rFehler;
+
+      const nettoJeAuftrag = new Map<string, number>();
+      const anzahlJeAuftrag = new Map<string, number>();
+      for (const r of rechnungen || []) {
+        nettoJeAuftrag.set(r.auftrag_id, (nettoJeAuftrag.get(r.auftrag_id) || 0) + (Number(r.betrag) || 0));
+        anzahlJeAuftrag.set(r.auftrag_id, (anzahlJeAuftrag.get(r.auftrag_id) || 0) + 1);
+      }
+
+      const korrigiert: any[] = [];
+      const uebersprungen: any[] = [];
+      for (const a of auftraege || []) {
+        const anzahl = anzahlJeAuftrag.get(a.id) || 0;
+        const soll = anzahl === 0 ? null : Math.round((nettoJeAuftrag.get(a.id) || 0) * 1.081 * 100) / 100;
+        const ist = a.rechnungs_betrag == null ? null : Math.round(Number(a.rechnungs_betrag) * 100) / 100;
+        if (soll === ist) continue;
+
+        const eintrag = { id: a.id, nr: a.nr, vorher: ist, nachher: soll, anzahl_rechnungen: anzahl };
+        // Phantom = Betrag im Auftrag, aber keine einzige Rechnung dahinter.
+        if (anzahl === 0 && !entfernePhantome) {
+          uebersprungen.push({ ...eintrag, grund: "Betrag ohne zugehoerige Rechnung — bitte Rechnung im UI nacherfassen" });
+          continue;
+        }
+        korrigiert.push(eintrag);
+        if (!nurAnzeigen) {
+          const { error } = await supabase.from("auftraege").update({ rechnungs_betrag: soll }).eq("id", a.id);
+          if (error) throw error;
+        }
+      }
+
+      res.json({
+        modus: nurAnzeigen ? "dry-run" : "angewendet",
+        geprueft: (auftraege || []).length,
+        korrigiert: nurAnzeigen ? 0 : korrigiert.length,
+        aenderungen: korrigiert,
+        uebersprungen,
+      });
     } catch (e) {
       res.status(500).json({ message: asError(e) });
     }

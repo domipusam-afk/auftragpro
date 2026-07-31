@@ -15,12 +15,32 @@ import {
 import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { AlertCircle, ArrowRight, PiggyBank, Search, TrendingUp, Wallet } from "lucide-react";
-import { formatCHF } from "@/lib/format";
+import { AlertCircle, ArrowRight, CheckCircle2, Clock, PiggyBank, Search, TrendingUp, Wallet } from "lucide-react";
+import { formatCHF, formatDate } from "@/lib/format";
 import type { FinanzenUebersichtZeile } from "@shared/schema";
 
 function gewinnFarbe(wert: number) {
   return wert >= 0 ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400";
+}
+
+/** Zahlungsstatus einer Zeile — "Bezahlt am …", "Teilweise" oder "Offen". */
+function ZahlStatus({ z }: { z: FinanzenUebersichtZeile }) {
+  if (!z.hat_rechnung) return <span className="text-muted-foreground text-xs">—</span>;
+  if (z.voll_bezahlt) {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-green-700 dark:text-green-400">
+        <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+        {z.bezahlt_am ? formatDate(z.bezahlt_am) : "Bezahlt"}
+      </span>
+    );
+  }
+  const teilweise = z.bezahlt_netto > 0;
+  return (
+    <span className="inline-flex items-center gap-1 text-xs text-amber-700 dark:text-amber-500">
+      <Clock className="h-3.5 w-3.5 shrink-0" />
+      {teilweise ? "Teilweise" : "Offen"}
+    </span>
+  );
 }
 
 function Hinweis({ text }: { text: string }) {
@@ -63,6 +83,7 @@ export default function FinanzenUebersicht() {
   const totalUmsatz = abgerechnet.reduce((s, z) => s + z.umsatz_netto, 0);
   const totalKosten = abgerechnet.reduce((s, z) => s + z.kosten, 0);
   const totalGewinn = abgerechnet.reduce((s, z) => s + z.reingewinn, 0);
+  const totalOffen = abgerechnet.reduce((s, z) => s + z.offen_netto, 0);
   const marge = totalUmsatz > 0 ? (totalGewinn / totalUmsatz) * 100 : null;
   const ohneKosten = abgerechnet.filter((z) => !z.hat_kosten).length;
   const ohneRechnung = gefiltert.length - abgerechnet.length;
@@ -145,13 +166,20 @@ export default function FinanzenUebersicht() {
             />
           </div>
 
-          {(ohneRechnung > 0 || ohneKosten > 0) && (
+          {(ohneRechnung > 0 || ohneKosten > 0 || totalOffen > 0.005) && (
             <div className="space-y-1">
               {ohneRechnung > 0 && (
                 <p className="text-xs text-amber-700 dark:text-amber-500 flex items-center gap-1.5">
                   <AlertCircle className="h-3.5 w-3.5 shrink-0" />
                   {ohneRechnung} {ohneRechnung === 1 ? "Auftrag hat" : "Aufträge haben"} noch keine Rechnung —
                   ohne Rechnungsbetrag ist kein Umsatz und kein Reingewinn berechenbar; diese zählen nicht in die Summen.
+                </p>
+              )}
+              {totalOffen > 0.005 && (
+                <p className="text-xs text-amber-700 dark:text-amber-500 flex items-center gap-1.5">
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                  Davon sind {formatCHF(totalOffen)} noch nicht bezahlt — der Umsatz ist fakturiert,
+                  aber noch nicht vereinnahmt.
                 </p>
               )}
               {ohneKosten > 0 && (
@@ -181,6 +209,7 @@ export default function FinanzenUebersicht() {
                         <div className="font-mono text-xs text-muted-foreground">{z.nr}</div>
                         <div className="font-medium">{z.titel}</div>
                         <div className="text-sm text-muted-foreground">{z.kunde}</div>
+                        <div className="mt-1"><ZahlStatus z={z} /></div>
                       </div>
                       <div className="flex items-center justify-between gap-3">
                         <div>
@@ -222,6 +251,7 @@ export default function FinanzenUebersicht() {
                     <TableRow>
                       <TableHead>Auftrag</TableHead>
                       <TableHead>Kunde</TableHead>
+                      <TableHead>Zahlung</TableHead>
                       <TableHead className="text-right">Umsatz</TableHead>
                       <TableHead className="text-right">IST-Kosten</TableHead>
                       <TableHead className="text-right">Reingewinn</TableHead>
@@ -240,6 +270,7 @@ export default function FinanzenUebersicht() {
                           </Link>
                         </TableCell>
                         <TableCell className="text-muted-foreground text-sm">{z.kunde}</TableCell>
+                        <TableCell><ZahlStatus z={z} /></TableCell>
                         <TableCell className="text-right font-mono tabular-nums">
                           {z.hat_rechnung ? formatCHF(z.umsatz_netto, z.waehrung) : "—"}
                         </TableCell>
@@ -266,7 +297,7 @@ export default function FinanzenUebersicht() {
                       </TableRow>
                     ))}
                     <TableRow className="bg-muted/30 hover:bg-muted/30 font-semibold">
-                      <TableCell colSpan={2}>Total</TableCell>
+                      <TableCell colSpan={3}>Total</TableCell>
                       <TableCell className="text-right font-mono tabular-nums">{formatCHF(totalUmsatz)}</TableCell>
                       <TableCell className="text-right font-mono tabular-nums">{formatCHF(totalKosten)}</TableCell>
                       <TableCell className={`text-right font-mono tabular-nums ${gewinnFarbe(totalGewinn)}`}>
