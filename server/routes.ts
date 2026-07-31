@@ -796,6 +796,19 @@ export async function registerRoutes(
           allowed[f] = v;
         }
       }
+      // Sobald eine Offerte existiert, ist sie die Quelle für angebots_betrag. Die
+      // Vorkalkulation schreibt hier ebenfalls einen Schätzpreis hinein — ohne diese
+      // Sperre würden Spalte "Angebot" und tatsächliche Offerte auseinanderlaufen.
+      let offerteHatVorrang = false;
+      if ("angebots_betrag" in allowed) {
+        const { data: offerten } = await supabase
+          .from("offerten").select("id").eq("auftrag_id", id).limit(1);
+        if (offerten && offerten.length > 0) {
+          delete allowed.angebots_betrag;
+          offerteHatVorrang = true;
+        }
+      }
+
       allowed.aktualisiert = new Date().toISOString();
       const { data, error } = await supabase
         .from("auftraege")
@@ -804,6 +817,12 @@ export async function registerRoutes(
         .select()
         .single();
       if (error) throw error;
+      if (offerteHatVorrang) {
+        await syncAngebotsBetrag(id);
+        const { data: frisch } = await supabase
+          .from("auftraege").select("*").eq("id", id).single();
+        return res.json({ ...(frisch || data), angebots_betrag_aus_offerte: true });
+      }
       res.json(data);
     } catch (e) {
       res.status(500).json({ message: asError(e) });
@@ -3406,6 +3425,43 @@ export async function registerRoutes(
   // ─── OFFERTEN ──────────────────────────────────────────────────────────────
   // ═══════════════════════════════════════════════════════════════════════════
 
+  /** Bruttobetrag einer Offerte — identisch zur Rechenweise im Offerte-PDF. */
+  function offerteBrutto(offerte: any): number {
+    const positionen: any[] = Array.isArray(offerte.positionen) ? offerte.positionen : [];
+    const subtotal = positionen.reduce((s: number, p: any) =>
+      s + Number(p.total ?? (Number(p.menge || 0) * Number(p.einzelpreis || 0))), 0);
+    const netto = subtotal - subtotal * ((Number(offerte.rabatt_prozent) || 0) / 100);
+    return Math.round(netto * (1 + (Number(offerte.mwst_prozent) || 8.1) / 100) * 100) / 100;
+  }
+
+  // Schreibt den Bruttobetrag der massgeblichen Offerte nach auftraege.angebots_betrag.
+  //
+  // Sobald eine Offerte existiert, ist SIE die Quelle für die Spalte "Angebot" — sonst
+  // laufen der aus der Vorkalkulation geschätzte Preis und der tatsächlich offerierte
+  // Betrag auseinander. Ohne Offerte bleibt der Wert unangetastet (Vorkalkulation bzw.
+  // manuelle Eingabe). Wer eine Offerte anlegt, ändert oder löscht, MUSS das hier aufrufen.
+  async function syncAngebotsBetrag(auftragId: string) {
+    if (!auftragId) return;
+    const { data: offerten, error } = await supabase
+      .from("offerten").select("*").eq("auftrag_id", auftragId);
+    if (error) throw error;
+    if (!offerten || offerten.length === 0) return;
+
+    const neueste = (liste: any[]) =>
+      [...liste].sort((a, b) => String(b.erstellt || "").localeCompare(String(a.erstellt || "")))[0];
+    const angenommen = offerten.filter((o: any) => o.status === "angenommen");
+    const offen = offerten.filter((o: any) => o.status !== "abgelehnt" && o.status !== "abgelaufen");
+    // Eine angenommene Offerte schlägt eine offene; mehrere Offerten sind Varianten
+    // desselben Angebots, deshalb wird die neueste genommen und nicht summiert.
+    const massgeblich = neueste(angenommen) || neueste(offen) || neueste(offerten);
+
+    const brutto = offerteBrutto(massgeblich);
+    const { error: schreibFehler } = await supabase
+      .from("auftraege").update({ angebots_betrag: brutto }).eq("id", auftragId);
+    if (schreibFehler) throw schreibFehler;
+    return brutto;
+  }
+
   app.get("/api/auftraege/:auftr_id/offerten", async (req, res) => {
     try {
       const { data, error } = await supabase
@@ -3471,6 +3527,7 @@ export async function registerRoutes(
       };
       const { data, error } = await supabase.from("offerten").insert(eintrag).select().single();
       if (error) throw error;
+      await syncAngebotsBetrag(req.params.auftr_id);
       res.json(data);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
@@ -3485,14 +3542,17 @@ export async function registerRoutes(
       for (const f of allowed) if (f in req.body) upd[f] = req.body[f];
       const { data, error } = await supabase.from("offerten").update(upd).eq("id", req.params.id).select().single();
       if (error) throw error;
+      await syncAngebotsBetrag(data.auftrag_id);
       res.json(data);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
   app.delete("/api/offerten/:id", async (req, res) => {
     try {
+      const { data: offerte } = await supabase.from("offerten").select("auftrag_id").eq("id", req.params.id).single();
       const { error } = await supabase.from("offerten").delete().eq("id", req.params.id);
       if (error) throw error;
+      if (offerte?.auftrag_id) await syncAngebotsBetrag(offerte.auftrag_id);
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
@@ -3521,9 +3581,27 @@ export async function registerRoutes(
         betrag: Number(p.total ?? p.betrag ?? (Number(p.menge||0)*Number(p.einzelpreis||0))),
       }));
 
-      // Betrag = Nettosumme (exkl. MWST) — gleich wie direkte Rechnung
-      const betrag = positionen.reduce((s: number, p: any) =>
-        s + Number(p.betrag || p.total || (Number(p.menge||0)*Number(p.einzelpreis||0))), 0);
+      // Rabatt der Offerte als eigene Positionszeile übernehmen. "rechnungen" hat keine
+      // Rabatt-Spalte; als Zeile bleibt die Invariante Summe(positionen) === betrag erhalten,
+      // auf die sich Rechnungs-PDF, Mahnungs-PDF und die Auswertungen alle verlassen.
+      const rabattPct = Number(offerte.rabatt_prozent) || 0;
+      const zwischentotal = positionen.reduce((s: number, p: any) => s + Number(p.betrag || 0), 0);
+      if (rabattPct > 0 && zwischentotal > 0) {
+        const rabattBetrag = -(Math.round(zwischentotal * (rabattPct / 100) * 100) / 100);
+        positionen.push({
+          nr: positionen.length + 1,
+          titel: `Rabatt ${rabattPct}%`,
+          beschreibung: `auf Offerte ${offerte.nr}`,
+          menge: 1,
+          einheit: "Psch.",
+          einzelpreis: rabattBetrag,
+          total: rabattBetrag,
+          betrag: rabattBetrag,
+        });
+      }
+
+      // Betrag = Nettosumme (exkl. MWST, nach Rabatt) — gleich wie direkte Rechnung
+      const betrag = positionen.reduce((s: number, p: any) => s + Number(p.betrag || 0), 0);
 
       // Fälligkeitsdatum: heute + 30 Tage (Standard)
       const faelligDate = new Date();
@@ -3552,6 +3630,8 @@ export async function registerRoutes(
 
       // Offerte als "angenommen" markieren
       await supabase.from("offerten").update({ status: "angenommen" }).eq("id", req.params.id);
+      // Der Statuswechsel kann eine andere Offerte massgeblich machen.
+      await syncAngebotsBetrag(offerte.auftrag_id);
 
       res.json({ ok: true, rechnung });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -6183,6 +6263,11 @@ export async function registerRoutes(
 
       // Offerte mit Auftrag verknüpfen
       await supabase.from("offerten").update({ auftrag_id: neuerAuftrag.id, status: "angenommen" }).eq("id", req.params.id);
+      await syncAngebotsBetrag(neuerAuftrag.id);
+      // Der frühere Auftrag verliert diese Offerte und braucht deshalb einen neuen Wert.
+      if (offerte.auftrag_id && offerte.auftrag_id !== neuerAuftrag.id) {
+        await syncAngebotsBetrag(offerte.auftrag_id);
+      }
 
       res.json(neuerAuftrag);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -6754,8 +6839,19 @@ export async function registerRoutes(
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
+  // Ordnet eine Lohn-Position einem der fünf VK-Stunden-Bereiche zu. Die Positionsliste
+  // kennt nur "Lohn", die Vorkalkulation rechnet aber pro Ort mit eigenem Stundensatz.
+  function lohnBereich(bezeichnung: string): { ort: string; maschinenpark: string | null; bereich: string } {
+    const t = (bezeichnung || "").toLowerCase();
+    if (/avor|planung|ausmass|konstruktion|zeichn|b[uü]ro|abrechnung/.test(t))
+      return { ort: "Avor", maschinenpark: null, bereich: "Planung/AVOR" };
+    if (/montage|baustelle|einbau|vor ort|reise/.test(t))
+      return { ort: "Montage", maschinenpark: null, bereich: "Montage" };
+    return { ort: "Werkstatt", maschinenpark: "Kleine Maschinen", bereich: "Werkstatt" };
+  }
+
   // POST /api/auftraege/:id/positionen/import-vorkalkulation
-  // Importiert auftrag_positionen → vorkalkulation_material / _fremdleistungen
+  // Importiert auftrag_positionen → vorkalkulation_stunden / _material / _fremdleistungen
   // Überschreibt bestehende Einträge (löscht zuerst, dann neu einfügen)
   app.post("/api/auftraege/:id/positionen/import-vorkalkulation", async (req, res) => {
     try {
@@ -6774,11 +6870,13 @@ export async function registerRoutes(
 
       const materialPos = positionen.filter((p: any) => p.kategorie === "material");
       const fremdPos    = positionen.filter((p: any) => p.kategorie === "fremdleistung");
+      const lohnPos     = positionen.filter((p: any) => p.kategorie === "lohn");
 
       // 2. Bei "replace" (Standard): bestehende VK-Einträge löschen
       if (modus !== "merge") {
         await supabase.from("vorkalkulation_material").delete().eq("auftrag_id", id);
         await supabase.from("vorkalkulation_fremdleistungen").delete().eq("auftrag_id", id);
+        if (lohnPos.length > 0) await supabase.from("vorkalkulation_stunden").delete().eq("auftrag_id", id);
       }
 
       // 3. Material-Positionen → vorkalkulation_material
@@ -6817,12 +6915,54 @@ export async function registerRoutes(
         if (!error) fremdCount++;
       }
 
+      // 5. Lohn-Positionen → vorkalkulation_stunden.
+      // Pro Ort/Maschinenpark wird EINE Zeile geschrieben: die Stunden-Ansicht unter
+      // /auftraege/:id/kalkulation zeigt genau die fünf festen Bereiche an und speichert
+      // sie als Vollersatz zurück — mehrere Zeilen im selben Bereich gingen dort verloren.
+      const { data: saetze } = await supabase.from("stundensaetze").select("*");
+      const eingestellterSatz = (ort: string, maschine: string | null): number => {
+        const m = (saetze || []).find((s: any) =>
+          ort === "Werkstatt" ? s.ort === "Werkstatt" && s.maschinenpark === maschine : s.ort === ort && !s.maschinenpark);
+        if (!m) return 0;
+        if (ort === "Werkstatt" && m.grundsatz) return Number(m.grundsatz) + Number(m.satz);
+        return Number(m.satz);
+      };
+
+      const lohnBuckets: { ort: string; maschinenpark: string | null; bereich: string; stunden: number; namen: string[] }[] = [];
+      for (const p of lohnPos) {
+        const b = lohnBereich(p.bezeichnung);
+        let eintrag = lohnBuckets.find((x) => x.ort === b.ort && x.maschinenpark === b.maschinenpark);
+        if (!eintrag) {
+          eintrag = { ...b, stunden: 0, namen: [] };
+          lohnBuckets.push(eintrag);
+        }
+        eintrag.stunden += Number(p.menge) || 0;
+        if (p.bezeichnung) eintrag.namen.push(p.bezeichnung);
+      }
+
+      let lohnCount = 0;
+      for (const b of lohnBuckets) {
+        // Stundensatz aus Einstellungen → Vorkalkulation rechnet mit internen Kostensätzen,
+        // nicht mit dem Verkaufspreis aus der Positionsliste.
+        const satz = eingestellterSatz(b.ort, b.maschinenpark);
+        const { error } = await supabase.from("vorkalkulation_stunden").insert({
+          id: uid(),
+          auftrag_id: id,
+          ort: b.ort,
+          maschinenpark: b.maschinenpark,
+          bereich: b.bereich,
+          bezeichnung: b.namen.join(", ").slice(0, 200) || null,
+          soll_stunden: Math.round(b.stunden * 100) / 100,
+          stundensatz: satz,
+        });
+        if (!error) lohnCount++;
+      }
+
       res.json({
         ok: true,
-        importiert: { material: matCount, fremdleistungen: fremdCount },
-        uebersprungen: {
-          lohn: positionen.filter((p: any) => p.kategorie === "lohn").length,
-        },
+        importiert: { material: matCount, fremdleistungen: fremdCount, lohn: lohnCount },
+        lohn_stunden: Math.round(lohnBuckets.reduce((s, b) => s + b.stunden, 0) * 100) / 100,
+        uebersprungen: { lohn: 0 },
       });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
