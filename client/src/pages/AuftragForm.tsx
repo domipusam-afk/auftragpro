@@ -158,7 +158,12 @@ export default function AuftragForm({ id }: Props) {
       queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
       queryClient.invalidateQueries({ queryKey: ["/api/kunden"] });
       if (editing) queryClient.invalidateQueries({ queryKey: ["/api/auftraege", id] });
-      toast({ title: editing ? "Auftrag aktualisiert" : "Auftrag erstellt" });
+      toast({
+        title: editing ? "Auftrag aktualisiert" : "Auftrag erstellt",
+        description: data?.angebots_betrag_aus_offerte
+          ? "Der Angebotsbetrag stammt aus der Offerte und wurde deshalb nicht überschrieben."
+          : undefined,
+      });
       setLocation(`/auftraege/${data.id || id}`);
     },
     onError: (e: Error) => {

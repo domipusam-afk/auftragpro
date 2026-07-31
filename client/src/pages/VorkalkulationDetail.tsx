@@ -1008,14 +1008,21 @@ function OffertpreisBlock({ auftragId, saetze }: { auftragId: string; saetze: St
   const saveMutation = useMutation({
     mutationFn: async (bruttoOffertpreis: number) => {
       await apiRequest("PUT", `/api/vorkalkulation/${auftragId}/config`, merged);
-      await apiRequest("PATCH", `/api/auftraege/${auftragId}`, { angebots_betrag: bruttoOffertpreis });
+      // Existiert bereits eine Offerte, behält der Server deren Betrag.
+      const res = await apiRequest("PATCH", `/api/auftraege/${auftragId}`, { angebots_betrag: bruttoOffertpreis });
+      return (await res.json()) as { angebots_betrag_aus_offerte?: boolean; angebots_betrag?: number };
     },
-    onSuccess: () => {
+    onSuccess: (auftrag) => {
       refetch();
       setLocalCfg({});
       queryClient.invalidateQueries({ queryKey: ["/api/auftraege", auftragId] });
       queryClient.invalidateQueries({ queryKey: ["/api/auftraege"] });
-      toast({ title: "Offertpreis gespeichert ✓", description: "Angebotsbetrag im Auftrag aktualisiert" });
+      toast({
+        title: "Offertpreis gespeichert ✓",
+        description: auftrag?.angebots_betrag_aus_offerte
+          ? `Angebotsbetrag bleibt bei CHF ${Number(auftrag.angebots_betrag || 0).toFixed(2)} — massgebend ist die Offerte.`
+          : "Angebotsbetrag im Auftrag aktualisiert",
+      });
     },
   });
 

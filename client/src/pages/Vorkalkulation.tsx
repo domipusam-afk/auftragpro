@@ -1052,13 +1052,20 @@ function ZusammenfassungBlock({
   const saveCfgMut = useMutation({
     mutationFn: async () => {
       await apiRequest("PUT", `/api/vorkalkulation/${auftragId}/config`, cfg);
-      // Automatisch Bruttooffertpreis in Auftrag übernehmen
-      await apiRequest("PATCH", `/api/auftraege/${auftragId}`, { angebots_betrag: brutto });
+      // Automatisch Bruttooffertpreis in Auftrag übernehmen. Existiert bereits eine
+      // Offerte, behält der Server deren Betrag und meldet das hier zurück.
+      const res = await apiRequest("PATCH", `/api/auftraege/${auftragId}`, { angebots_betrag: brutto });
+      return (await res.json()) as { angebots_betrag_aus_offerte?: boolean; angebots_betrag?: number };
     },
-    onSuccess: () => {
+    onSuccess: (auftrag) => {
       refetchConfig();
       queryClient.invalidateQueries({ queryKey: ["/api/auftraege", auftragId] });
-      toast({ title: "Kalkulation gespeichert ✓", description: `Offertpreis CHF ${brutto.toFixed(2)} automatisch übernommen` });
+      toast({
+        title: "Kalkulation gespeichert ✓",
+        description: auftrag?.angebots_betrag_aus_offerte
+          ? `Angebotsbetrag bleibt bei CHF ${Number(auftrag.angebots_betrag || 0).toFixed(2)} — massgebend ist die Offerte, nicht die Kalkulation.`
+          : `Offertpreis CHF ${brutto.toFixed(2)} automatisch übernommen`,
+      });
     },
     onError: (e: any) =>
       toast({ title: "Fehler", description: e.message, variant: "destructive" }),
