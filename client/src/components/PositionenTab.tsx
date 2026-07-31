@@ -34,8 +34,10 @@ import {
   TrendingUp,
   Download,
   Calculator,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { OffertePosition } from "@shared/schema";
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
 
@@ -79,6 +81,21 @@ function formatCHF(val: number): string {
   return val.toLocaleString("de-CH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// Positionsliste und Offerte benutzen unterschiedliche Einheiten-Kürzel.
+const EINHEIT_OFFERTE: Record<string, string> = { Stk: "Stk.", h: "Std.", "pausch.": "Psch." };
+
+function alsOffertePositionen(positionen: Position[]): OffertePosition[] {
+  return positionen.map((p, i) => ({
+    nr: i + 1,
+    titel: p.bezeichnung,
+    beschreibung: p.beschreibung ?? "",
+    menge: Number(p.menge) || 0,
+    einheit: EINHEIT_OFFERTE[p.einheit] ?? p.einheit,
+    einzelpreis: Number(p.einzelpreis) || 0,
+    total: (Number(p.menge) || 0) * (Number(p.einzelpreis) || 0),
+  }));
+}
+
 // ─── Leeres Formular ─────────────────────────────────────────────────────────
 
 const LEER_FORM = {
@@ -92,7 +109,14 @@ const LEER_FORM = {
 
 // ─── Hauptkomponente ─────────────────────────────────────────────────────────
 
-export default function PositionenTab({ auftragId }: { auftragId: string }) {
+export default function PositionenTab({
+  auftragId,
+  onOfferteErstellen,
+}: {
+  auftragId: string;
+  /** Öffnet die Offerte-Maske mit diesen Positionen vorausgefüllt (ohne zu speichern). */
+  onOfferteErstellen?: (positionen: OffertePosition[]) => void;
+}) {
   const { toast } = useToast();
   const [filterKat, setFilterKat] = useState<Kategorie | "alle">("alle");
   const [editId, setEditId] = useState<string | null>(null);
@@ -269,7 +293,7 @@ export default function PositionenTab({ auftragId }: { auftragId: string }) {
       {positionen.length > 0 && (
         <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2 mb-3">
           <Calculator className="h-3.5 w-3.5 shrink-0" />
-          <span>Mit <strong>"In Vorkalkulation übernehmen"</strong> werden Material &amp; Fremdleistungen direkt in die Vorkalkulation übertragen — kein doppeltes Erfassen.</span>
+          <span>Mit <strong>"In Vorkalkulation übernehmen"</strong> gehen Material, Fremdleistungen &amp; Lohnstunden direkt in die interne Kalkulation. Mit <strong>"Offerte aus Positionen"</strong> erstellen Sie daraus die Kundenofferte — kein doppeltes Erfassen.</span>
         </div>
       )}
 
@@ -628,6 +652,17 @@ export default function PositionenTab({ auftragId }: { auftragId: string }) {
 
             {/* Aktions-Buttons */}
             <div className="flex flex-col gap-2 justify-end">
+              {onOfferteErstellen && (
+                <Button
+                  size="sm"
+                  data-testid="btn-offerte-aus-positionen"
+                  className="text-xs bg-[#6b4c2a] hover:bg-[#5a3e22] text-white"
+                  onClick={() => onOfferteErstellen(alsOffertePositionen(positionen))}
+                >
+                  <FileText className="h-3.5 w-3.5 mr-1.5" />
+                  Offerte aus Positionen
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant="outline"
@@ -654,13 +689,13 @@ export default function PositionenTab({ auftragId }: { auftragId: string }) {
                     );
                     const json = await r.json();
                     if (!r.ok) throw new Error(json.message || "Import fehlgeschlagen");
-                    const { importiert, uebersprungen } = json;
+                    const { importiert, lohn_stunden } = json;
                     toast({
                       title: "Vorkalkulation aktualisiert",
                       description:
                         `${importiert.material} Material, ${importiert.fremdleistungen} Fremdleistung(en) übertragen.` +
-                        (uebersprungen.lohn > 0
-                          ? ` (${uebersprungen.lohn} Lohn-Position(en) bitte manuell in VK-Stunden erfassen)`
+                        (importiert.lohn > 0
+                          ? ` ${lohn_stunden} Std. Lohn in die Stunden-Bereiche übertragen (Stundensatz aus Einstellungen).`
                           : ""),
                     });
                     window.location.hash = `/auftraege/${auftragId}/kalkulation`;

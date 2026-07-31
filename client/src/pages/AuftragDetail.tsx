@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -770,7 +770,13 @@ function RechnungenTab({
 // ─── Zeiterfassung Tab ───────────────────────────────────────────────────────
 
 // ─── Offerten Tab ──────────────────────────────────────────────────────────────
-function OffertenTab({ id, auftrag }: { id: string; auftrag: Auftrag }) {
+function OffertenTab({ id, auftrag, vorlage, onVorlageUebernommen }: {
+  id: string;
+  auftrag: Auftrag;
+  /** Positionen aus dem Positionen-Tab, die in die Maske vorgeladen werden sollen. */
+  vorlage?: OffertePosition[] | null;
+  onVorlageUebernommen?: () => void;
+}) {
   const { toast } = useToast();
   const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
 
@@ -858,6 +864,17 @@ function OffertenTab({ id, auftrag }: { id: string; auftrag: Auftrag }) {
     setShowForm(true);
     setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 100);
   };
+
+  // Positionen aus dem Positionen-Tab vorladen. Bewusst nur in die Maske — gespeichert
+  // wird erst, wenn der Benutzer die Positionen geprüft und "Offerte speichern" gedrückt hat.
+  useEffect(() => {
+    if (!vorlage || vorlage.length === 0) return;
+    setEditOfferte(null);
+    setPositionen(vorlage.map((p, i) => ({ ...p, nr: i + 1 })));
+    setShowForm(true);
+    onVorlageUebernommen?.();
+    setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 100);
+  }, [vorlage]);
 
   const createMutation = useMutation({
     mutationFn: () => apiRequest("POST", `/api/auftraege/${id}/offerten`, {
@@ -1061,7 +1078,9 @@ function OffertenTab({ id, auftrag }: { id: string; auftrag: Auftrag }) {
                       <Select value={pos.einheit} onValueChange={v => updatePos(i, "einheit", v)}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          {["Stk.","m","m²","m³","Std.","Psch.","Set"].map(u => (
+                          {/* Einheit der Position mit aufnehmen (z.B. kg, t, L aus dem
+                              Positionen-Tab), sonst bliebe das Feld nach dem Vorladen leer. */}
+                          {Array.from(new Set(["Stk.","m","m²","m³","Std.","Psch.","Set", ...(pos.einheit ? [pos.einheit] : [])])).map(u => (
                             <SelectItem key={u} value={u}>{u}</SelectItem>
                           ))}
                         </SelectContent>
@@ -2356,6 +2375,8 @@ export default function AuftragDetail({ id }: Props) {
   const { toast } = useToast();
   const { confirm: confirmAction, ConfirmDialog: ActionConfirmDialog } = useConfirm();
   const [delOpen, setDelOpen] = useState(false);
+  const [aktiverTab, setAktiverTab] = useState("verlauf");
+  const [offerteVorlage, setOfferteVorlage] = useState<OffertePosition[] | null>(null);
 
   const { data, isLoading, refetch } = useQuery<DetailData>({
     queryKey: ["/api/auftraege", id],
@@ -2666,7 +2687,7 @@ export default function AuftragDetail({ id }: Props) {
 
         <div className="lg:col-span-2">
           <Card className="p-5 bg-card">
-            <Tabs defaultValue="verlauf">
+            <Tabs value={aktiverTab} onValueChange={setAktiverTab}>
               <TabsList className="grid grid-cols-4 sm:flex sm:flex-wrap gap-1 h-auto p-1 w-full">
                 <TabsTrigger value="verlauf" data-testid="tab-verlauf" className="flex flex-col sm:flex-row items-center gap-1 text-xs p-2 sm:px-3 sm:py-1.5 h-auto">
                   Verlauf
@@ -2765,10 +2786,18 @@ export default function AuftragDetail({ id }: Props) {
               </TabsContent>
 
               <TabsContent value="offerte" className="mt-4">
-                <OffertenTab id={id} auftrag={data} />
+                <OffertenTab
+                  id={id}
+                  auftrag={data}
+                  vorlage={offerteVorlage}
+                  onVorlageUebernommen={() => setOfferteVorlage(null)}
+                />
               </TabsContent>
               <TabsContent value="positionen" className="mt-4">
-                <PositionenTab auftragId={data.id} />
+                <PositionenTab
+                  auftragId={data.id}
+                  onOfferteErstellen={(pos) => { setOfferteVorlage(pos); setAktiverTab("offerte"); }}
+                />
               </TabsContent>
 
               <TabsContent value="kommentare" className="mt-4">
