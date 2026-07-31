@@ -159,9 +159,22 @@ export default function AuftragsListe() {
   // Status-Filter-Optionen: nur aktive Status anzeigen (abgeschlossen im Archiv)
   const activeStatusOptions = STATUS_ORDER.filter((s) => !DONE_STATUSES.includes(s));
 
-  // Zahlungsstatus der Rechnungen eines Auftrags — nur sichtbar, wenn es Rechnungen gibt.
+  // Zahlungsstatus der Rechnungen eines Auftrags.
   function BezahltHinweis({ a }: { a: Auftrag }) {
-    if (!a.anzahl_rechnungen) return null;
+    if (!a.anzahl_rechnungen) {
+      // Betrag ohne Rechnung dahinter: Altbestand aus der Zeit, als das Feld von Hand
+      // gesetzt werden konnte. Die Finanzen-Übersicht zählt ihn nicht als Umsatz —
+      // ohne diesen Hinweis widersprächen sich die beiden Ansichten wortlos.
+      if (a.rechnungs_betrag == null) return null;
+      return (
+        <span
+          className="text-[10px] text-amber-700 dark:text-amber-500"
+          title="Für diesen Betrag ist keine Rechnung erfasst — bitte im Auftrag nachtragen"
+        >
+          keine Rechnung erfasst
+        </span>
+      );
+    }
     if (a.rechnung_bezahlt) {
       return (
         <span

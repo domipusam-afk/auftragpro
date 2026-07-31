@@ -616,41 +616,52 @@ export async function registerRoutes(
   });
 
   // ============= AUFTRAEGE =============
+
+  // Rechnungsbetrag und Zahlungsstatus je Auftrag direkt aus der Tabelle "rechnungen"
+  // ableiten. Jede Ansicht, die einen Auftrag ausliefert, muss das hierüber tun — sonst
+  // zeigt sie das gespiegelte auftraege.rechnungs_betrag, das veraltet sein kann.
+  const rechnungsStatusJeAuftrag = async (auftragIds?: string[]) => {
+    let query = supabase.from("rechnungen").select("auftrag_id, betrag, bezahlt_am");
+    if (auftragIds) query = query.in("auftrag_id", auftragIds);
+    const { data, error } = await query;
+    if (error) throw error;
+    const map = new Map<string, { anzahl: number; bezahlt: number; netto: number; letztes: string | null }>();
+    for (const r of data || []) {
+      const e = map.get(r.auftrag_id) || { anzahl: 0, bezahlt: 0, netto: 0, letztes: null };
+      e.anzahl += 1;
+      e.netto += Number(r.betrag) || 0;
+      if (r.bezahlt_am) {
+        e.bezahlt += 1;
+        const d = String(r.bezahlt_am);
+        if (!e.letztes || d > e.letztes) e.letztes = d;
+      }
+      map.set(r.auftrag_id, e);
+    }
+    return map;
+  };
+
+  // Die abgeleiteten Werte an einen Auftragsdatensatz anhängen. Ohne Rechnung bleibt der
+  // gespeicherte Betrag stehen: er ist bei Altdaten der einzige Hinweis auf eine
+  // Fakturierung; anzahl_rechnungen = 0 macht das in der UI kenntlich.
+  const mitRechnungsStatus = (auftrag: any, map: Map<string, any>) => {
+    const e = map.get(auftrag.id);
+    return {
+      ...auftrag,
+      rechnungs_betrag: e ? Math.round(e.netto * 1.081 * 100) / 100 : auftrag.rechnungs_betrag,
+      anzahl_rechnungen: e?.anzahl || 0,
+      rechnung_bezahlt: !!e && e.bezahlt === e.anzahl,
+      rechnung_bezahlt_am: e?.letztes || null,
+    };
+  };
+
   app.get("/api/auftraege", async (_req, res) => {
     try {
-      const [{ data, error }, { data: rechnungen, error: rFehler }] = await Promise.all([
+      const [{ data, error }, rechnungsStatus] = await Promise.all([
         supabase.from("auftraege").select("*").order("erstellt", { ascending: false }),
-        supabase.from("rechnungen").select("auftrag_id, betrag, bezahlt_am"),
+        rechnungsStatusJeAuftrag(),
       ]);
       if (error) throw error;
-      if (rFehler) throw rFehler;
-
-      // Rechnungsbetrag und Zahlungsstatus je Auftrag aus der Rechnungstabelle ableiten.
-      // Die Liste zeigt damit immer den tatsaechlichen Stand, auch wenn das gespiegelte
-      // auftraege.rechnungs_betrag (noch) veraltet ist.
-      const jeAuftrag = new Map<string, { anzahl: number; bezahlt: number; netto: number; letztes: string | null }>();
-      for (const r of rechnungen || []) {
-        const e = jeAuftrag.get(r.auftrag_id) || { anzahl: 0, bezahlt: 0, netto: 0, letztes: null };
-        e.anzahl += 1;
-        e.netto += Number(r.betrag) || 0;
-        if (r.bezahlt_am) {
-          e.bezahlt += 1;
-          const d = String(r.bezahlt_am);
-          if (!e.letztes || d > e.letztes) e.letztes = d;
-        }
-        jeAuftrag.set(r.auftrag_id, e);
-      }
-
-      res.json((data || []).map((a: any) => {
-        const e = jeAuftrag.get(a.id);
-        return {
-          ...a,
-          rechnungs_betrag: e ? Math.round(e.netto * 1.081 * 100) / 100 : a.rechnungs_betrag,
-          anzahl_rechnungen: e?.anzahl || 0,
-          rechnung_bezahlt: !!e && e.bezahlt === e.anzahl,
-          rechnung_bezahlt_am: e?.letztes || null,
-        };
-      }));
+      res.json((data || []).map((a: any) => mitRechnungsStatus(a, rechnungsStatus)));
     } catch (e) {
       res.status(500).json({ message: asError(e) });
     }
@@ -738,7 +749,7 @@ export async function registerRoutes(
         .eq("auftrag_id", id)
         .order("datum", { ascending: false });
       res.json({
-        ...auftrag,
+        ...mitRechnungsStatus(auftrag, await rechnungsStatusJeAuftrag([id])),
         verlauf: verlauf || [],
         notizen: notizen || [],
         dokumente: dokumente || [],
