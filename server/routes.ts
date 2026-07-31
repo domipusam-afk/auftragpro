@@ -6754,6 +6754,28 @@ export async function registerRoutes(
 
   // ─── Positionsliste ────────────────────────────────────────────────────────
 
+  // Zielbereich einer Lohn-Position in der Vorkalkulation. Der Wert wird beim Erfassen
+  // der Position explizit gewählt (Dropdown "Bereich"); die Schlüssel müssen mit
+  // LOHN_BEREICHE in client/src/components/PositionenTab.tsx übereinstimmen.
+  const LOHN_BEREICH_MAP: Record<string, { ort: string; maschinenpark: string | null; bereich: string }> = {
+    "Avor::": { ort: "Avor", maschinenpark: null, bereich: "Planung/AVOR" },
+    "Werkstatt::Kleine Maschinen": { ort: "Werkstatt", maschinenpark: "Kleine Maschinen", bereich: "Werkstatt" },
+    "Werkstatt::Mittlere Maschinen": { ort: "Werkstatt", maschinenpark: "Mittlere Maschinen", bereich: "Werkstatt" },
+    "Werkstatt::Grosse Maschinen": { ort: "Werkstatt", maschinenpark: "Grosse Maschinen", bereich: "Werkstatt" },
+    "Montage::": { ort: "Montage", maschinenpark: null, bereich: "Montage" },
+  };
+
+  // Die Spalte auftrag_positionen.lohn_bereich kommt per Migration nach
+  // (supabase/migrations/20260731_auftrag_positionen_lohn_bereich.sql). Solange sie in der
+  // Datenbank fehlt, darf das Erfassen von Positionen nicht komplett scheitern.
+  const lohnBereichSpalteFehlt = (error: any): boolean =>
+    (error?.code === "42703" || error?.code === "PGRST204") &&
+    String(error?.message ?? "").includes("lohn_bereich");
+
+  const SPALTE_FEHLT_HINWEIS =
+    'Die Datenbank kennt das Feld "Bereich" noch nicht. Bitte die Migration ' +
+    "20260731_auftrag_positionen_lohn_bereich.sql in Supabase ausführen.";
+
   // GET alle Positionen eines Auftrags
   app.get("/api/auftraege/:id/positionen", async (req, res) => {
     try {
@@ -6770,7 +6792,7 @@ export async function registerRoutes(
   // POST neue Position
   app.post("/api/auftraege/:id/positionen", async (req, res) => {
     try {
-      const { bezeichnung, beschreibung, kategorie, menge, einheit, einzelpreis } = req.body;
+      const { bezeichnung, beschreibung, kategorie, menge, einheit, einzelpreis, lohn_bereich } = req.body;
       if (!bezeichnung) return res.status(400).json({ message: "Bezeichnung fehlt" });
 
       // Nächste Positionsnummer ermitteln
@@ -6782,20 +6804,26 @@ export async function registerRoutes(
         .limit(1);
       const naechstePos = existing && existing.length > 0 ? existing[0].position + 1 : 1;
 
-      const { data, error } = await supabase
+      const basis = {
+        auftrag_id: req.params.id,
+        position: naechstePos,
+        bezeichnung: bezeichnung.trim(),
+        beschreibung: beschreibung?.trim() ?? null,
+        kategorie: kategorie ?? "material",
+        menge: parseFloat(menge) || 0,
+        einheit: einheit ?? "Stk",
+        einzelpreis: parseFloat(einzelpreis) || 0,
+      };
+      const zielBereich = kategorie === "lohn" && LOHN_BEREICH_MAP[lohn_bereich] ? lohn_bereich : null;
+
+      let { data, error } = await supabase
         .from("auftrag_positionen")
-        .insert({
-          auftrag_id: req.params.id,
-          position: naechstePos,
-          bezeichnung: bezeichnung.trim(),
-          beschreibung: beschreibung?.trim() ?? null,
-          kategorie: kategorie ?? "material",
-          menge: parseFloat(menge) || 0,
-          einheit: einheit ?? "Stk",
-          einzelpreis: parseFloat(einzelpreis) || 0,
-        })
+        .insert({ ...basis, lohn_bereich: zielBereich })
         .select()
         .single();
+      if (error && lohnBereichSpalteFehlt(error)) {
+        ({ data, error } = await supabase.from("auftrag_positionen").insert(basis).select().single());
+      }
       if (error) return res.status(500).json({ message: error.message });
       res.json(data);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -6805,7 +6833,7 @@ export async function registerRoutes(
   app.patch("/api/auftraege/:id/positionen/:pid", async (req, res) => {
     try {
       const felder: any = {};
-      const erlaubt = ["bezeichnung","beschreibung","kategorie","menge","einheit","einzelpreis","position"];
+      const erlaubt = ["bezeichnung","beschreibung","kategorie","menge","einheit","einzelpreis","position","lohn_bereich"];
       for (const k of erlaubt) {
         if (req.body[k] !== undefined) {
           felder[k] = ["menge","einzelpreis","position"].includes(k)
@@ -6821,7 +6849,10 @@ export async function registerRoutes(
         .eq("auftrag_id", req.params.id)
         .select()
         .single();
-      if (error) return res.status(500).json({ message: error.message });
+      if (error) {
+        if (lohnBereichSpalteFehlt(error)) return res.status(400).json({ message: SPALTE_FEHLT_HINWEIS });
+        return res.status(500).json({ message: error.message });
+      }
       res.json(data);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
@@ -6838,17 +6869,6 @@ export async function registerRoutes(
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
-
-  // Ordnet eine Lohn-Position einem der fünf VK-Stunden-Bereiche zu. Die Positionsliste
-  // kennt nur "Lohn", die Vorkalkulation rechnet aber pro Ort mit eigenem Stundensatz.
-  function lohnBereich(bezeichnung: string): { ort: string; maschinenpark: string | null; bereich: string } {
-    const t = (bezeichnung || "").toLowerCase();
-    if (/avor|planung|ausmass|konstruktion|zeichn|b[uü]ro|abrechnung/.test(t))
-      return { ort: "Avor", maschinenpark: null, bereich: "Planung/AVOR" };
-    if (/montage|baustelle|einbau|vor ort|reise/.test(t))
-      return { ort: "Montage", maschinenpark: null, bereich: "Montage" };
-    return { ort: "Werkstatt", maschinenpark: "Kleine Maschinen", bereich: "Werkstatt" };
-  }
 
   // POST /api/auftraege/:id/positionen/import-vorkalkulation
   // Importiert auftrag_positionen → vorkalkulation_stunden / _material / _fremdleistungen
@@ -6871,6 +6891,17 @@ export async function registerRoutes(
       const materialPos = positionen.filter((p: any) => p.kategorie === "material");
       const fremdPos    = positionen.filter((p: any) => p.kategorie === "fremdleistung");
       const lohnPos     = positionen.filter((p: any) => p.kategorie === "lohn");
+
+      // Der Bereich wird nie aus der Bezeichnung geraten: fehlt er, bricht der Import ab
+      // und die Oberfläche fragt ihn für die betroffenen Positionen nach.
+      const ohneBereich = lohnPos.filter((p: any) => !LOHN_BEREICH_MAP[p.lohn_bereich]);
+      if (ohneBereich.length > 0) {
+        return res.status(400).json({
+          message:
+            "Bei diesen Lohn-Positionen fehlt der Bereich: " +
+            ohneBereich.map((p: any) => `${p.position}. ${p.bezeichnung}`).join(", "),
+        });
+      }
 
       // 2. Bei "replace" (Standard): bestehende VK-Einträge löschen
       if (modus !== "merge") {
@@ -6930,7 +6961,7 @@ export async function registerRoutes(
 
       const lohnBuckets: { ort: string; maschinenpark: string | null; bereich: string; stunden: number; namen: string[] }[] = [];
       for (const p of lohnPos) {
-        const b = lohnBereich(p.bezeichnung);
+        const b = LOHN_BEREICH_MAP[p.lohn_bereich];
         let eintrag = lohnBuckets.find((x) => x.ort === b.ort && x.maschinenpark === b.maschinenpark);
         if (!eintrag) {
           eintrag = { ...b, stunden: 0, namen: [] };
@@ -6962,7 +6993,6 @@ export async function registerRoutes(
         ok: true,
         importiert: { material: matCount, fremdleistungen: fremdCount, lohn: lohnCount },
         lohn_stunden: Math.round(lohnBuckets.reduce((s, b) => s + b.stunden, 0) * 100) / 100,
-        uebersprungen: { lohn: 0 },
       });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });

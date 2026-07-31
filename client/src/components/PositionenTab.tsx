@@ -35,6 +35,7 @@ import {
   Download,
   Calculator,
   FileText,
+  AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { OffertePosition } from "@shared/schema";
@@ -53,11 +54,43 @@ export interface Position {
   menge: number;
   einheit: string;
   einzelpreis: number;
+  /** Nur bei Kategorie "lohn": Zielbereich der Vorkalkulation, Format "<ort>::<maschinenpark>". */
+  lohn_bereich?: string | null;
 }
 
 // ─── Konstanten ──────────────────────────────────────────────────────────────
 
 const EINHEITEN = ["m", "m²", "m³", "Stk", "h", "kg", "t", "L", "pausch."];
+
+// Zielbereiche der Vorkalkulation. Werte/Labels müssen mit dem Ort-Dropdown in
+// VorkalkulationDetail.tsx und mit LOHN_BEREICH_MAP in server/routes.ts übereinstimmen.
+const LOHN_BEREICHE = [
+  { key: "Avor::", label: "AVOR (Techn. Büro)" },
+  { key: "Werkstatt::Kleine Maschinen", label: "Werkstatt · Kleine Maschinen" },
+  { key: "Werkstatt::Mittlere Maschinen", label: "Werkstatt · Mittlere Maschinen" },
+  { key: "Werkstatt::Grosse Maschinen", label: "Werkstatt · Grosse Maschinen" },
+  { key: "Montage::", label: "Montage" },
+];
+
+const LOHN_BEREICH_LABEL: Record<string, string> = Object.fromEntries(
+  LOHN_BEREICHE.map(b => [b.key, b.label])
+);
+
+function bereichFehlt(p: Position): boolean {
+  return p.kategorie === "lohn" && !LOHN_BEREICH_LABEL[p.lohn_bereich ?? ""];
+}
+
+// apiRequest wirft Fehler als '400: {"message":"…"}' — für die Anzeige wieder auspacken.
+function fehlerText(err: any): string {
+  const roh = String(err?.message ?? err);
+  const m = roh.match(/^\d{3}: ([\s\S]*)$/);
+  if (!m) return roh;
+  try {
+    return JSON.parse(m[1]).message ?? m[1];
+  } catch {
+    return m[1];
+  }
+}
 
 const KAT_LABEL: Record<Kategorie, string> = {
   material: "Material",
@@ -105,6 +138,7 @@ const LEER_FORM = {
   menge: "",
   einheit: "Stk",
   einzelpreis: "",
+  lohn_bereich: "",
 };
 
 // ─── Hauptkomponente ─────────────────────────────────────────────────────────
@@ -125,6 +159,8 @@ export default function PositionenTab({
   const [zeigeForm, setZeigeForm] = useState(false);
   const [loescheId, setLoescheId] = useState<string | null>(null);
   const [importLaeuft, setImportLaeuft] = useState(false);
+  /** Position-ID → gewählter Bereich, solange der Nachfrage-Dialog offen ist. */
+  const [offeneBereiche, setOffeneBereiche] = useState<Record<string, string> | null>(null);
 
   // ─── Daten laden ─────────────────────────────────────────────────────────
 
@@ -145,6 +181,7 @@ export default function PositionenTab({
         ...body,
         menge: parseFloat(body.menge) || 0,
         einzelpreis: parseFloat(body.einzelpreis) || 0,
+        lohn_bereich: body.kategorie === "lohn" ? body.lohn_bereich : null,
       }).then(r => r.json()),
     onSuccess: () => {
       inv();
@@ -228,12 +265,70 @@ export default function PositionenTab({
       menge: p.menge,
       einheit: p.einheit,
       einzelpreis: p.einzelpreis,
+      lohn_bereich: p.lohn_bereich ?? "",
     });
+  };
+
+  // ─── Übernahme in die Vorkalkulation ─────────────────────────────────────
+
+  const starteImport = async () => {
+    setImportLaeuft(true);
+    try {
+      const r = await apiRequest(
+        "POST",
+        `/api/auftraege/${auftragId}/positionen/import-vorkalkulation`,
+        { modus: "replace" }
+      );
+      const { importiert, lohn_stunden } = await r.json();
+      toast({
+        title: "Vorkalkulation aktualisiert",
+        description:
+          `${importiert.material} Material, ${importiert.fremdleistungen} Fremdleistung(en) übertragen.` +
+          (importiert.lohn > 0
+            ? ` ${lohn_stunden} Std. Lohn in die gewählten Bereiche übertragen (Stundensatz aus Einstellungen).`
+            : ""),
+      });
+      window.location.hash = `/auftraege/${auftragId}/kalkulation`;
+    } catch (err: any) {
+      toast({ title: "Fehler beim Import", description: fehlerText(err), variant: "destructive" });
+    } finally {
+      setImportLaeuft(false);
+    }
+  };
+
+  // Alte Lohn-Positionen ohne Bereich werden nicht geraten, sondern nachgefragt.
+  const importKlick = () => {
+    const offen = positionen.filter(bereichFehlt);
+    if (offen.length > 0) {
+      setOffeneBereiche(Object.fromEntries(offen.map(p => [p.id, ""])));
+      return;
+    }
+    starteImport();
+  };
+
+  const bereicheUebernehmen = async () => {
+    if (!offeneBereiche) return;
+    setImportLaeuft(true);
+    try {
+      for (const [pid, key] of Object.entries(offeneBereiche)) {
+        await apiRequest("PATCH", `/api/auftraege/${auftragId}/positionen/${pid}`, { lohn_bereich: key });
+      }
+      await inv();
+    } catch (err: any) {
+      toast({ title: "Bereich konnte nicht gespeichert werden", description: fehlerText(err), variant: "destructive" });
+      setImportLaeuft(false);
+      return;
+    }
+    setOffeneBereiche(null);
+    await starteImport();
   };
 
   const saveEdit = () => {
     if (!editId) return;
-    bearbeiteMutation.mutate({ pid: editId, body: editData });
+    bearbeiteMutation.mutate({
+      pid: editId,
+      body: { ...editData, lohn_bereich: editData.kategorie === "lohn" ? editData.lohn_bereich : null },
+    });
   };
 
   // ─── Render ──────────────────────────────────────────────────────────────
@@ -350,6 +445,17 @@ export default function PositionenTab({
                         {p.beschreibung && (
                           <div className="text-xs text-muted-foreground mt-0.5">{p.beschreibung}</div>
                         )}
+                        {p.kategorie === "lohn" && (
+                          bereichFehlt(p) ? (
+                            <div className="text-xs text-amber-700 mt-0.5 flex items-center gap-1">
+                              <AlertTriangle className="h-3 w-3" /> Bereich fehlt
+                            </div>
+                          ) : (
+                            <div className="text-xs text-muted-foreground mt-0.5">
+                              → {LOHN_BEREICH_LABEL[p.lohn_bereich!]}
+                            </div>
+                          )
+                        )}
                       </div>
                     )}
                   </td>
@@ -357,19 +463,36 @@ export default function PositionenTab({
                   {/* Kategorie */}
                   <td className="px-3 py-2.5 hidden sm:table-cell">
                     {editId === p.id ? (
-                      <Select
-                        value={editData.kategorie}
-                        onValueChange={v => setEditData(d => ({ ...d, kategorie: v as Kategorie }))}
-                      >
-                        <SelectTrigger className="h-7 text-xs w-32">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="material">Material</SelectItem>
-                          <SelectItem value="lohn">Lohn</SelectItem>
-                          <SelectItem value="fremdleistung">Fremdleistung</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <div className="space-y-1">
+                        <Select
+                          value={editData.kategorie}
+                          onValueChange={v => setEditData(d => ({ ...d, kategorie: v as Kategorie }))}
+                        >
+                          <SelectTrigger className="h-7 text-xs w-32">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="material">Material</SelectItem>
+                            <SelectItem value="lohn">Lohn</SelectItem>
+                            <SelectItem value="fremdleistung">Fremdleistung</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {editData.kategorie === "lohn" && (
+                          <Select
+                            value={editData.lohn_bereich ?? ""}
+                            onValueChange={v => setEditData(d => ({ ...d, lohn_bereich: v }))}
+                          >
+                            <SelectTrigger className="h-7 text-xs w-32" data-testid="select-edit-lohn-bereich">
+                              <SelectValue placeholder="Bereich…" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {LOHN_BEREICHE.map(b => (
+                                <SelectItem key={b.key} value={b.key}>{b.label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </div>
                     ) : (
                       <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border", KAT_BADGE[p.kategorie])}>
                         {KAT_ICON[p.kategorie]}
@@ -586,12 +709,38 @@ export default function PositionenTab({
             </div>
           </div>
 
+          {/* Zeile 3: Bereich — nur bei Lohn, steuert das Ziel in der Vorkalkulation */}
+          {neuesFormular.kategorie === "lohn" && (
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block font-medium">
+                Bereich * <span className="font-normal">(Ziel in der Vorkalkulation)</span>
+              </label>
+              <Select
+                value={neuesFormular.lohn_bereich}
+                onValueChange={v => setNeuesFormular(f => ({ ...f, lohn_bereich: v }))}
+              >
+                <SelectTrigger className="h-8 text-xs sm:w-72" data-testid="select-neu-lohn-bereich">
+                  <SelectValue placeholder="Bereich wählen…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {LOHN_BEREICHE.map(b => (
+                    <SelectItem key={b.key} value={b.key}>{b.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           {/* Buttons */}
           <div className="flex gap-2 pt-1">
             <Button
               size="sm"
               onClick={() => erstelleMutation.mutate(neuesFormular)}
-              disabled={erstelleMutation.isPending || !neuesFormular.bezeichnung.trim()}
+              disabled={
+                erstelleMutation.isPending ||
+                !neuesFormular.bezeichnung.trim() ||
+                (neuesFormular.kategorie === "lohn" && !neuesFormular.lohn_bereich)
+              }
               data-testid="btn-pos-speichern"
             >
               <Check className="h-3.5 w-3.5 mr-1" />
@@ -679,32 +828,7 @@ export default function PositionenTab({
                 data-testid="btn-kalkulation-link"
                 className="text-xs bg-amber-600 hover:bg-amber-700 text-white"
                 disabled={importLaeuft || positionen.length === 0}
-                onClick={async () => {
-                  setImportLaeuft(true);
-                  try {
-                    const r = await apiRequest(
-                      "POST",
-                      `/api/auftraege/${auftragId}/positionen/import-vorkalkulation`,
-                      { modus: "replace" }
-                    );
-                    const json = await r.json();
-                    if (!r.ok) throw new Error(json.message || "Import fehlgeschlagen");
-                    const { importiert, lohn_stunden } = json;
-                    toast({
-                      title: "Vorkalkulation aktualisiert",
-                      description:
-                        `${importiert.material} Material, ${importiert.fremdleistungen} Fremdleistung(en) übertragen.` +
-                        (importiert.lohn > 0
-                          ? ` ${lohn_stunden} Std. Lohn in die Stunden-Bereiche übertragen (Stundensatz aus Einstellungen).`
-                          : ""),
-                    });
-                    window.location.hash = `/auftraege/${auftragId}/kalkulation`;
-                  } catch (err: any) {
-                    toast({ title: "Fehler beim Import", description: err.message, variant: "destructive" });
-                  } finally {
-                    setImportLaeuft(false);
-                  }
-                }}
+                onClick={importKlick}
               >
                 <TrendingUp className="h-3.5 w-3.5 mr-1.5" />
                 {importLaeuft ? "Wird übertragen…" : "In Vorkalkulation übernehmen"}
@@ -713,6 +837,54 @@ export default function PositionenTab({
           </div>
         </div>
       )}
+
+      {/* Bereich-Nachfrage vor dem Import (alte Lohn-Positionen ohne Bereich) */}
+      <AlertDialog open={!!offeneBereiche} onOpenChange={o => !o && setOffeneBereiche(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Bereich für Lohn-Positionen wählen</AlertDialogTitle>
+            <AlertDialogDescription>
+              Bei diesen Lohn-Positionen ist noch kein Bereich hinterlegt. Bitte wählen Sie,
+              in welchen Teil der Vorkalkulation die Stunden gehören.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="space-y-3 max-h-72 overflow-y-auto">
+            {positionen.filter(p => offeneBereiche && p.id in offeneBereiche).map(p => (
+              <div key={p.id} className="space-y-1">
+                <div className="text-xs font-medium">
+                  {p.position}. {p.bezeichnung}
+                  <span className="text-muted-foreground font-normal"> · {p.menge} {p.einheit}</span>
+                </div>
+                <Select
+                  value={offeneBereiche?.[p.id] ?? ""}
+                  onValueChange={v => setOffeneBereiche(o => ({ ...o, [p.id]: v }))}
+                >
+                  <SelectTrigger className="h-8 text-xs" data-testid={`select-nachfrage-${p.id}`}>
+                    <SelectValue placeholder="Bereich wählen…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LOHN_BEREICHE.map(b => (
+                      <SelectItem key={b.key} value={b.key}>{b.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ))}
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={importLaeuft}>Abbrechen</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={importLaeuft || Object.values(offeneBereiche ?? {}).some(v => !v)}
+              onClick={e => { e.preventDefault(); bereicheUebernehmen(); }}
+              data-testid="btn-bereiche-uebernehmen"
+            >
+              {importLaeuft ? "Wird übertragen…" : "Speichern & übernehmen"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Lösch-Dialog */}
       <AlertDialog open={!!loescheId} onOpenChange={o => !o && setLoescheId(null)}>
