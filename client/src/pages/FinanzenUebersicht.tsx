@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/tooltip";
 import { AlertCircle, ArrowRight, CheckCircle2, Clock, PiggyBank, Search, TrendingUp, Wallet } from "lucide-react";
 import { formatCHF, formatDate } from "@/lib/format";
-import type { FinanzenUebersichtZeile } from "@shared/schema";
+import { finanzenSummen, type FinanzenUebersichtZeile } from "@shared/schema";
 
 function gewinnFarbe(wert: number) {
   return wert >= 0 ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400";
@@ -77,16 +77,16 @@ export default function FinanzenUebersicht() {
     );
   }, [data, search]);
 
-  // Ohne gestellte Rechnung ist der Umsatz unbekannt — solche Aufträge würden sonst
-  // ihre IST-Kosten als Verlust in die Summen einrechnen.
-  const abgerechnet = gefiltert.filter((z) => z.hat_rechnung);
-  const totalUmsatz = abgerechnet.reduce((s, z) => s + z.umsatz_netto, 0);
-  const totalKosten = abgerechnet.reduce((s, z) => s + z.kosten, 0);
-  const totalGewinn = abgerechnet.reduce((s, z) => s + z.reingewinn, 0);
-  const totalOffen = abgerechnet.reduce((s, z) => s + z.offen_netto, 0);
+  const {
+    anzahl: anzahlAbgerechnet,
+    umsatz: totalUmsatz,
+    kosten: totalKosten,
+    reingewinn: totalGewinn,
+    offen: totalOffen,
+    ohneKosten,
+    ohneRechnung,
+  } = finanzenSummen(gefiltert);
   const marge = totalUmsatz > 0 ? (totalGewinn / totalUmsatz) * 100 : null;
-  const ohneKosten = abgerechnet.filter((z) => !z.hat_kosten).length;
-  const ohneRechnung = gefiltert.length - abgerechnet.length;
 
   return (
     <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-6">
@@ -149,7 +149,7 @@ export default function FinanzenUebersicht() {
                 {marge === null ? "—" : `${marge.toFixed(1)} %`}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
-                {abgerechnet.length} von {gefiltert.length} abgeschlossenen Aufträgen abgerechnet
+                {anzahlAbgerechnet} von {gefiltert.length} abgeschlossenen Aufträgen abgerechnet
               </p>
             </Card>
           </div>

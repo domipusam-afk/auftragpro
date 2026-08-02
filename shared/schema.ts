@@ -72,6 +72,28 @@ export interface FinanzenUebersichtZeile {
   hat_kosten: boolean;
 }
 
+/**
+ * Summen über die Zeilen der Finanzen-Übersicht.
+ * Einzige Stelle, an der die Totals gebildet werden — die Dashboard-Kachel und die
+ * Seite Finanzen-Übersicht rechnen beide hiermit, damit sie nicht auseinanderlaufen.
+ */
+export function finanzenSummen(zeilen: FinanzenUebersichtZeile[]) {
+  // Ohne gestellte Rechnung ist der Umsatz unbekannt — solche Aufträge würden sonst
+  // ihre IST-Kosten als Verlust in die Summen einrechnen.
+  const abgerechnet = zeilen.filter((z) => z.hat_rechnung);
+  const summe = (feld: (z: FinanzenUebersichtZeile) => number) =>
+    Math.round(abgerechnet.reduce((s, z) => s + feld(z), 0) * 100) / 100;
+  return {
+    anzahl: abgerechnet.length,
+    umsatz: summe((z) => z.umsatz_netto),
+    kosten: summe((z) => z.kosten),
+    reingewinn: summe((z) => z.reingewinn),
+    offen: summe((z) => z.offen_netto),
+    ohneKosten: abgerechnet.filter((z) => !z.hat_kosten).length,
+    ohneRechnung: zeilen.length - abgerechnet.length,
+  };
+}
+
 export interface VerlaufEintrag {
   id: string;
   auftrag_id: string;

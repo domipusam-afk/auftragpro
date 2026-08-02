@@ -9,6 +9,7 @@ import bcrypt from "bcryptjs";
 import * as OTPAuth from "otpauth";
 import QRCode from "qrcode";
 import { fileURLToPath } from "url";
+import { finanzenSummen, type FinanzenUebersichtZeile } from "../shared/schema";
 
 // Robust logo path resolution: works in both ESM (dev) and CJS (production build)
 function getLogoPath(): string {
@@ -105,6 +106,106 @@ function stundensatzFuer(saetze: any[], ort?: string | null, maschinenpark?: str
     : undefined;
   const basis = spezifisch || saetze.find((s: any) => s.ort === "Werkstatt" && !s.maschinenpark);
   return basis ? ((basis.grundsatz || 0) + (basis.satz || 0)) : 0;
+}
+
+// ─── Finanzen-Übersicht: Umsatz & Reingewinn je abgeschlossenem Auftrag ─────────
+// Einzige Berechnung dieser Zahlen. GET /api/finanzen/uebersicht und die
+// Reingewinn-Kachel des Dashboards lesen beide von hier, damit die zwei Ansichten
+// nicht auseinanderlaufen können.
+// Der Umsatz kommt direkt aus der Tabelle "rechnungen" (rechnungen.betrag ist netto,
+// das PDF schlägt die MWST erst auf). Bewusst NICHT aus auftraege.rechnungs_betrag:
+// dieses Spiegelfeld kann veraltet sein, während die Rechnung die Wahrheit ist.
+async function finanzenUebersichtZeilen(): Promise<FinanzenUebersichtZeile[]> {
+  const { data: auftraege, error } = await supabase
+    .from("auftraege")
+    .select("id, nr, titel, kunde, waehrung, end_datum, erstellt")
+    .eq("status", "abgeschlossen");
+  if (error) throw error;
+
+  const ids = (auftraege || []).map((a: any) => a.id);
+  if (ids.length === 0) return [];
+
+  const antworten = await Promise.all([
+    supabase.from("stundensaetze").select("*"),
+    supabase.from("nachkalkulation_stunden").select("auftrag_id, total_chf").in("auftrag_id", ids).eq("quelle", "manuell"),
+    supabase.from("zeiteintraege").select("auftrag_id, dauer_minuten, ort, maschinenpark").in("auftrag_id", ids),
+    supabase.from("nachkalkulation_material").select("auftrag_id, betrag_chf").in("auftrag_id", ids),
+    supabase.from("nachkalkulation_fremdleistungen").select("auftrag_id, betrag_chf").in("auftrag_id", ids),
+    supabase.from("nachkalkulation_soek").select("auftrag_id, total_chf").in("auftrag_id", ids),
+    supabase.from("rechnungen").select("auftrag_id, betrag, bezahlt_am").in("auftrag_id", ids),
+  ]);
+  // Eine fehlgeschlagene Teilabfrage darf nicht als "diese Kosten gibt es nicht"
+  // durchrutschen — sonst meldet die Seite stillschweigend einen zu hohen Gewinn.
+  const fehler = antworten.find((a) => a.error);
+  if (fehler?.error) throw fehler.error;
+  const [saetze, nkStunden, zeiteintraege, nkMaterial, nkFremd, nkSoek, rechnungen] = antworten;
+
+  const summieren = (rows: any[] | null, feld: string) => {
+    const map = new Map<string, number>();
+    for (const r of rows || []) {
+      map.set(r.auftrag_id, (map.get(r.auftrag_id) || 0) + (Number(r[feld]) || 0));
+    }
+    return map;
+  };
+
+  const lohnManuell = summieren(nkStunden.data, "total_chf");
+  const material = summieren(nkMaterial.data, "betrag_chf");
+  const fremd = summieren(nkFremd.data, "betrag_chf");
+  const soek = summieren(nkSoek.data, "total_chf");
+
+  const lohnZeiterfassung = new Map<string, number>();
+  for (const ze of zeiteintraege.data || []) {
+    const satz = stundensatzFuer(saetze.data || [], ze.ort, ze.maschinenpark);
+    const betrag = ((ze.dauer_minuten || 0) / 60) * satz;
+    lohnZeiterfassung.set(ze.auftrag_id, (lohnZeiterfassung.get(ze.auftrag_id) || 0) + betrag);
+  }
+
+  // rechnungen.betrag ist bereits netto — keine MWST-Rueckrechnung noetig.
+  const rechnungenJeAuftrag = new Map<string, any[]>();
+  for (const r of rechnungen.data || []) {
+    const liste = rechnungenJeAuftrag.get(r.auftrag_id) || [];
+    liste.push(r);
+    rechnungenJeAuftrag.set(r.auftrag_id, liste);
+  }
+
+  const sortSchluessel = (a: any) => String(a.end_datum || a.erstellt || "");
+  return [...(auftraege || [])]
+    .sort((a: any, b: any) => sortSchluessel(b).localeCompare(sortSchluessel(a)))
+    .map((a: any) => {
+      const kosten =
+        (lohnManuell.get(a.id) || 0) +
+        (lohnZeiterfassung.get(a.id) || 0) +
+        (material.get(a.id) || 0) +
+        (fremd.get(a.id) || 0) +
+        (soek.get(a.id) || 0);
+      const rs = rechnungenJeAuftrag.get(a.id) || [];
+      const summe = (liste: any[]) => liste.reduce((s, r) => s + (Number(r.betrag) || 0), 0);
+      const bezahlteRechnungen = rs.filter((r) => r.bezahlt_am);
+      const umsatzNetto = summe(rs);
+      const bezahltNetto = summe(bezahlteRechnungen);
+      // Letztes Zahlungsdatum, damit die UI "Bezahlt am ..." anzeigen kann.
+      const bezahltAm = bezahlteRechnungen
+        .map((r) => String(r.bezahlt_am))
+        .sort()
+        .pop() || null;
+      return {
+        id: a.id,
+        nr: a.nr,
+        titel: a.titel,
+        kunde: a.kunde,
+        waehrung: a.waehrung || "CHF",
+        umsatz_netto: umsatzNetto,
+        bezahlt_netto: bezahltNetto,
+        offen_netto: umsatzNetto - bezahltNetto,
+        bezahlt_am: bezahltAm,
+        voll_bezahlt: rs.length > 0 && bezahlteRechnungen.length === rs.length,
+        anzahl_rechnungen: rs.length,
+        kosten,
+        reingewinn: umsatzNetto - kosten,
+        hat_rechnung: rs.length > 0,
+        hat_kosten: kosten > 0,
+      };
+    });
 }
 
 function asError(e: unknown): string {
@@ -515,103 +616,12 @@ export async function registerRoutes(
 
   // ============= DASHBOARD REINGEWINN =============
   // GET /api/dashboard/reingewinn
-  // Reingewinn = nur abgeschlossene Aufträge MIT bezahlter Rechnung
-  // Formel: Summe(bezahlte Rechnungen Netto) − Summe(NK-Ist-Kosten)
+  // Aggregat der Finanzen-Übersicht — dieselben Zeilen und dieselbe Summierung wie
+  // GET /api/finanzen/uebersicht, damit die Kachel und die Seite nie abweichen.
   app.get("/api/dashboard/reingewinn", async (_req, res) => {
     try {
-      // Nur abgeschlossene Aufträge
-      const { data: auftraege } = await supabase
-        .from("auftraege")
-        .select("id, nr, titel, status")
-        .eq("status", "abgeschlossen");
-      if (!auftraege || auftraege.length === 0)
-        return res.json({ reingewinn: 0, umsatz: 0, kosten: 0, anzahl: 0, detail: [] });
-
-      // Stundensaetze laden (einmalig für NK-Stunden)
-      const { data: saetzeRaw } = await supabase
-        .from("saetze")
-        .select("ort, maschinenpark, satz");
-      const saetze = saetzeRaw || [];
-
-      function getSatz(ort: string, maschine: string | null): number {
-        const m = (saetze as any[]).find((s: any) =>
-          ort === "Werkstatt"
-            ? s.ort === "Werkstatt" && s.maschinenpark === maschine
-            : s.ort === ort && !s.maschinenpark
-        );
-        return m ? Number(m.satz) : 0;
-      }
-
-      const detail: any[] = [];
-      let reingewinnTotal = 0;
-      let umsatzTotal = 0;
-      let kostenTotal = 0;
-
-      for (const a of auftraege) {
-        const id = a.id;
-
-        // Bezahlte Rechnungen für diesen Auftrag
-        const { data: rechnungen } = await supabase
-          .from("rechnungen")
-          .select("betrag, bezahlt_am")
-          .eq("auftrag_id", id)
-          .not("bezahlt_am", "is", null);
-
-        // Kein Umsatz = überspringen (noch nicht bezahlt)
-        const bezahlteRechnungen = (rechnungen || []) as any[];
-        if (bezahlteRechnungen.length === 0) continue;
-
-        // Netto = Brutto / 1.081 (MwSt 8.1% herausrechnen)
-        const mwstFaktor = 1.081;
-        const rechnungBrutto = bezahlteRechnungen.reduce((s: number, r: any) => s + (Number(r.betrag) || 0), 0);
-        const rechnungNetto = Math.round((rechnungBrutto / mwstFaktor) * 100) / 100;
-
-        // NK-Ist-Kosten laden
-        const [zeiteintraege, nakaMat, nakaFremd, nakaSoek] = await Promise.all([
-          supabase.from("zeiteintraege").select("ort,maschinenpark,dauer_minuten").eq("auftrag_id", id),
-          supabase.from("nachkalkulation_material").select("betrag_chf").eq("auftrag_id", id),
-          supabase.from("nachkalkulation_fremdleistungen").select("betrag_chf").eq("auftrag_id", id),
-          supabase.from("nachkalkulation_soek").select("betrag_chf").eq("auftrag_id", id),
-        ]);
-
-        const ortMap: Record<string, { minuten: number; satz: number }> = {};
-        for (const z of ((zeiteintraege.data || []) as any[])) {
-          const ort = z.ort || "Unbekannt";
-          const masch = z.maschinenpark || null;
-          const key = masch ? `${ort}::${masch}` : ort;
-          if (!ortMap[key]) ortMap[key] = { minuten: 0, satz: getSatz(ort, masch) };
-          ortMap[key].minuten += Number(z.dauer_minuten) || 0;
-        }
-        const istSt = Object.values(ortMap).reduce((s, v) => s + (v.minuten / 60) * v.satz, 0);
-        const istMat = ((nakaMat.data || []) as any[]).reduce((s: number, r: any) => s + Number(r.betrag_chf), 0);
-        const istFr = ((nakaFremd.data || []) as any[]).reduce((s: number, r: any) => s + Number(r.betrag_chf), 0);
-        const istSo = ((nakaSoek.data || []) as any[]).reduce((s: number, r: any) => s + Number(r.betrag_chf), 0);
-        const istGesamt = Math.round((istSt + istMat + istFr + istSo) * 100) / 100;
-
-        const gewinn = Math.round((rechnungNetto - istGesamt) * 100) / 100;
-        reingewinnTotal += gewinn;
-        umsatzTotal += rechnungNetto;
-        kostenTotal += istGesamt;
-
-        detail.push({
-          id,
-          nr: a.nr,
-          titel: a.titel,
-          status: a.status,
-          rechnung_netto: rechnungNetto,
-          rechnung_brutto: Math.round(rechnungBrutto * 100) / 100,
-          ist_kosten: istGesamt,
-          gewinn,
-        });
-      }
-
-      res.json({
-        reingewinn: Math.round(reingewinnTotal * 100) / 100,
-        umsatz: Math.round(umsatzTotal * 100) / 100,
-        kosten: Math.round(kostenTotal * 100) / 100,
-        anzahl: detail.length,
-        detail,
-      });
+      const { anzahl, umsatz, kosten, reingewinn } = finanzenSummen(await finanzenUebersichtZeilen());
+      res.json({ reingewinn, umsatz, kosten, anzahl });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
@@ -5447,99 +5457,9 @@ export async function registerRoutes(
 
   // ═══ END KALKULATION V6 ═══════════════════════════════════════════
 
-  // ─── Finanzen-Übersicht: Umsatz & Reingewinn je abgeschlossenem Auftrag ───────
-  // Der Umsatz kommt direkt aus der Tabelle "rechnungen" (rechnungen.betrag ist netto,
-  // das PDF schlaegt die MWST erst auf). Bewusst NICHT aus auftraege.rechnungs_betrag:
-  // dieses Spiegelfeld kann veraltet sein, waehrend die Rechnung die Wahrheit ist.
   app.get("/api/finanzen/uebersicht", async (_req, res) => {
     try {
-      const { data: auftraege, error } = await supabase
-        .from("auftraege")
-        .select("id, nr, titel, kunde, waehrung, end_datum, erstellt")
-        .eq("status", "abgeschlossen");
-      if (error) throw error;
-
-      const ids = (auftraege || []).map((a: any) => a.id);
-      if (ids.length === 0) return res.json([]);
-
-      const [saetze, nkStunden, zeiteintraege, nkMaterial, nkFremd, nkSoek, rechnungen] = await Promise.all([
-        supabase.from("stundensaetze").select("*"),
-        supabase.from("nachkalkulation_stunden").select("auftrag_id, total_chf").in("auftrag_id", ids).eq("quelle", "manuell"),
-        supabase.from("zeiteintraege").select("auftrag_id, dauer_minuten, ort, maschinenpark").in("auftrag_id", ids),
-        supabase.from("nachkalkulation_material").select("auftrag_id, betrag_chf").in("auftrag_id", ids),
-        supabase.from("nachkalkulation_fremdleistungen").select("auftrag_id, betrag_chf").in("auftrag_id", ids),
-        supabase.from("nachkalkulation_soek").select("auftrag_id, total_chf").in("auftrag_id", ids),
-        supabase.from("rechnungen").select("auftrag_id, betrag, bezahlt_am").in("auftrag_id", ids),
-      ]);
-
-      const summieren = (rows: any[] | null, feld: string) => {
-        const map = new Map<string, number>();
-        for (const r of rows || []) {
-          map.set(r.auftrag_id, (map.get(r.auftrag_id) || 0) + (Number(r[feld]) || 0));
-        }
-        return map;
-      };
-
-      const lohnManuell = summieren(nkStunden.data, "total_chf");
-      const material = summieren(nkMaterial.data, "betrag_chf");
-      const fremd = summieren(nkFremd.data, "betrag_chf");
-      const soek = summieren(nkSoek.data, "total_chf");
-
-      const lohnZeiterfassung = new Map<string, number>();
-      for (const ze of zeiteintraege.data || []) {
-        const satz = stundensatzFuer(saetze.data || [], ze.ort, ze.maschinenpark);
-        const betrag = ((ze.dauer_minuten || 0) / 60) * satz;
-        lohnZeiterfassung.set(ze.auftrag_id, (lohnZeiterfassung.get(ze.auftrag_id) || 0) + betrag);
-      }
-
-      // rechnungen.betrag ist bereits netto — keine MWST-Rueckrechnung noetig.
-      const rechnungenJeAuftrag = new Map<string, any[]>();
-      for (const r of rechnungen.data || []) {
-        const liste = rechnungenJeAuftrag.get(r.auftrag_id) || [];
-        liste.push(r);
-        rechnungenJeAuftrag.set(r.auftrag_id, liste);
-      }
-
-      const sortSchluessel = (a: any) => String(a.end_datum || a.erstellt || "");
-      const result = [...(auftraege || [])]
-        .sort((a: any, b: any) => sortSchluessel(b).localeCompare(sortSchluessel(a)))
-        .map((a: any) => {
-          const kosten =
-            (lohnManuell.get(a.id) || 0) +
-            (lohnZeiterfassung.get(a.id) || 0) +
-            (material.get(a.id) || 0) +
-            (fremd.get(a.id) || 0) +
-            (soek.get(a.id) || 0);
-          const rs = rechnungenJeAuftrag.get(a.id) || [];
-          const summe = (liste: any[]) => liste.reduce((s, r) => s + (Number(r.betrag) || 0), 0);
-          const bezahlteRechnungen = rs.filter((r) => r.bezahlt_am);
-          const umsatzNetto = summe(rs);
-          const bezahltNetto = summe(bezahlteRechnungen);
-          // Letztes Zahlungsdatum, damit die UI "Bezahlt am ..." anzeigen kann.
-          const bezahltAm = bezahlteRechnungen
-            .map((r) => String(r.bezahlt_am))
-            .sort()
-            .pop() || null;
-          return {
-            id: a.id,
-            nr: a.nr,
-            titel: a.titel,
-            kunde: a.kunde,
-            waehrung: a.waehrung || "CHF",
-            umsatz_netto: umsatzNetto,
-            bezahlt_netto: bezahltNetto,
-            offen_netto: umsatzNetto - bezahltNetto,
-            bezahlt_am: bezahltAm,
-            voll_bezahlt: rs.length > 0 && bezahlteRechnungen.length === rs.length,
-            anzahl_rechnungen: rs.length,
-            kosten,
-            reingewinn: umsatzNetto - kosten,
-            hat_rechnung: rs.length > 0,
-            hat_kosten: kosten > 0,
-          };
-        });
-
-      res.json(result);
+      res.json(await finanzenUebersichtZeilen());
     } catch (e) {
       res.status(500).json({ message: asError(e) });
     }

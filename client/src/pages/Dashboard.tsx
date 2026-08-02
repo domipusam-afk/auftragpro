@@ -203,14 +203,13 @@ export default function Dashboard() {
     },
   });
 
-  // Reingewinn: nur abgeschlossene Aufträge mit bezahlter Rechnung
-  // Formel: Netto-Rechnungsbetrag (bezahlt) − NK-Ist-Kosten
+  // Reingewinn: Summe der Finanzen-Übersicht (abgeschlossene, verrechnete Aufträge).
+  // Formel: Rechnungsbetrag netto − NK-Ist-Kosten.
   const { data: reingewinnData, isLoading: reingewinnLoading } = useQuery<{
     reingewinn: number;
     umsatz: number;
     kosten: number;
     anzahl: number;
-    detail: any[];
   }>({
     queryKey: ["/api/dashboard/reingewinn"],
     queryFn: async () => {
@@ -424,7 +423,7 @@ export default function Dashboard() {
             icon={CheckSquare}
             tone="green"
           />
-          {/* Reingewinn: abgeschlossen + Rechnung bezahlt */}
+          {/* Reingewinn: abgeschlossen + Rechnung gestellt */}
           <div className="col-span-1">
             <Card className={cn(
               "p-3 md:p-5 bg-card h-full transition-all",
@@ -438,7 +437,7 @@ export default function Dashboard() {
                   ) : reingewinnAnzahl === 0 ? (
                     <>
                       <div className="text-base md:text-lg font-semibold mt-1 text-muted-foreground">— Keine Daten</div>
-                      <div className="text-xs text-muted-foreground mt-0.5">Noch kein Auftrag abgeschlossen &amp; bezahlt</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">Noch kein Auftrag abgeschlossen &amp; verrechnet</div>
                     </>
                   ) : (
                     <>
@@ -478,7 +477,7 @@ export default function Dashboard() {
                     <span className="tabular-nums text-red-500">−{formatCHF(reingewinnKosten)}</span>
                   </div>
                   <div className="text-[10px] text-muted-foreground/60 pt-0.5">
-                    {reingewinnAnzahl} Auftrag{reingewinnAnzahl !== 1 ? "äge" : ""} · abgeschlossen &amp; bezahlt
+                    {reingewinnAnzahl} Auftrag{reingewinnAnzahl !== 1 ? "äge" : ""} · abgeschlossen &amp; verrechnet
                   </div>
                 </div>
               )}
