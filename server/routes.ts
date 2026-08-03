@@ -9,7 +9,7 @@ import bcrypt from "bcryptjs";
 import * as OTPAuth from "otpauth";
 import QRCode from "qrcode";
 import { fileURLToPath } from "url";
-import { finanzenSummen, type FinanzenUebersichtZeile } from "../shared/schema";
+import { finanzenSummen, type FinanzenUebersichtZeile, berechneVorkalkulationsAngebotspreis } from "../shared/schema";
 
 // Robust logo path resolution: works in both ESM (dev) and CJS (production build)
 function getLogoPath(): string {
@@ -4677,7 +4677,7 @@ export async function registerRoutes(
         const { data: fremd = [] } = await supabase.from("vorkalkulation_fremdleistungen").select("*").eq("auftrag_id", id);
         const { data: soek = [] } = await supabase.from("vorkalkulation_soek").select("*").eq("auftrag_id", id);
         const { data: cfgRaw } = await supabase.from("vorkalkulation_config").select("*").eq("auftrag_id", id).maybeSingle();
-        const cfg = cfgRaw || { risiko_gewinn_prozent: 10, rabatt_prozent: 0, mwst_prozent: 8.1 };
+        const cfg = cfgRaw || { risiko_gewinn_prozent: 10, rabatt_prozent: 0, skonto_prozent: 0, mwst_prozent: 8.1 };
 
         // Totals
         const totalStunden = (stunden as any[]).reduce((s, r) => s + Number(r.soll_stunden) * Number(r.stundensatz), 0);
@@ -4686,12 +4686,23 @@ export async function registerRoutes(
         const totalFremd = (fremd as any[]).reduce((s, r) => s + Number(r.total_chf), 0);
         const totalSoek = (soek as any[]).reduce((s, r) => s + Number(r.total_chf), 0);
         const subtotal = totalStunden + totalMaterial + totalHilfsmat + totalFremd + totalSoek;
-        const risikoAmt = subtotal * (Number(cfg.risiko_gewinn_prozent) / 100);
-        const nettoVorRabatt = subtotal + risikoAmt;
-        const rabattAmt = nettoVorRabatt * (Number(cfg.rabatt_prozent) / 100);
-        const netto = nettoVorRabatt - rabattAmt;
-        const mwstAmt = netto * (Number(cfg.mwst_prozent) / 100);
-        const brutto = netto + mwstAmt;
+        // Einzige Berechnungsfunktion fuer die Vorkalkulations-Summe (Bug 2, final
+        // konsolidiert) — siehe shared/schema.ts. Vorher wurde hier der Rabatt
+        // faelschlicherweise ABGEZOGEN statt aufgeschlagen, und Skonto fehlte
+        // komplett — identischer Bug wie in den bereits entfernten Frontend-Stellen.
+        const vk = berechneVorkalkulationsAngebotspreis({
+          selbstkosten: subtotal,
+          risiko_gewinn_prozent: Number(cfg.risiko_gewinn_prozent),
+          rabatt_prozent: Number(cfg.rabatt_prozent),
+          skonto_prozent: Number((cfg as any).skonto_prozent) || 0,
+          mwst_prozent: Number(cfg.mwst_prozent),
+        });
+        const risikoAmt = vk.risikoGewinnBetrag;
+        const rabattAmt = vk.rabattBetrag;
+        const skontoAmt = vk.skontoBetrag;
+        const netto = vk.nettoAngebotspreis;
+        const mwstAmt = vk.mwstBetrag;
+        const brutto = vk.bruttoAngebotspreis;
 
         const fmt = (n: number) => `CHF ${n.toFixed(2)}`;
 
@@ -4883,9 +4894,12 @@ export async function registerRoutes(
         summaryRow("SOEK:", fmt(totalSoek), false);
         currentPageCtx!.ln(W - mR - 230, y + 8, W - mR, y + 8, 0.5, grey); y -= 5;
         summaryRow("Subtotal:", fmt(subtotal), true);
-        summaryRow(`Risiko / Gewinn (${cfg.risiko_gewinn_prozent}%):`, fmt(risikoAmt), false);
+        summaryRow(`Risiko / Gewinn (${cfg.risiko_gewinn_prozent}%):`, `+${fmt(risikoAmt)}`, false);
         if (Number(cfg.rabatt_prozent) > 0) {
-          summaryRow(`Rabatt (${cfg.rabatt_prozent}%):`, `-${fmt(rabattAmt)}`, false);
+          summaryRow(`Rabatt (${cfg.rabatt_prozent}%):`, `+${fmt(rabattAmt)}`, false);
+        }
+        if (Number((cfg as any).skonto_prozent) > 0) {
+          summaryRow(`Skonto (${(cfg as any).skonto_prozent}%):`, `+${fmt(skontoAmt)}`, false);
         }
         currentPageCtx!.ln(W - mR - 230, y + 8, W - mR, y + 8, 0.5, grey); y -= 5;
         summaryRow("Netto:", fmt(netto), false);
@@ -4927,7 +4941,7 @@ export async function registerRoutes(
         const { data: vkFremd = [] } = await supabase.from("vorkalkulation_fremdleistungen").select("*").eq("auftrag_id", id);
         const { data: vkSoek = [] } = await supabase.from("vorkalkulation_soek").select("*").eq("auftrag_id", id);
         const { data: cfgRaw2 } = await supabase.from("vorkalkulation_config").select("*").eq("auftrag_id", id).maybeSingle();
-        const cfg2 = cfgRaw2 || { risiko_gewinn_prozent: 10, rabatt_prozent: 0, mwst_prozent: 8.1 };
+        const cfg2 = cfgRaw2 || { risiko_gewinn_prozent: 10, rabatt_prozent: 0, skonto_prozent: 0, mwst_prozent: 8.1 };
 
         // Load NAKA data (Ist)
         const { data: zeiteintraege = [] } = await supabase.from("zeiteintraege").select("*").eq("auftrag_id", id);
@@ -4944,12 +4958,23 @@ export async function registerRoutes(
         const vkFremdCHF = (vkFremd as any[]).reduce((s, r) => s + Number(r.total_chf), 0);
         const vkSoekCHF = (vkSoek as any[]).reduce((s, r) => s + Number(r.total_chf), 0);
         const vkSubtotal = vkStundenCHF + vkMaterialCHF + vkFremdCHF + vkSoekCHF;
-        const vkRisiko = vkSubtotal * (Number(cfg2.risiko_gewinn_prozent) / 100);
-        const vkNorR = vkSubtotal + vkRisiko;
-        const vkRabatt = vkNorR * (Number(cfg2.rabatt_prozent) / 100);
-        const vkNetto = vkNorR - vkRabatt;
-        const vkMwst = vkNetto * (Number(cfg2.mwst_prozent) / 100);
-        const vkBrutto = vkNetto + vkMwst;
+        // Einzige Berechnungsfunktion fuer die Vorkalkulations-Summe (Bug 2, final
+        // konsolidiert) — siehe shared/schema.ts. Vorher wurde hier der Rabatt
+        // faelschlicherweise ABGEZOGEN statt aufgeschlagen, und Skonto fehlte
+        // komplett.
+        const vkCalc = berechneVorkalkulationsAngebotspreis({
+          selbstkosten: vkSubtotal,
+          risiko_gewinn_prozent: Number(cfg2.risiko_gewinn_prozent),
+          rabatt_prozent: Number(cfg2.rabatt_prozent),
+          skonto_prozent: Number((cfg2 as any).skonto_prozent) || 0,
+          mwst_prozent: Number(cfg2.mwst_prozent),
+        });
+        const vkRisiko = vkCalc.risikoGewinnBetrag;
+        const vkNorR = vkCalc.nettoOhneRabatt;
+        const vkRabatt = vkCalc.rabattBetrag;
+        const vkNetto = vkCalc.nettoAngebotspreis;
+        const vkMwst = vkCalc.mwstBetrag;
+        const vkBrutto = vkCalc.bruttoAngebotspreis;
 
         // IST Totals
         // Group zeiteintraege by ort/maschinenpark

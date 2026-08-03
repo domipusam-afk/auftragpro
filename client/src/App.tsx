@@ -26,7 +26,6 @@ import MwstAuswertung from "@/pages/MwstAuswertung";
 import FinanzenUebersicht from "@/pages/FinanzenUebersicht";
 import Vorkalkulation from "@/pages/Vorkalkulation";
 import Eingangsrechnungen from "@/pages/Eingangsrechnungen";
-import Nachkalkulation from "@/pages/Nachkalkulation";
 import Mitarbeiterakte from "@/pages/Mitarbeiterakte";
 import Termine from "@/pages/Termine";
 import Kalender from "@/pages/Kalender";

@@ -94,6 +94,76 @@ export function finanzenSummen(zeilen: FinanzenUebersichtZeile[]) {
   };
 }
 
+/**
+ * Eingabe für die Vorkalkulations-Angebotspreis-Berechnung.
+ * selbstkosten muss bereits Hauptmaterial + Hilfsmaterial + Fremdleistungen +
+ * SOEK + Lohn/Stunden enthalten.
+ */
+export interface VorkalkulationInput {
+  selbstkosten: number;
+  risiko_gewinn_prozent: number;
+  rabatt_prozent: number;
+  skonto_prozent: number;
+  mwst_prozent?: number;
+}
+
+export interface VorkalkulationErgebnis {
+  selbstkosten: number;
+  risikoGewinnBetrag: number;
+  nettoOhneRabatt: number;
+  rabattBetrag: number;
+  nettoNachRabatt: number;
+  skontoBetrag: number;
+  /** Netto-Angebotspreis exkl. MWST — die massgebende "Vorkalkulations-Summe". */
+  nettoAngebotspreis: number;
+  mwstBetrag: number;
+  /** Brutto-Angebotspreis inkl. MWST (nur berechnet, wenn mwst_prozent übergeben wurde). */
+  bruttoAngebotspreis: number;
+}
+
+/**
+ * EINZIGE Berechnungsfunktion für die Vorkalkulations-Summe (Netto-Angebotspreis)
+ * im gesamten Repository (Bug 2, finale Konsolidierung).
+ *
+ * Firmen-Kalkulationslogik (Sheet 10, siehe VorkalkulationDetail.tsx):
+ *   1) Selbstkosten (inkl. Hilfsmaterial) + Risiko/Gewinn-Zuschlag
+ *   2) + Rabatt-Prozentsatz als AUFSCHLAG (nicht Abzug!)
+ *   3) + Skonto-Prozentsatz als AUFSCHLAG (nicht Abzug!)
+ *   4) + MWST → Bruttopreis
+ *
+ * Frontend (VorkalkulationDetail.tsx, NachkalkulationDetail.tsx) und Backend
+ * (server/routes.ts, PDF-Erzeugung) rufen ausschliesslich diese Funktion auf,
+ * damit es keine zweite, potenziell abweichende Formel mehr geben kann.
+ */
+export function berechneVorkalkulationsAngebotspreis(input: VorkalkulationInput): VorkalkulationErgebnis {
+  const selbstkosten = Number(input.selbstkosten) || 0;
+  const risiko = (Number(input.risiko_gewinn_prozent) || 0) / 100;
+  const rabatt = (Number(input.rabatt_prozent) || 0) / 100;
+  const skonto = (Number(input.skonto_prozent) || 0) / 100;
+  const mwst = (Number(input.mwst_prozent) || 0) / 100;
+
+  const risikoGewinnBetrag = selbstkosten * risiko;
+  const nettoOhneRabatt = selbstkosten + risikoGewinnBetrag;
+  const rabattBetrag = nettoOhneRabatt * rabatt;
+  const nettoNachRabatt = nettoOhneRabatt + rabattBetrag;
+  const skontoBetrag = nettoNachRabatt * skonto;
+  const nettoAngebotspreis = nettoNachRabatt + skontoBetrag;
+  const mwstBetrag = nettoAngebotspreis * mwst;
+  const bruttoAngebotspreis = nettoAngebotspreis + mwstBetrag;
+
+  return {
+    selbstkosten,
+    risikoGewinnBetrag,
+    nettoOhneRabatt,
+    rabattBetrag,
+    nettoNachRabatt,
+    skontoBetrag,
+    nettoAngebotspreis,
+    mwstBetrag,
+    bruttoAngebotspreis,
+  };
+}
+
 export interface VerlaufEintrag {
   id: string;
   auftrag_id: string;

@@ -16,6 +16,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useConfirm } from "@/hooks/use-confirm";
 import { downloadPdf } from "@/lib/pdf";
+import { berechneVorkalkulationsAngebotspreis } from "@shared/schema";
 
 const openPdfInTab = (url: string, filename = "dokument.pdf") => { downloadPdf(url, filename); }; // kept for compat
 
@@ -630,14 +631,19 @@ function SollIstVergleich({ auftragId }: { auftragId: string }) {
   const sollFremd = vkFremd.reduce((s, r) => s + num(r.total_chf), 0);
   const sollSoek = vkSoek.reduce((s, r) => s + num(r.total_chf), 0);
   const sollSelbstkosten = sollLohn + sollMat + sollFremd + sollSoek;
-  const rg = num(vkCfg?.risiko_gewinn_prozent) / 100 || 0.1;
-  const rb = num(vkCfg?.rabatt_prozent) / 100;
-  const sk = num(vkCfg?.skonto_prozent) / 100;
-  const mwst = num(vkCfg?.mwst_prozent) / 100 || 0.081;
-  // Rabatt/Skonto werden gemäss Firmen-Kalkulationslogik (Sheet 10, siehe VorkalkulationDetail)
-  // AUFGESCHLAGEN, nicht abgezogen.
-  const sollNetto = sollSelbstkosten * (1 + rg) * (1 + rb) * (1 + sk);
-  const sollBrutto = sollNetto * (1 + mwst);
+  // Einzige Berechnungsfunktion fuer die Vorkalkulations-Summe (Bug 2, final
+  // konsolidiert) — siehe shared/schema.ts. Rabatt/Skonto werden gemaess
+  // Firmen-Kalkulationslogik (Sheet 10, siehe VorkalkulationDetail) als
+  // AUFSCHLAG behandelt, nicht abgezogen.
+  const vkSoll = berechneVorkalkulationsAngebotspreis({
+    selbstkosten: sollSelbstkosten,
+    risiko_gewinn_prozent: num(vkCfg?.risiko_gewinn_prozent) || 10,
+    rabatt_prozent: num(vkCfg?.rabatt_prozent),
+    skonto_prozent: num(vkCfg?.skonto_prozent),
+    mwst_prozent: num(vkCfg?.mwst_prozent) || 8.1,
+  });
+  const sollNetto = vkSoll.nettoAngebotspreis;
+  const sollBrutto = vkSoll.bruttoAngebotspreis;
 
   // IST
   const istStunden = nkStunden.reduce((s, r) => s + num(r.ist_stunden), 0);

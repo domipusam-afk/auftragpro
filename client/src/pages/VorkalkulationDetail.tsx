@@ -19,6 +19,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useConfirm } from "@/hooks/use-confirm";
 import { downloadPdf } from "@/lib/pdf";
+import { berechneVorkalkulationsAngebotspreis } from "@shared/schema";
 
 const openPdfInTab = (url: string, filename = "dokument.pdf") => { downloadPdf(url, filename); };
 
@@ -1046,10 +1047,20 @@ function OffertpreisBlock({ auftragId, saetze }: { auftragId: string; saetze: St
   const skonto = num(merged.skonto_prozent) / 100;
   const mwst = num(merged.mwst_prozent) / 100;
 
-  const nettoOhneRabatt = selbstkosten * (1 + risikoGewinn);
-  const nettoNachRabatt = nettoOhneRabatt * (1 + rabatt);
-  const nettoNachSkonto = nettoNachRabatt * (1 + skonto);
-  const bruttoTotal = nettoNachSkonto * (1 + mwst);
+  // Einzige Berechnungsfunktion fuer die Vorkalkulations-Summe (Bug 2, final
+  // konsolidiert) — siehe shared/schema.ts. Frontend und Backend rufen exakt
+  // dieselbe Funktion auf, damit es keine abweichende Formel mehr geben kann.
+  const vk = berechneVorkalkulationsAngebotspreis({
+    selbstkosten,
+    risiko_gewinn_prozent: num(merged.risiko_gewinn_prozent),
+    rabatt_prozent: num(merged.rabatt_prozent),
+    skonto_prozent: num(merged.skonto_prozent),
+    mwst_prozent: num(merged.mwst_prozent),
+  });
+  const nettoOhneRabatt = vk.nettoOhneRabatt;
+  const nettoNachRabatt = vk.nettoNachRabatt;
+  const nettoNachSkonto = vk.nettoAngebotspreis;
+  const bruttoTotal = vk.bruttoAngebotspreis;
 
   // Kennzahlen (Sheet 10)
   const gesM2 = num(merged.gesamt_m2);
@@ -1106,12 +1117,12 @@ function OffertpreisBlock({ auftragId, saetze }: { auftragId: string; saetze: St
         </div>
         <div className="space-y-1 border-t pt-3">
           <Row label="Selbstkosten" value={chf(selbstkosten)} />
-          <Row label={`+ Risiko/Gewinn ${merged.risiko_gewinn_prozent ?? 10}%`} value={chf(selbstkosten * risikoGewinn)} />
+          <Row label={`+ Risiko/Gewinn ${merged.risiko_gewinn_prozent ?? 10}%`} value={chf(vk.risikoGewinnBetrag)} />
           <Row label="= Netto exkl. Rabatt" value={chf(nettoOhneRabatt)} />
-          {rabatt > 0 && <Row label={`+ Rabatt ${merged.rabatt_prozent}%`} value={`+ ${chf(nettoOhneRabatt * rabatt)}`} />}
-          {skonto > 0 && <Row label={`+ Skonto ${merged.skonto_prozent}%`} value={`+ ${chf(nettoNachRabatt * skonto)}`} />}
+          {rabatt > 0 && <Row label={`+ Rabatt ${merged.rabatt_prozent}%`} value={`+ ${chf(vk.rabattBetrag)}`} />}
+          {skonto > 0 && <Row label={`+ Skonto ${merged.skonto_prozent}%`} value={`+ ${chf(vk.skontoBetrag)}`} />}
           <Row label="= Netto exkl. MWST" value={chf(nettoNachSkonto)} />
-          <Row label={`+ MWST ${merged.mwst_prozent ?? 8.1}%`} value={chf(nettoNachSkonto * mwst)} />
+          <Row label={`+ MWST ${merged.mwst_prozent ?? 8.1}%`} value={chf(vk.mwstBetrag)} />
           <Separator />
           <div className="flex justify-between py-2 text-base font-bold">
             <span>Bruttooffertpreis</span>
