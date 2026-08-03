@@ -1168,6 +1168,7 @@ export async function registerRoutes(
     ansprechpersonManuell?: string;
     kundenNr?: string;
     anrede?: string;
+    skontoText?: string;
   }, vorlageOverride?: any): Promise<string> {
     // Vorlage aus DB laden (mit Retry + Logo-Fallback aus Offerte-Vorlage)
     // vorlageOverride: wird z.B. von der Live-Vorschau genutzt, damit dort
@@ -1216,7 +1217,24 @@ export async function registerRoutes(
     const sloganOffX = v.slogan_offset_x != null ? Number(v.slogan_offset_x) : logoOffX;
     const einl       = (v.einleitung !== undefined && v.einleitung !== null) ? v.einleitung : (data.einleitung || "");
     const schl       = (v.schluss !== undefined && v.schluss !== null) ? v.schluss : (data.schluss || "");
-    const fusstext   = v.fusstext || "";
+    // Bug-Fix: Skonto-/Zahlungstext im Fusstext ist in der DB-Vorlage statisch hinterlegt
+    // (mit unausgefuellten Platzhaltern "CHF X"/"CHF XX") und wurde bisher unveraendert
+    // auf jeder Rechnung angezeigt, unabhaengig davon, ob fuer den Auftrag ueberhaupt ein
+    // Skonto konfiguriert ist. Wenn der Aufrufer (Rechnungs-PDF-Route) einen dynamisch
+    // berechneten skontoText mitgibt, ersetzt dieser die erste Zeile/den ersten Absatz des
+    // gespeicherten Fusstexts (die Zahlungsbedingungen), der Rest (Mahnung, Reklamationen
+    // etc.) bleibt unveraendert erhalten.
+    let fusstext   = v.fusstext || "";
+    if (data.skontoText) {
+      // Erster Absatz (bis zur ersten Leerzeile) = Zahlungsbedingungen-Satz, wird ersetzt.
+      const teile = fusstext.split(/\n\s*\n/);
+      if (teile.length > 0 && /zahlbar|skonto|abzug/i.test(teile[0])) {
+        teile[0] = data.skontoText;
+        fusstext = teile.join("\n\n");
+      } else {
+        fusstext = fusstext ? `${data.skontoText}\n\n${fusstext}` : data.skontoText;
+      }
+    }
     const showContact= v.show_contact !== false;
     const showPageNum= v.show_page_num !== false;
     const wmUrl      = v.watermark_data_url || null;
@@ -1953,6 +1971,37 @@ export async function registerRoutes(
     return Buffer.from(await doc.save());
   }
 
+  // Bug-Fix: Skonto-Text fuer Rechnungs-PDF dynamisch berechnen (statt statischer
+  // Platzhaltertext in der PDF-Vorlage). Liest Skontosatz (%) aus der
+  // vorkalkulation_config des zugehoerigen Auftrags und berechnet den Skontobetrag
+  // sowie den bei fristgerechter Zahlung faelligen Betrag direkt aus dem tatsaechlichen
+  // Rechnungsbruttobetrag (aus der rechnungen-Tabelle / den PDF-Positionen berechnet,
+  // NICHT aus einem Spiegelfeld). Regeln:
+  //   - Skontosatz > 0  -> NUR die Skonto-Zeile mit ausgefuellten Werten anzeigen.
+  //   - Skontosatz = 0 / nicht konfiguriert -> NUR "ohne Abzug"-Zeile anzeigen.
+  //   - Zahlungsfrist Default 30 Tage, Skontofrist Default 10 Tage (sofern nicht
+  //     anderweitig konfiguriert; es existieren aktuell keine eigenen DB-Spalten dafuer).
+  async function buildSkontoText(auftragId: string | null | undefined, bruttoBetrag: number): Promise<string> {
+    const ZAHLUNGSFRIST_TAGE_DEFAULT = 30;
+    const SKONTOFRIST_TAGE_DEFAULT = 10;
+    let skontoProzent = 0;
+    if (auftragId) {
+      const { data: vk } = await supabase
+        .from("vorkalkulation_config")
+        .select("skonto_prozent")
+        .eq("auftrag_id", auftragId)
+        .maybeSingle();
+      skontoProzent = Number(vk?.skonto_prozent) || 0;
+    }
+    if (skontoProzent > 0) {
+      const skontoBetrag = Math.round(bruttoBetrag * (skontoProzent / 100) * 100) / 100;
+      const zahlbarBetrag = Math.round((bruttoBetrag - skontoBetrag) * 100) / 100;
+      const skontoProzentStr = Number.isInteger(skontoProzent) ? String(skontoProzent) : skontoProzent.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+      return `Zahlbar innert ${ZAHLUNGSFRIST_TAGE_DEFAULT} Tagen netto. Bei Zahlung innert ${SKONTOFRIST_TAGE_DEFAULT} Tagen gewähren wir ${skontoProzentStr}% Skonto (CHF ${skontoBetrag.toFixed(2)}), zahlbar CHF ${zahlbarBetrag.toFixed(2)}.`;
+    }
+    return `Zahlbar innert ${ZAHLUNGSFRIST_TAGE_DEFAULT} Tagen ohne Abzug.`;
+  }
+
   // Swiss QR-Bill Inline-Block — gemeinsam genutzt von echter Rechnungserzeugung UND Live-Vorschau,
   // damit beide exakt dasselbe Ergebnis produzieren.
   async function buildQrInlineBlock(params: {
@@ -2148,6 +2197,10 @@ export async function registerRoutes(
         ? new Date(rechnung.faellig_datum).toLocaleDateString("de-CH", { day:"2-digit", month:"long", year:"numeric" })
         : undefined;
 
+      // Skonto-Text dynamisch berechnen (Bug-Fix): liest Skontosatz aus vorkalkulation_config
+      // des Auftrags und berechnet Skontobetrag/Zahlbetrag aus dem tatsaechlichen Bruttobetrag.
+      const skontoText = await buildSkontoText(id, totalInkl);
+
       // QR-Zahlschein (Schweizer Standard) — gemeinsame Hilfsfunktion (auch von Live-Vorschau genutzt)
       const rechnungsNrFuerQr = rechnung.nr || rid.substring(0, 8);
       const qrInlineBlock = await buildQrInlineBlock({
@@ -2185,6 +2238,7 @@ export async function registerRoutes(
         kundenNr: await getKundenNr(auftrag?.kunde || ""),
         anrede: await getKundenAnrede(auftrag?.kunde || ""),
         extraHtmlFullWidth: qrInlineBlock,
+        skontoText,
       });
 
       const pdfBuf = await renderRechnungPdfFromHtml(html);
