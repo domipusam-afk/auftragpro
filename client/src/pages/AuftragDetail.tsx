@@ -454,6 +454,7 @@ function RechnungenTab({
   const [faellig, setFaellig] = useState("");
   const [notiz, setNotiz] = useState("");
   const { toast } = useToast();
+  const { confirm: confirmAction, ConfirmDialog: RechnungConfirmDialog } = useConfirm();
 
   const { data: rechnungen = [] } = useQuery<Rechnung[]>({
     queryKey: ["/api/auftraege", id, "rechnungen"],
@@ -763,6 +764,7 @@ function RechnungenTab({
           </div>
         )}
       </div>
+      <RechnungConfirmDialog />
     </div>
   );
 }
@@ -778,6 +780,7 @@ function OffertenTab({ id, auftrag, vorlage, onVorlageUebernommen }: {
   onVorlageUebernommen?: () => void;
 }) {
   const { toast } = useToast();
+  const { confirm: confirmAction, ConfirmDialog: OfferteConfirmDialog } = useConfirm();
   const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
 
   // Form state
@@ -1268,6 +1271,7 @@ function OffertenTab({ id, auftrag, vorlage, onVorlageUebernommen }: {
           })}
         </div>
       )}
+      <OfferteConfirmDialog />
     </div>
   );
 }
@@ -1929,6 +1933,7 @@ function GarantienTab({ id, auftrag }: { id: string; auftrag: any }) {
 // ─── Liefertermine Tab ───────────────────────────────────────────────────────
 function LiefertermineTab({ id }: { id: string }) {
   const { toast } = useToast();
+  const { confirm: confirmAction, ConfirmDialog: LieferConfirmDialog } = useConfirm();
   const [form, setForm] = useState({ bezeichnung: "", lieferant: "", erwartet_am: "", notiz: "" });
   const [adding, setAdding] = useState(false);
 
@@ -2024,6 +2029,7 @@ function LiefertermineTab({ id }: { id: string }) {
           )}
         </>
       )}
+      <LieferConfirmDialog />
     </div>
   );
 }
@@ -2477,7 +2483,7 @@ export default function AuftragDetail({ id }: Props) {
               className="bg-background/80 backdrop-blur-sm border border-border"
               onClick={async () => {
                 try {
-                  const r = await apiRequest("POST", `/api/auftraege/${id}/lieferschein-pdf`, { ansprechpersonIntern: auftrag.verantwortlicher || "" });
+                  const r = await apiRequest("POST", `/api/auftraege/${id}/lieferschein-pdf`, { ansprechpersonIntern: data.verantwortlicher || "" });
                   const blob = await r.blob();
                   const url = URL.createObjectURL(blob);
                   openPdfInTab(url, `Lieferschein_${data.nr}.pdf`);
@@ -2494,7 +2500,7 @@ export default function AuftragDetail({ id }: Props) {
               className="bg-background/80 backdrop-blur-sm border border-border"
               onClick={async () => {
                 try {
-                  const r = await apiRequest("POST", `/api/auftraege/${id}/auftragsbestaetigung-pdf`, { ansprechpersonIntern: auftrag.verantwortlicher || "" });
+                  const r = await apiRequest("POST", `/api/auftraege/${id}/auftragsbestaetigung-pdf`, { ansprechpersonIntern: data.verantwortlicher || "" });
                   const blob = await r.blob();
                   const url = URL.createObjectURL(blob);
                   openPdfInTab(url, `Auftragsbestaetigung_${data.nr}.pdf`);

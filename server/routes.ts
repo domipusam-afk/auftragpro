@@ -5399,8 +5399,9 @@ export async function registerRoutes(
   });
   app.post("/api/kalkulation/:auftragsId/nk-stunden/sync-zeiterfassung", async (req, res) => {
     const { auftragsId } = req.params;
-    const { data: zeitData = [], error: zeitError } = await supabase.from("zeiteintraege").select("*").eq("auftrag_id", auftragsId);
+    const { data: zeitDataRaw, error: zeitError } = await supabase.from("zeiteintraege").select("*").eq("auftrag_id", auftragsId);
     if (zeitError) return res.status(500).json({ error: zeitError.message });
+    const zeitData = zeitDataRaw ?? [];
     const { data: saetze = [] } = await supabase.from("stundensaetze").select("*");
     let synced = 0;
     for (const ze of zeitData) {

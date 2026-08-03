@@ -59,6 +59,8 @@ export interface Auftrag {
   rechnung_bezahlt?: boolean;
   /** Datum der letzten Zahlung. */
   rechnung_bezahlt_am?: string | null;
+  /** Token für den öffentlichen Kundenstatus-Link (Projektstatus-Seite), null wenn kein Link generiert wurde. */
+  public_token?: string | null;
 }
 
 /** Zeile der Finanzen-Übersicht (GET /api/finanzen/uebersicht) — abgeschlossene Aufträge. */

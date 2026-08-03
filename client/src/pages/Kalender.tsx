@@ -83,6 +83,7 @@ export default function Kalender() {
   const now = new Date();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { confirm: confirmKal, ConfirmDialog: KalConfirmDialog } = useConfirm();
 
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
