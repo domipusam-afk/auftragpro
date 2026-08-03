@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useParams, Link } from "wouter";
+import { useParams, Link, Redirect } from "wouter";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -1951,6 +1951,22 @@ export default function VorkalkulationPage() {
     await downloadKalkulationPdf(id, typ, toast);
     setPdfLoading(null);
   };
+
+  // Bug-Fix (Konsolidierung Vorkalkulation-Berechnung):
+  // Diese Seite (Route /auftraege/:id/kalkulation) enthielt frueher eine eigene,
+  // fehlerhafte Zusammenfassungs-/Preisberechnung (ZusammenfassungBlock,
+  // NachkalkulationBlock weiter unten in dieser Datei, nicht mehr verwendet) mit
+  // zwei Bugs:
+  //   1) Hilfsmaterial (und Hauptmaterial-Flaeche) fehlten in der Materialsumme.
+  //   2) Rabatt/Skonto wurden vom Offertpreis ABGEZOGEN statt wie vom Betrieb
+  //      vorgegeben als Aufschlag AUFGERECHNET (siehe VorkalkulationDetail.tsx /
+  //      NachkalkulationDetail.tsx, die die korrekte Formel verwenden).
+  // Statt die Berechnung zu duplizieren, leiten wir auf die bereits korrekte,
+  // konsolidierte Seite um: /vorkalkulation/:id (Kosten + Preisberechnung; von
+  // dort verlinkt: /nachkalkulation/:id fuer den Soll-Ist-Vergleich + Effektiv).
+  if (id) {
+    return <Redirect to={`/vorkalkulation/${id}`} />;
+  }
 
   if (isLoading) {
     return (

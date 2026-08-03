@@ -288,7 +288,10 @@ export default function PositionenTab({
             ? ` ${lohn_stunden} Std. Lohn in die gewählten Bereiche übertragen (Stundensatz aus Einstellungen).`
             : ""),
       });
-      window.location.hash = `/auftraege/${auftragId}/kalkulation`;
+      // Ziel: /vorkalkulation/:id (VorkalkulationDetail) — die konsolidierte, korrekte
+      // Kalkulationsansicht. Die alte Route /auftraege/:id/kalkulation leitet ebenfalls
+      // dorthin um (siehe Vorkalkulation.tsx).
+      window.location.hash = `/vorkalkulation/${auftragId}`;
     } catch (err: any) {
       toast({ title: "Fehler beim Import", description: fehlerText(err), variant: "destructive" });
     } finally {
