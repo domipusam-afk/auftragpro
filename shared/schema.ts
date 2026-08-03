@@ -13,6 +13,17 @@ export type Status =
 
 export type Prioritaet = "niedrig" | "normal" | "hoch" | "dringend";
 
+/**
+ * Bestimmt, wie ein Auftrag kalkuliert wird:
+ * - "detailliert": volle Vorkalkulation (Lohn nach Bereich, Material einzeln,
+ *   Fremdleistungen, Risiko/Gewinn-Zuschlag) über die Vorkalkulation-Tabs.
+ * - "pauschal": einfacher Pauschal-Angebotsbetrag (Feld angebots_betrag, brutto)
+ *   für kleine/einfache Aufträge, ohne die Vorkalkulation-Tabs ausfüllen zu müssen.
+ * Explizites Feld (Spalte auftraege.angebots_typ) statt einer impliziten Ableitung
+ * über "existiert eine Vorkalkulation ja/nein" — siehe Pauschalbetrag-Feature.
+ */
+export type AngebotsTyp = "detailliert" | "pauschal";
+
 export type Kategorie =
   | "Metallbau"
   | "Schreinerei"
@@ -32,6 +43,9 @@ export interface Auftrag {
   kategorie?: string | null;
   start_datum?: string | null;
   end_datum?: string | null;
+  /** "detailliert" (volle Vorkalkulation) oder "pauschal" (Pauschal-Angebotsbetrag). */
+  angebots_typ?: AngebotsTyp;
+  /** Brutto-Betrag (inkl. MWST) — bei "pauschal" der einzige Angebotspreis, bei "detailliert" von der Vorkalkulation befuellt. */
   angebots_betrag?: number | null;
   /** Spiegel der Tabelle "rechnungen" (brutto). Serverseitig abgeleitet, nicht beschreibbar. */
   rechnungs_betrag?: number | null;

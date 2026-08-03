@@ -29,13 +29,14 @@ import {
 import { ArrowLeft, Save, ChevronsUpDown, Check, UserPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCHF } from "@/lib/format";
-import type { Auftrag, Status, Prioritaet } from "@shared/schema";
+import type { Auftrag, Status, Prioritaet, AngebotsTyp } from "@shared/schema";
 import {
   STATUS_LABEL,
   STATUS_ORDER,
   PRIORITAETEN,
   KATEGORIEN,
 } from "@shared/schema";
+import { FileSpreadsheet, Coins } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface Props {
@@ -66,6 +67,7 @@ const empty = {
   kategorie: "",
   start_datum: "",
   end_datum: "",
+  angebots_typ: "detailliert" as AngebotsTyp,
   angebots_betrag: "",
   waehrung: "CHF",
   verantwortlicher: "",
@@ -104,6 +106,7 @@ export default function AuftragForm({ id }: Props) {
         kategorie: existing.kategorie || "",
         start_datum: existing.start_datum?.slice(0, 10) || "",
         end_datum: existing.end_datum?.slice(0, 10) || "",
+        angebots_typ: (existing.angebots_typ as AngebotsTyp) || "detailliert",
         angebots_betrag: existing.angebots_betrag != null ? String(existing.angebots_betrag) : "",
         waehrung: existing.waehrung || "CHF",
         verantwortlicher: existing.verantwortlicher || "",
@@ -378,16 +381,81 @@ export default function AuftragForm({ id }: Props) {
         {/* Finanzen */}
         <Card className="p-6 bg-card">
           <h2 className="font-semibold mb-4" style={{ fontFamily: "var(--font-display)" }}>
-            Finanzen
+            Finanzen &amp; Kalkulationsart
           </h2>
+
+          {/* Kalkulationsart: klar sichtbarer Umschalter zwischen voller Vorkalkulation
+              und einfachem Pauschalbetrag (Pauschalbetrag-Feature). Wird explizit in
+              auftraege.angebots_typ gespeichert, nicht nur implizit abgeleitet. */}
+          <div className="mb-5">
+            <Label className="mb-2 block">Kalkulationsart *</Label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                type="button"
+                data-testid="radio-angebotstyp-detailliert"
+                onClick={() => setField("angebots_typ", "detailliert")}
+                className={cn(
+                  "flex items-start gap-3 rounded-lg border-2 p-3 text-left transition-colors",
+                  form.angebots_typ === "detailliert" ? "border-primary bg-primary/5" : "border-muted hover:border-muted-foreground/30"
+                )}
+              >
+                <FileSpreadsheet className="h-5 w-5 mt-0.5 shrink-0" style={{ color: "#e8620a" }} />
+                <div>
+                  <div className="text-sm font-semibold">Detaillierte Vorkalkulation</div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Lohn nach Bereich, Material, Fremdleistungen, Risiko/Gewinn-Zuschlag —
+                    für grössere/komplexe Aufträge. Wird nach dem Speichern in der
+                    Vorkalkulation erfasst.
+                  </p>
+                </div>
+              </button>
+              <button
+                type="button"
+                data-testid="radio-angebotstyp-pauschal"
+                onClick={() => setField("angebots_typ", "pauschal")}
+                className={cn(
+                  "flex items-start gap-3 rounded-lg border-2 p-3 text-left transition-colors",
+                  form.angebots_typ === "pauschal" ? "border-primary bg-primary/5" : "border-muted hover:border-muted-foreground/30"
+                )}
+              >
+                <Coins className="h-5 w-5 mt-0.5 shrink-0" style={{ color: "#e8620a" }} />
+                <div>
+                  <div className="text-sm font-semibold">Pauschalbetrag</div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Für einfache/kleine Aufträge: nur ein fixer Angebotspreis, keine
+                    Vorkalkulation-Tabs nötig.
+                  </p>
+                </div>
+              </button>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <Label htmlFor="angebots_betrag">Angebotsbetrag (Pauschale)</Label>
-              <Input id="angebots_betrag" type="number" step="0.01" data-testid="input-angebots-betrag" value={form.angebots_betrag} onChange={(e) => setField("angebots_betrag", e.target.value)} className="mt-1" />
-              <p className="text-xs text-muted-foreground mt-1">
-                Für einfache Aufträge genügt hier ein Pauschalbetrag — eine detaillierte
-                Vorkalkulation ist optional und nur für komplexere Aufträge nötig.
-              </p>
+              <Label htmlFor="angebots_betrag">
+                {form.angebots_typ === "pauschal" ? "Pauschal-Angebotsbetrag (brutto) *" : "Angebotsbetrag (brutto)"}
+              </Label>
+              <Input
+                id="angebots_betrag"
+                type="number"
+                step="0.01"
+                data-testid="input-angebots-betrag"
+                value={form.angebots_betrag}
+                onChange={(e) => setField("angebots_betrag", e.target.value)}
+                className={cn("mt-1", form.angebots_typ === "pauschal" && "border-primary")}
+                placeholder={form.angebots_typ === "pauschal" ? "z.B. 350.00" : undefined}
+              />
+              {form.angebots_typ === "pauschal" ? (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Dieser Betrag gilt als vereinbarter Pauschalpreis (inkl. MWST) und wird in der
+                  Nachkalkulation als Vergleichswert statt einer Vorkalkulation angezeigt.
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Wird bei „Detaillierte Vorkalkulation” automatisch aus der Vorkalkulation befüllt,
+                  kann hier aber vorab manuell erfasst werden.
+                </p>
+              )}
             </div>
             <div>
               <Label>Rechnungsbetrag</Label>

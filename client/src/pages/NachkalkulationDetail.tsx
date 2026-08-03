@@ -12,7 +12,7 @@ import { Separator } from "@/components/ui/separator";
 import {
   ArrowLeft, Plus, Trash2, Clock, Package, Wrench,
   Receipt, BarChart3, RefreshCw, TrendingUp, TrendingDown,
-  Minus, AlertTriangle, CheckCircle2, FileDown, Check, X, Pencil} from "lucide-react";
+  Minus, AlertTriangle, CheckCircle2, FileDown, Check, X, Pencil, Coins} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirm } from "@/hooks/use-confirm";
 import { downloadPdf } from "@/lib/pdf";
@@ -664,15 +664,27 @@ function SollIstVergleich({ auftragId }: { auftragId: string }) {
   const hatRechnung = rechnungsNettoIst > 0;
   const gewinnEffektiv = rechnungsNettoIst - istSelbstkosten;
 
-  // Bug/Feature 4 (Pauschalbetrag): Bei Auftraegen ohne (vollstaendige) Vorkalkulation
-  // — z.B. einfache Pauschalauftraege, bei denen nur der Angebotsbetrag direkt erfasst
-  // wurde, ohne die Vorkalkulation-Tabs auszufuellen — ist sollSelbstkosten 0 und die
-  // SOLL-basierte Prognose (Netto-Offertpreis SOLL - IST-Selbstkosten) waere irrefuehrend
-  // (z.B. ein falscher "Verlust" in Hoehe der kompletten IST-Kosten). Die Prognose-Kachel
-  // wird daher nur angezeigt, wenn tatsaechlich Vorkalkulationsdaten vorhanden sind. Der
-  // effektive Gewinn (Kachel "Effektiv") bleibt davon unberuehrt und basiert ohnehin direkt
-  // auf Rechnung minus IST-Kosten — funktioniert also auch fuer Pauschalauftraege korrekt.
-  const hatVorkalkulation = sollSelbstkosten > 0;
+  // Pauschalbetrag-Feature: explizit im Datenmodell hinterlegt (auftraege.angebots_typ),
+  // nicht mehr nur implizit ueber "existiert eine Vorkalkulation" abgeleitet. Bei
+  // "pauschal" ist die Vorkalkulation grundsaetzlich nicht befuellt (keine Tabs noetig) —
+  // die SOLL-basierte Prognose (Netto-Offertpreis SOLL - IST-Selbstkosten) waere hier
+  // irrefuehrend (z.B. ein falscher "Verlust" in Hoehe der kompletten IST-Kosten), da
+  // sollSelbstkosten 0 ist. Stattdessen zeigt die Prognose-Kachel den Pauschalbetrag als
+  // Vergleichswert. Der effektive Gewinn (Kachel "Effektiv") bleibt davon unberuehrt und
+  // basiert ohnehin direkt auf Rechnung minus IST-Kosten — funktioniert unveraendert fuer
+  // Pauschalauftraege korrekt.
+  const istPauschalauftrag = auftrag?.angebots_typ === "pauschal";
+  const pauschalBetragBrutto = num(auftrag?.angebots_betrag);
+  // Fallback fuer Alt-Auftraege ohne angebots_typ, die dennoch keine Vorkalkulation haben.
+  const hatVorkalkulation = !istPauschalauftrag && sollSelbstkosten > 0;
+  // Prognose-Vergleichswert bei Pauschalauftraegen: der Pauschalbetrag ist brutto (siehe
+  // AuftragForm/Vorkalkulation, angebots_betrag wird ueberall als Bruttobetrag gefuehrt),
+  // IST-Selbstkosten sind netto ohne MWST — fuer den Vergleich wird der Pauschalbetrag
+  // auf netto zurueckgerechnet, damit Prognose und Effektiv-Kachel dieselbe Basis (netto)
+  // verwenden.
+  const mwstSatzPauschal = (num(vkCfg?.mwst_prozent) || 8.1) / 100;
+  const pauschalBetragNetto = pauschalBetragBrutto > 0 ? pauschalBetragBrutto / (1 + mwstSatzPauschal) : 0;
+  const gewinnVerlustPauschal = pauschalBetragNetto - istSelbstkosten;
 
   const Row = ({ label, soll, ist, unit = "CHF" }: { label: string; soll: number; ist: number; unit?: string }) => {
     const diff = ist - soll;
@@ -693,6 +705,27 @@ function SollIstVergleich({ auftragId }: { auftragId: string }) {
 
   return (
     <div className="space-y-4">
+      {/* Pauschalauftrag: klar erkennbarer Hinweis statt einer leeren/fehlenden
+          Vorkalkulations-Ansicht (Pauschalbetrag-Feature). */}
+      {istPauschalauftrag && (
+        <Card className="p-4 border-2" style={{ borderColor: "#e8620a", background: "rgba(232, 98, 10, 0.06)" }}>
+          <div className="flex items-center gap-3">
+            <Coins className="h-6 w-6 shrink-0" style={{ color: "#e8620a" }} />
+            <div className="flex-1">
+              <h3 className="font-semibold text-sm" style={{ color: "#e8620a" }}>
+                Pauschalauftrag — Angebotspreis {chf(pauschalBetragBrutto)} (brutto)
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Für diesen Auftrag wurde bewusst keine detaillierte Vorkalkulation erfasst,
+                sondern ein fixer Pauschalbetrag vereinbart. Der SOLL/IST-Stunden- und
+                Kostenvergleich unten bezieht sich daher nur auf die IST-Werte; als
+                Vergleichswert für die Prognose dient der Pauschalbetrag (siehe Kachel unten).
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
+
       {/* Stunden-Vergleich nach Bereich */}
       <Card className="p-4">
         <h3 className="font-semibold text-sm mb-3 flex items-center gap-2"><Clock className="h-4 w-4" />Stunden SOLL/IST nach Bereich</h3>
@@ -738,6 +771,44 @@ function SollIstVergleich({ auftragId }: { auftragId: string }) {
           </div>
         </div>
       </Card>
+
+      {/* Gewinn/Verlust — Prognose bei Pauschalauftraegen: Vergleichswert ist der
+          vereinbarte Pauschalbetrag, NICHT eine (nicht vorhandene) Vorkalkulation. Klar
+          als Pauschalpreis beschriftet, damit keine Verwechslung mit einer SOLL-Vorkalkulation
+          entsteht (Pauschalbetrag-Feature). */}
+      {istPauschalauftrag && pauschalBetragBrutto > 0 && (
+      <Card className="p-4" style={{ borderColor: gewinnVerlustPauschal >= 0 ? "#16a34a" : "#dc2626", borderWidth: 2 }}>
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold text-sm flex items-center gap-2">
+              {gewinnVerlustPauschal >= 0 ? <CheckCircle2 className="h-5 w-5 text-green-600" /> : <AlertTriangle className="h-5 w-5 text-red-600" />}
+              {gewinnVerlustPauschal >= 0 ? "Gewinn" : "Verlust"} — Prognose (Pauschalpreis)
+            </h3>
+            <p className="text-xs text-muted-foreground mt-1">Pauschal-Angebotspreis netto (kein Vorkalkulations-SOLL) − IST-Selbstkosten</p>
+          </div>
+          <div className={`text-2xl font-bold font-mono ${gewinnVerlustPauschal >= 0 ? "text-green-700" : "text-red-700"}`}>
+            {gewinnVerlustPauschal >= 0 ? "+" : ""}{chf(gewinnVerlustPauschal)}
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t">
+          <div className="text-center">
+            <div className="text-xs text-muted-foreground">Pauschalpreis netto</div>
+            <div className="font-mono font-semibold text-sm">{chf(pauschalBetragNetto)}</div>
+            <div className="text-[10px] text-muted-foreground mt-0.5">({chf(pauschalBetragBrutto)} brutto)</div>
+          </div>
+          <div className="text-center">
+            <div className="text-xs text-muted-foreground">IST Selbstkosten</div>
+            <div className="font-mono font-semibold text-sm">{chf(istSelbstkosten)}</div>
+          </div>
+          <div className="text-center">
+            <div className="text-xs text-muted-foreground">Marge %</div>
+            <div className={`font-mono font-semibold text-sm ${gewinnVerlustPauschal >= 0 ? "text-green-700" : "text-red-700"}`}>
+              {pauschalBetragNetto > 0 ? ((gewinnVerlustPauschal / pauschalBetragNetto) * 100).toFixed(1) + " %" : "—"}
+            </div>
+          </div>
+        </div>
+      </Card>
+      )}
 
       {/* Gewinn/Verlust — Prognose (nur bei vorhandener Vorkalkulation, siehe Bug/Feature 4) */}
       {hatVorkalkulation && (
@@ -807,13 +878,13 @@ function SollIstVergleich({ auftragId }: { auftragId: string }) {
         </Card>
       )}
 
-      {/* Pauschalauftrag ohne Vorkalkulation und (noch) ohne Rechnung: freundlicher Hinweis
-          statt leerer Flaeche (Bug/Feature 4). */}
-      {!hatVorkalkulation && !hatRechnung && (
+      {/* Weder Vorkalkulation noch Pauschalbetrag noch Rechnung vorhanden: freundlicher
+          Hinweis statt leerer Flaeche (Pauschalbetrag-Feature). */}
+      {!hatVorkalkulation && !hatRechnung && !(istPauschalauftrag && pauschalBetragBrutto > 0) && (
         <Card className="p-4 text-sm text-muted-foreground text-center">
-          Keine Vorkalkulation vorhanden und noch keine Rechnung gestellt. Sobald eine Rechnung
-          erfasst ist, wird hier der effektive Gewinn (Rechnungsbetrag − IST-Kosten) angezeigt —
-          auch bei Pauschalaufträgen ohne detaillierte Vorkalkulation.
+          {istPauschalauftrag
+            ? "Pauschalauftrag ohne hinterlegten Angebotsbetrag und noch keine Rechnung gestellt. Bitte im Auftrag den Pauschalbetrag erfassen."
+            : "Keine Vorkalkulation vorhanden und noch keine Rechnung gestellt. Sobald eine Rechnung erfasst ist, wird hier der effektive Gewinn (Rechnungsbetrag − IST-Kosten) angezeigt."}
         </Card>
       )}
     </div>
@@ -852,6 +923,11 @@ export default function NachkalkulationDetail() {
             <BarChart3 className="h-5 w-5" style={{ color: "#e8620a" }} />
             <h1 className="text-lg font-bold" style={{ fontFamily: "var(--font-display)", color: "#e8620a" }}>Nachkalkulation</h1>
             {auftrag && <Badge variant="outline" className="font-mono">{auftrag.auftragsnummer} · {auftrag.titel}</Badge>}
+            {auftrag?.angebots_typ === "pauschal" && (
+              <Badge className="gap-1" style={{ backgroundColor: "#e8620a", color: "white" }}>
+                <Coins className="h-3 w-3" />Pauschalauftrag
+              </Badge>
+            )}
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">IST-Werte erfassen und mit der Vorkalkulation vergleichen</p>
         </div>

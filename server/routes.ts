@@ -701,6 +701,9 @@ export async function registerRoutes(
         kategorie: body.kategorie || null,
         start_datum: body.start_datum || null,
         end_datum: body.end_datum || null,
+        // "pauschal" oder "detailliert" — explizite Wahl aus dem Auftragsformular
+        // (Pauschalbetrag-Feature). Ohne Angabe bleibt es beim bisherigen Standard.
+        angebots_typ: body.angebots_typ === "pauschal" ? "pauschal" : "detailliert",
         angebots_betrag:
           body.angebots_betrag !== undefined && body.angebots_betrag !== ""
             ? Number(body.angebots_betrag)
@@ -786,6 +789,7 @@ export async function registerRoutes(
         "kategorie",
         "start_datum",
         "end_datum",
+        "angebots_typ",
         "angebots_betrag",
         "waehrung",
         "verantwortlicher",

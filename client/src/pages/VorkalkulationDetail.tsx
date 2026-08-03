@@ -14,8 +14,9 @@ import {
   ArrowLeft, Plus, Trash2, Calculator, Package, Wrench, FileDown,
   Receipt, BarChart3, Clock, ChevronRight, Save, RefreshCw,
   Layers, FileText, TrendingUp, TrendingDown, Minus, AlertTriangle,
-  Pencil, Check, X,
+  Pencil, Check, X, AlertCircle,
 } from "lucide-react";
+import { formatCHF } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirm } from "@/hooks/use-confirm";
 import { downloadPdf } from "@/lib/pdf";
@@ -1231,6 +1232,21 @@ export default function VorkalkulationDetail() {
           {pdfLoading ? "PDF..." : "PDF herunterladen"}
         </Button>
       </div>
+
+      {/* Hinweis bei Pauschalauftraegen: die Tabs unten sind fuer diesen Auftrag bewusst
+          nicht noetig, da ein fixer Pauschalbetrag im Auftrag hinterlegt ist
+          (Pauschalbetrag-Feature). Vermeidet Verwirrung ueber eine leere Vorkalkulation. */}
+      {auftrag?.angebots_typ === "pauschal" && (
+        <div className="rounded-lg border-2 p-3 flex items-start gap-2" style={{ borderColor: "#e8620a", background: "rgba(232, 98, 10, 0.06)" }}>
+          <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" style={{ color: "#e8620a" }} />
+          <p className="text-xs text-muted-foreground">
+            Dieser Auftrag ist als <strong>Pauschalauftrag</strong> markiert (Angebotspreis{" "}
+            {formatCHF(auftrag.angebots_betrag, auftrag.waehrung)} brutto, siehe Auftragsformular).
+            Eine detaillierte Vorkalkulation ist normalerweise nicht nötig — die Tabs unten können
+            trotzdem genutzt werden, falls doch eine detaillierte Nachkalkulation gewünscht ist.
+          </p>
+        </div>
+      )}
 
       {/* Tabs */}
       <Tabs defaultValue="planung" className="w-full">
