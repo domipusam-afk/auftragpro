@@ -619,6 +619,9 @@ function SollIstVergleich({ auftragId }: { auftragId: string }) {
   const { data: nkFremd = [] } = useQuery<NkFremd[]>({ queryKey: ["/api/nk-fremd", auftragId], queryFn: async () => { const r = await apiRequest("GET", `/api/kalkulation/${auftragId}/nk-fremd`); return r.json(); } });
   const { data: nkSoek = [] } = useQuery<NkSoek[]>({ queryKey: ["/api/nk-soek", auftragId], queryFn: async () => { const r = await apiRequest("GET", `/api/kalkulation/${auftragId}/nk-soek`); return r.json(); } });
   const { data: auftrag } = useQuery<any>({ queryKey: ["/api/auftraege", auftragId], queryFn: async () => { const r = await apiRequest("GET", `/api/auftraege/${auftragId}`); return r.json(); } });
+  // Rechnungen direkt aus der rechnungen-Tabelle (Source of Truth) statt aus dem
+  // veralteten Spiegelfeld auftraege.rechnungs_betrag (kann NULL/veraltet sein, siehe Bug-Fix).
+  const { data: rechnungenListe = [] } = useQuery<any[]>({ queryKey: ["/api/auftraege", auftragId, "rechnungen"], queryFn: async () => { const r = await apiRequest("GET", `/api/auftraege/${auftragId}/rechnungen`); return r.json(); } });
 
   // SOLL
   const sollStunden = vkStunden.reduce((s, r) => s + num(r.soll_stunden), 0);
@@ -645,12 +648,14 @@ function SollIstVergleich({ auftragId }: { auftragId: string }) {
   const istSelbstkosten = istLohn + istMat + istFremd + istSoek;
   const gewinnVerlust = sollNetto - istSelbstkosten;
 
-  // Effektiver Gewinn: basiert auf dem tatsächlich fakturierten Rechnungsbetrag
-  // (Brutto, inkl. MWST — automatisch aus allen Rechnungen des Auftrags summiert),
-  // umgerechnet auf Netto zum Vergleich mit den IST-Selbstkosten.
-  const rechnungsBruttoIst = num(auftrag?.rechnungs_betrag);
-  const hatRechnung = rechnungsBruttoIst > 0;
-  const rechnungsNettoIst = hatRechnung ? rechnungsBruttoIst / (1 + mwst) : 0;
+  // Effektiver Gewinn: basiert auf dem tatsächlich fakturierten Rechnungsbetrag.
+  // Quelle: rechnungen-Tabelle (Source of Truth) statt des veralteten/leeren
+  // Spiegelfelds auftraege.rechnungs_betrag — gleiches Prinzip wie beim
+  // Dashboard/Finanzen-Uebersicht-Fix (finanzenUebersichtZeilen). rechnungen.betrag
+  // ist bereits netto (keine MWST-Ruckrechnung noetig), daher direkte Summe aller
+  // Rechnungen dieses Auftrags.
+  const rechnungsNettoIst = rechnungenListe.reduce((s, r) => s + num(r.betrag), 0);
+  const hatRechnung = rechnungsNettoIst > 0;
   const gewinnEffektiv = rechnungsNettoIst - istSelbstkosten;
 
   const Row = ({ label, soll, ist, unit = "CHF" }: { label: string; soll: number; ist: number; unit?: string }) => {
