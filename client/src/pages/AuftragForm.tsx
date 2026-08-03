@@ -382,8 +382,12 @@ export default function AuftragForm({ id }: Props) {
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <Label htmlFor="angebots_betrag">Angebotsbetrag</Label>
+              <Label htmlFor="angebots_betrag">Angebotsbetrag (Pauschale)</Label>
               <Input id="angebots_betrag" type="number" step="0.01" data-testid="input-angebots-betrag" value={form.angebots_betrag} onChange={(e) => setField("angebots_betrag", e.target.value)} className="mt-1" />
+              <p className="text-xs text-muted-foreground mt-1">
+                Für einfache Aufträge genügt hier ein Pauschalbetrag — eine detaillierte
+                Vorkalkulation ist optional und nur für komplexere Aufträge nötig.
+              </p>
             </div>
             <div>
               <Label>Rechnungsbetrag</Label>

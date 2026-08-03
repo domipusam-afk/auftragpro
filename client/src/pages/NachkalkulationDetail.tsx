@@ -658,6 +658,16 @@ function SollIstVergleich({ auftragId }: { auftragId: string }) {
   const hatRechnung = rechnungsNettoIst > 0;
   const gewinnEffektiv = rechnungsNettoIst - istSelbstkosten;
 
+  // Bug/Feature 4 (Pauschalbetrag): Bei Auftraegen ohne (vollstaendige) Vorkalkulation
+  // — z.B. einfache Pauschalauftraege, bei denen nur der Angebotsbetrag direkt erfasst
+  // wurde, ohne die Vorkalkulation-Tabs auszufuellen — ist sollSelbstkosten 0 und die
+  // SOLL-basierte Prognose (Netto-Offertpreis SOLL - IST-Selbstkosten) waere irrefuehrend
+  // (z.B. ein falscher "Verlust" in Hoehe der kompletten IST-Kosten). Die Prognose-Kachel
+  // wird daher nur angezeigt, wenn tatsaechlich Vorkalkulationsdaten vorhanden sind. Der
+  // effektive Gewinn (Kachel "Effektiv") bleibt davon unberuehrt und basiert ohnehin direkt
+  // auf Rechnung minus IST-Kosten — funktioniert also auch fuer Pauschalauftraege korrekt.
+  const hatVorkalkulation = sollSelbstkosten > 0;
+
   const Row = ({ label, soll, ist, unit = "CHF" }: { label: string; soll: number; ist: number; unit?: string }) => {
     const diff = ist - soll;
     const isOver = diff > 0;
@@ -723,7 +733,8 @@ function SollIstVergleich({ auftragId }: { auftragId: string }) {
         </div>
       </Card>
 
-      {/* Gewinn/Verlust */}
+      {/* Gewinn/Verlust — Prognose (nur bei vorhandener Vorkalkulation, siehe Bug/Feature 4) */}
+      {hatVorkalkulation && (
       <Card className="p-4" style={{ borderColor: gewinnVerlust >= 0 ? "#16a34a" : "#dc2626", borderWidth: 2 }}>
         <div className="flex items-center justify-between">
           <div>
@@ -754,6 +765,7 @@ function SollIstVergleich({ auftragId }: { auftragId: string }) {
           </div>
         </div>
       </Card>
+      )}
 
       {/* Effektiver Gewinn (basiert auf tatsächlich gestellten Rechnungen) */}
       {hatRechnung && (
@@ -786,6 +798,16 @@ function SollIstVergleich({ auftragId }: { auftragId: string }) {
               </div>
             </div>
           </div>
+        </Card>
+      )}
+
+      {/* Pauschalauftrag ohne Vorkalkulation und (noch) ohne Rechnung: freundlicher Hinweis
+          statt leerer Flaeche (Bug/Feature 4). */}
+      {!hatVorkalkulation && !hatRechnung && (
+        <Card className="p-4 text-sm text-muted-foreground text-center">
+          Keine Vorkalkulation vorhanden und noch keine Rechnung gestellt. Sobald eine Rechnung
+          erfasst ist, wird hier der effektive Gewinn (Rechnungsbetrag − IST-Kosten) angezeigt —
+          auch bei Pauschalaufträgen ohne detaillierte Vorkalkulation.
         </Card>
       )}
     </div>
