@@ -1,5 +1,27 @@
 import type { Status, Prioritaet } from "@shared/schema";
 
+/**
+ * Parst einen Zahlen-Rohtext aus einem Eingabefeld (String oder Number) robust in eine
+ * Zahl. Unterstützt sowohl Punkt als auch Komma als Dezimaltrennzeichen, da Schweizer
+ * Nutzer beim Tippen oft ein Komma verwenden, auch wenn CHF-Beträge üblicherweise mit
+ * Punkt geschrieben werden. Gibt bei leerem/unvollständigem Text (z.B. "3.", "", "-") 0
+ * zurück, statt NaN — Aufrufer sollen also NICHT zusätzlich "|| 0" auf das Ergebnis von
+ * isNaN-Fällen verlassen müssen, können es aber trotzdem tun.
+ *
+ * WICHTIG: Diese Funktion ist nur für Berechnungen/Speichern gedacht — NIE das Ergebnis
+ * zurück in den Rohtext-State des Eingabefelds schreiben (das war der Bug: das Feld hat
+ * bei jedem Tastenanschlag sofort zur Zahl geparst und sich dadurch selbst verstümmelt,
+ * sodass z.B. "3." oder "3,5" nie fertig eingegeben werden konnte).
+ */
+export function parseZahl(value: string | number | null | undefined): number {
+  if (value == null) return 0;
+  if (typeof value === "number") return isNaN(value) ? 0 : value;
+  const normalisiert = value.trim().replace(",", ".");
+  if (normalisiert === "" || normalisiert === "-" || normalisiert === ".") return 0;
+  const n = Number(normalisiert);
+  return isNaN(n) ? 0 : n;
+}
+
 export function formatCHF(value: number | null | undefined, waehrung = "CHF") {
   if (value == null || isNaN(Number(value))) return "—";
   return new Intl.NumberFormat("de-CH", {

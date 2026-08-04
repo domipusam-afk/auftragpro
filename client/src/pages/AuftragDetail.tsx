@@ -85,7 +85,7 @@ import type {
   OffertePosition,
 } from "@shared/schema";
 import { STATUS_LABEL, STATUS_ORDER } from "@shared/schema";
-import { STATUS_BADGE, PRIO_BADGE, formatCHF, formatDate, formatDateTime } from "@/lib/format";
+import { STATUS_BADGE, PRIO_BADGE, formatCHF, formatDate, formatDateTime, parseZahl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { downloadPdf as triggerPdfDownload } from "@/lib/pdf";
 import { useToast } from "@/hooks/use-toast";
@@ -441,6 +441,14 @@ function rechnungZahlungsBadge(r: Rechnung) {
   );
 }
 
+// Formular-Variante von RechnungsPosition: menge/einzelpreis dürfen während der Eingabe
+// auch Rohtext (string) sein, damit Zwischenzustände wie "3." oder "2,5" nicht sofort zu
+// einer Zahl gezwungen werden. Vor dem Senden an die API wird via parseZahl() konvertiert.
+type RechnungsPositionForm = Omit<RechnungsPosition, "menge" | "einzelpreis"> & {
+  menge: string | number;
+  einzelpreis: string | number;
+};
+
 function RechnungenTab({
   id,
   auftrag,
@@ -448,7 +456,7 @@ function RechnungenTab({
   id: string;
   auftrag: Auftrag;
 }) {
-  const [positionen, setPositionen] = useState<RechnungsPosition[]>([
+  const [positionen, setPositionen] = useState<RechnungsPositionForm[]>([
     { beschreibung: "", menge: 1, einzelpreis: 0, betrag: 0 },
   ]);
   const [faellig, setFaellig] = useState("");
@@ -491,8 +499,11 @@ function RechnungenTab({
     onError: (e: Error) => toast({ title: "Fehler", description: e.message, variant: "destructive" }),
   });
 
+  // Menge/Einzelpreis werden während der Eingabe als Rohtext gehalten (nicht als Number),
+  // damit Zwischenzustände wie "3." oder "2," nicht sofort verstümmelt werden. Für Anzeige
+  // und Speichern wird erst hier robust zu einer Zahl geparst (Komma wird wie Punkt behandelt).
   const total = positionen.reduce(
-    (s, p) => s + (Number(p.menge) || 0) * (Number(p.einzelpreis) || 0),
+    (s, p) => s + (parseZahl(p.menge) || 0) * (parseZahl(p.einzelpreis) || 0),
     0
   );
 
@@ -501,7 +512,9 @@ function RechnungenTab({
       const r = await apiRequest("POST", `/api/auftraege/${id}/rechnungen`, {
         positionen: positionen.map((p) => ({
           ...p,
-          betrag: Number(p.menge) * Number(p.einzelpreis),
+          menge: parseZahl(p.menge) || 0,
+          einzelpreis: parseZahl(p.einzelpreis) || 0,
+          betrag: (parseZahl(p.menge) || 0) * (parseZahl(p.einzelpreis) || 0),
         })),
         notiz,
         faellig_datum: faellig || null,
@@ -522,11 +535,12 @@ function RechnungenTab({
       toast({ title: "Fehler", description: e.message, variant: "destructive" }),
   });
 
-  const updatePos = (i: number, field: keyof RechnungsPosition, value: any) => {
+  // Rohtext im Feld behalten (String), Zahl wird erst bei Bedarf geparst (siehe parseZahl).
+  // So kann der Nutzer "3." oder "2,5" eintippen, ohne dass das Feld sich selbst korrigiert.
+  const updatePos = (i: number, field: keyof RechnungsPositionForm, value: any) => {
     setPositionen((arr) => {
       const next = [...arr];
-      (next[i] as any)[field] = field === "beschreibung" ? value : Number(value) || 0;
-      next[i].betrag = (Number(next[i].menge) || 0) * (Number(next[i].einzelpreis) || 0);
+      (next[i] as any)[field] = field === "beschreibung" ? value : value;
       return next;
     });
   };
@@ -593,20 +607,20 @@ function RechnungenTab({
               <div className="grid grid-cols-3 gap-2">
                 <div>
                   <Label className="text-xs">Menge</Label>
-                  <Input type="number" step="0.01" value={p.menge}
+                  <Input type="text" inputMode="decimal" value={p.menge}
                     onChange={(e) => updatePos(i, "menge", e.target.value)}
                     data-testid={`input-pos-menge-${i}`} />
                 </div>
                 <div>
                   <Label className="text-xs">Einzelpreis CHF</Label>
-                  <Input type="number" step="0.01" value={p.einzelpreis}
+                  <Input type="text" inputMode="decimal" value={p.einzelpreis}
                     onChange={(e) => updatePos(i, "einzelpreis", e.target.value)}
                     data-testid={`input-pos-preis-${i}`} />
                 </div>
                 <div>
                   <Label className="text-xs">Betrag CHF</Label>
                   <div className="h-10 flex items-center px-3 rounded-md border bg-muted text-sm font-semibold">
-                    {(p.menge * p.einzelpreis).toFixed(2)}
+                    {(parseZahl(p.menge) * parseZahl(p.einzelpreis)).toFixed(2)}
                   </div>
                 </div>
               </div>
@@ -772,6 +786,15 @@ function RechnungenTab({
 // ─── Zeiterfassung Tab ───────────────────────────────────────────────────────
 
 // ─── Offerten Tab ──────────────────────────────────────────────────────────────
+
+// Formular-Variante von OffertePosition: menge/einzelpreis dürfen während der Eingabe
+// Rohtext (string) sein, damit Zwischenzustände wie "3." oder "2,5" nicht sofort zu einer
+// Zahl gezwungen werden. Beim Laden/Speichern wird zu/von OffertePosition konvertiert.
+type OffertePositionForm = Omit<OffertePosition, "menge" | "einzelpreis"> & {
+  menge: string | number;
+  einzelpreis: string | number;
+};
+
 function OffertenTab({ id, auftrag, vorlage, onVorlageUebernommen }: {
   id: string;
   auftrag: Auftrag;
@@ -809,7 +832,7 @@ function OffertenTab({ id, auftrag, vorlage, onVorlageUebernommen }: {
   const [schlussText, setSchlussText] = useState("");
   const [datum, setDatum] = useState(new Date().toISOString().slice(0, 10));
   const [rabatt, setRabatt] = useState(0);
-  const [positionen, setPositionen] = useState<OffertePosition[]>([
+  const [positionen, setPositionen] = useState<OffertePositionForm[]>([
     { nr: 1, titel: "", beschreibung: "", menge: 1, einheit: "Stk.", einzelpreis: 0, total: 0 },
   ]);
   const [showForm, setShowForm] = useState(false);
@@ -821,6 +844,16 @@ function OffertenTab({ id, auftrag, vorlage, onVorlageUebernommen }: {
     queryFn: () => apiRequest("GET", `/api/auftraege/${id}/offerten`).then(r => r.json()),
   });
 
+  // Rohtext-Positionen (menge/einzelpreis können während der Eingabe Strings sein) vor dem
+  // Senden an die API in echte Zahlen umwandeln — unterstützt Punkt und Komma als Trennzeichen.
+  const positionenFuerApi = (): OffertePosition[] =>
+    positionen.map(p => ({
+      ...p,
+      menge: parseZahl(p.menge),
+      einzelpreis: parseZahl(p.einzelpreis),
+      total: parseZahl(p.menge) * parseZahl(p.einzelpreis),
+    }));
+
   const updateMutation = useMutation({
     mutationFn: (oid: string) => apiRequest("PATCH", `/api/offerten/${oid}`, {
       ansprechpartner, telefon, email, anrede,
@@ -829,7 +862,7 @@ function OffertenTab({ id, auftrag, vorlage, onVorlageUebernommen }: {
       empfaenger_plz_ort: empfaengerPlz,
       projekt_beschreibung: projektBeschr,
       intro_text: introText,
-      positionen,
+      positionen: positionenFuerApi(),
       rabatt_prozent: rabatt,
       mwst_prozent: 8.1,
       liefertermin, zahlungsbedingungen: zahlungsbed,
@@ -887,7 +920,7 @@ function OffertenTab({ id, auftrag, vorlage, onVorlageUebernommen }: {
       empfaenger_plz_ort: empfaengerPlz,
       projekt_beschreibung: projektBeschr,
       intro_text: introText,
-      positionen,
+      positionen: positionenFuerApi(),
       rabatt_prozent: rabatt,
       mwst_prozent: 8.1,
       liefertermin, zahlungsbedingungen: zahlungsbed,
@@ -950,12 +983,15 @@ function OffertenTab({ id, auftrag, vorlage, onVorlageUebernommen }: {
     } finally { setPdfLoading(null); }
   };
 
+  // menge/einzelpreis bleiben während der Eingabe Rohtext (String) im State — so kann der
+  // Nutzer "3." oder "2,5" eintippen, ohne dass das Feld sich sofort selbst korrigiert. Die
+  // Live-Anzeige "total" wird trotzdem bei jedem Tastenanschlag mit parseZahl() aktualisiert.
   const updatePos = (i: number, field: keyof OffertePosition, value: any) => {
     setPositionen(prev => {
       const next = [...prev];
       next[i] = { ...next[i], [field]: value };
       if (field === "menge" || field === "einzelpreis") {
-        next[i].total = Number(next[i].menge) * Number(next[i].einzelpreis);
+        next[i].total = parseZahl(next[i].menge) * parseZahl(next[i].einzelpreis);
       }
       return next;
     });
@@ -1099,18 +1135,18 @@ function OffertenTab({ id, auftrag, vorlage, onVorlageUebernommen }: {
                   <div className="grid grid-cols-3 gap-2">
                     <div>
                       <Label className="text-xs">Menge</Label>
-                      <Input type="number" value={pos.menge} min={0} step="0.01"
-                        onChange={e => updatePos(i, "menge", Number(e.target.value))} />
+                      <Input type="text" inputMode="decimal" value={pos.menge}
+                        onChange={e => updatePos(i, "menge", e.target.value)} />
                     </div>
                     <div>
                       <Label className="text-xs">Einzelpreis CHF</Label>
-                      <Input type="number" value={pos.einzelpreis} min={0} step="0.01"
-                        onChange={e => updatePos(i, "einzelpreis", Number(e.target.value))} />
+                      <Input type="text" inputMode="decimal" value={pos.einzelpreis}
+                        onChange={e => updatePos(i, "einzelpreis", e.target.value)} />
                     </div>
                     <div>
                       <Label className="text-xs">Total CHF</Label>
                       <div className="h-10 flex items-center px-3 rounded-md border bg-muted text-sm font-semibold">
-                        {pos.total.toFixed(2)}
+                        {parseZahl(pos.total).toFixed(2)}
                       </div>
                     </div>
                   </div>

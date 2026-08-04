@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { formatCHF } from "@/lib/format";
+import { formatCHF, parseZahl } from "@/lib/format";
 
 interface Lieferant {
   id: string;
@@ -70,7 +70,15 @@ const emptyLieferant: Omit<Lieferant, "id" | "erstellt"> = {
   notiz: "",
 };
 
-const emptyBestellung: Omit<Bestellung, "id" | "erstellt"> = {
+// Formular-Variante von Bestellung: menge/preis dürfen während der Eingabe Rohtext
+// (string) sein, damit Zwischenzustände wie "3." oder "2,5" nicht sofort zu einer Zahl
+// gezwungen werden. Beim Speichern (saveBestellungMut) wird mit parseZahl() konvertiert.
+type BestellungForm = Omit<Bestellung, "id" | "erstellt" | "menge" | "preis"> & {
+  menge: string | number;
+  preis?: string | number;
+};
+
+const emptyBestellung: BestellungForm = {
   lieferant_id: "",
   auftrag_id: "",
   artikel: "",
@@ -89,7 +97,7 @@ export default function Lieferanten() {
   const [editLieferant, setEditLieferant] = useState<Lieferant | null>(null);
   const [lForm, setLForm] = useState<typeof emptyLieferant>(emptyLieferant);
   const [bestellungDialog, setBestellungDialog] = useState(false);
-  const [bForm, setBForm] = useState<typeof emptyBestellung>(emptyBestellung);
+  const [bForm, setBForm] = useState<BestellungForm>(emptyBestellung);
   const [bestellungFilter, setBestellungFilter] = useState("alle");
   const [editBestellung, setEditBestellung] = useState<Bestellung | null>(null);
 
@@ -132,10 +140,14 @@ export default function Lieferanten() {
   });
 
   const saveBestellungMut = useMutation({
-    mutationFn: () =>
-      editBestellung
-        ? apiRequest("PATCH", `/api/materialbestellungen/${editBestellung.id}`, bForm)
-        : apiRequest("POST", "/api/materialbestellungen", bForm),
+    mutationFn: () => {
+      // Rohtext (menge/preis können während der Eingabe Strings sein) erst beim Speichern
+      // in echte Zahlen umwandeln — unterstützt Punkt und Komma als Dezimaltrennzeichen.
+      const body = { ...bForm, menge: parseZahl(bForm.menge), preis: parseZahl(bForm.preis) };
+      return editBestellung
+        ? apiRequest("PATCH", `/api/materialbestellungen/${editBestellung.id}`, body)
+        : apiRequest("POST", "/api/materialbestellungen", body);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/materialbestellungen"] });
       setBestellungDialog(false);
@@ -443,7 +455,7 @@ export default function Lieferanten() {
             </div>
             <div>
               <Label className="text-xs">Menge</Label>
-              <Input type="number" value={bForm.menge} onChange={(e) => setBForm((f) => ({ ...f, menge: Number(e.target.value) }))} />
+              <Input type="text" inputMode="decimal" value={bForm.menge} onChange={(e) => setBForm((f) => ({ ...f, menge: e.target.value }))} />
             </div>
             <div>
               <Label className="text-xs">Einheit</Label>
@@ -451,7 +463,7 @@ export default function Lieferanten() {
             </div>
             <div>
               <Label className="text-xs">Preis (CHF)</Label>
-              <Input type="number" value={bForm.preis} onChange={(e) => setBForm((f) => ({ ...f, preis: Number(e.target.value) }))} />
+              <Input type="text" inputMode="decimal" value={bForm.preis ?? ""} onChange={(e) => setBForm((f) => ({ ...f, preis: e.target.value }))} />
             </div>
             <div>
               <Label className="text-xs">Status</Label>
