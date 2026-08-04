@@ -24,8 +24,18 @@
     <script type="module" src="/src/main.tsx"></script>
     <script>
       if ('serviceWorker' in navigator) {
+        var swReg = null;
+
+        var checkForSwUpdate = function () {
+          if (swReg) {
+            // Löst ggf. 'updatefound' aus, falls sw.js sich geändert hat
+            swReg.update().catch(function () {});
+          }
+        };
+
         window.addEventListener('load', () => {
           navigator.serviceWorker.register('/sw.js').then((reg) => {
+            swReg = reg;
             // Sofort auf Update prüfen
             reg.update();
             // Wenn neuer SW wartet: sofort aktivieren
@@ -42,7 +52,80 @@
             });
           }).catch(() => {});
         });
+
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') checkForSwUpdate();
+        });
+        window.addEventListener('pageshow', (event) => {
+          if (event.persisted) checkForSwUpdate();
+        });
+        window.addEventListener('focus', checkForSwUpdate);
       }
+
+      // ─── Bundle-Versions-Wächter ───────────────────────────────────────────
+      // Hintergrund: iOS Safari (v.a. als Homescreen-App/PWA im 'standalone'-
+      // Modus) beendet eine Web-App beim Wechsel in den Hintergrund NICHT,
+      // sondern pausiert sie nur im Speicher. Wird die App wieder geoeffnet,
+      // feuert der Browser dabei KEIN neues 'load'-Event und laedt auch
+      // KEIN neues index.html — der bereits im Speicher laufende, alte
+      // JavaScript-Code bleibt aktiv, selbst wenn der Server laengst eine neue
+      // Version ausliefert. Der Service Worker allein loest dieses Problem
+      // nicht, weil sich sw.js selbst bei einem reinen App-Code-Update meist
+      // gar nicht aendert. Deshalb hier zusaetzlich: bei jeder Rueckkehr in
+      // den Vordergrund direkt das aktuell vom Server ausgelieferte
+      // index.html abrufen und den referenzierten JS-Bundle-Namen mit dem
+      // aktuell geladenen vergleichen. Bei Abweichung: Hinweis-Banner statt
+      // hartem Reload, damit keine ungespeicherten Eingaben verloren gehen.
+      (function () {
+        var currentBundle = null;
+        var scripts = document.querySelectorAll('script[src*="/assets/"]');
+        for (var i = 0; i < scripts.length; i++) {
+          var m = scripts[i].getAttribute('src').match(/index-[^"']+\.js/);
+          if (m) { currentBundle = m[0]; break; }
+        }
+
+        var showUpdateBanner = function () {
+          if (document.getElementById('__update_banner__')) return;
+          var banner = document.createElement('div');
+          banner.id = '__update_banner__';
+          banner.setAttribute('style',
+            'position:fixed;left:0;right:0;bottom:0;z-index:99999;' +
+            'background:#6b4c2a;color:#fff;padding:12px 16px;' +
+            'font:14px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;' +
+            'display:flex;align-items:center;justify-content:space-between;gap:12px;' +
+            'box-shadow:0 -2px 8px rgba(0,0,0,.25);'
+          );
+          banner.innerHTML =
+            '<span>Eine neue Version von AuftragsPro ist verf\u00fcgbar.</span>' +
+            '<button id="__update_reload_btn__" style="background:#fff;color:#6b4c2a;border:none;' +
+            'border-radius:6px;padding:6px 14px;font-weight:600;">Jetzt aktualisieren</button>';
+          document.body.appendChild(banner);
+          document.getElementById('__update_reload_btn__').addEventListener('click', function () {
+            window.location.reload();
+          });
+        };
+
+        var checkBundleVersion = function () {
+          if (!currentBundle) return;
+          fetch('/', { cache: 'no-store' })
+            .then(function (r) { return r.text(); })
+            .then(function (html) {
+              var m = html.match(/index-[^"']+\.js/);
+              if (m && m[0] && m[0] !== currentBundle) {
+                showUpdateBanner();
+              }
+            })
+            .catch(function () {});
+        };
+
+        document.addEventListener('visibilitychange', function () {
+          if (document.visibilityState === 'visible') checkBundleVersion();
+        });
+        window.addEventListener('pageshow', function (event) {
+          if (event.persisted) checkBundleVersion();
+        });
+        window.addEventListener('focus', checkBundleVersion);
+      })();
     </script>
   </body>
 </html>
