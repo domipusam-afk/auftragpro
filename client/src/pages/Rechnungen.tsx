@@ -515,7 +515,7 @@ Schneggenburger GmbH`,
               <Card key={r.id} className="p-4 space-y-2" data-testid={`card-rechnung-${r.id}`}>
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
-                    <span className="font-mono text-xs font-bold">{r.nr}</span>
+                    <span className="font-mono text-xs font-bold whitespace-nowrap">{r.nr}</span>
                     {a && (
                       <Link href={`/auftraege/${a.id}`}>
                         <a className="block text-sm font-medium mt-0.5 hover:underline truncate" style={{ color: "#6b4c2a" }}>
@@ -526,7 +526,7 @@ Schneggenburger GmbH`,
                     <p className="text-xs text-muted-foreground mt-0.5 truncate">{a?.kunde || "—"}</p>
                   </div>
                   <div className="text-right shrink-0">
-                    <p className="font-bold tabular-nums text-base">{formatCHF(rechnungBruttoBetrag(r.betrag), r.waehrung)}</p>
+                    <p className="font-bold tabular-nums text-base whitespace-nowrap">{formatCHF(rechnungBruttoBetrag(r.betrag), r.waehrung)}</p>
                     <div className="mt-1">{statusBadge(r)}</div>
                   </div>
                 </div>

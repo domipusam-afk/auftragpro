@@ -176,6 +176,20 @@
     @apply border-border;
   }
 
+  /* Safari/WebKit-Textinflation (Font Boosting) deaktivieren:
+     iOS Safari vergroessert Text in schmalen Spalten automatisch
+     abhaengig vom DOM (nicht reproduzierbar in Chromium/Playwright).
+     Kombiniert mit schmalen flex-1 min-w-0 Textspalten (Mobile-Karten
+     Offerten/Rechnungen) kann das zu Wort-fuer-Wort-Umbruch fuehren,
+     da jedes Wort nach der Vergroesserung nicht mehr in die Spalte passt.
+     -webkit-text-size-adjust: 100% schaltet diese Heuristik ab und macht
+     die Textgroesse zwischen Chromium und Safari konsistent. */
+  html {
+    -webkit-text-size-adjust: 100%;
+    -moz-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
   body {
     @apply font-sans antialiased text-foreground;
     font-family: var(--font-sans);

@@ -1246,18 +1246,20 @@ function OffertenTab({ id, auftrag, vorlage, onVorlageUebernommen }: {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <span className="font-bold text-[#6b4c2a]">Offerte {o.nr}</span>
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[o.status] || STATUS_COLORS.offen}`}>
+                      <span className="font-bold text-[#6b4c2a] whitespace-nowrap">Offerte {o.nr}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${STATUS_COLORS[o.status] || STATUS_COLORS.offen}`}>
                         {o.status.charAt(0).toUpperCase() + o.status.slice(1)}
                       </span>
-                      <span className="text-xs text-muted-foreground">{o.datum}</span>
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">{o.datum}</span>
                     </div>
                     {o.projekt_beschreibung && (
                       <p className="text-sm font-medium truncate">{o.projekt_beschreibung}</p>
                     )}
-                    <p className="text-sm text-muted-foreground">{o.empfaenger_name} · {o.empfaenger_plz_ort}</p>
+                    <p className="text-sm text-muted-foreground">
+                      <span className="whitespace-nowrap">{o.empfaenger_name}</span> · <span className="whitespace-nowrap">{o.empfaenger_plz_ort}</span>
+                    </p>
                     <p className="text-sm font-semibold mt-1">
-                      Total inkl. MwSt.: <span className="text-[#6b4c2a]">{fmtCHF(inkl)}</span>
+                      Total inkl. MwSt.: <span className="text-[#6b4c2a] whitespace-nowrap">{fmtCHF(inkl)}</span>
                     </p>
                   </div>
                   <div className="flex flex-col gap-1.5 shrink-0">

@@ -162,30 +162,30 @@ export default function Offerten() {
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <span className="font-bold text-[#6b4c2a] text-sm">Offerte {o.nr}</span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[o.status] || STATUS_COLORS.offen}`}>
+                        <span className="font-bold text-[#6b4c2a] text-sm whitespace-nowrap">Offerte {o.nr}</span>
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${STATUS_COLORS[o.status] || STATUS_COLORS.offen}`}>
                           {o.status.charAt(0).toUpperCase() + o.status.slice(1)}
                         </span>
-                        <span className="text-xs text-muted-foreground">{o.datum}</span>
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">{o.datum}</span>
                       </div>
                       {o.projekt_beschreibung && (
                         <p className="text-sm font-medium truncate max-w-xs">{o.projekt_beschreibung}</p>
                       )}
                       <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1">
                         {o.empfaenger_name && (
-                          <p className="text-xs text-muted-foreground">{o.empfaenger_name}</p>
+                          <p className="text-xs text-muted-foreground whitespace-nowrap">{o.empfaenger_name}</p>
                         )}
                         {auftrag && (
                           <Link href={`/auftraege/${auftrag.id}`}>
-                            <a className="text-xs text-primary hover:underline">
+                            <a className="text-xs text-primary hover:underline whitespace-nowrap">
                               {auftrag.nr} · {auftrag.titel}
                             </a>
                           </Link>
                         )}
                       </div>
                       <p className="text-sm font-semibold mt-1">
-                        CHF {totalInkl.toFixed(2)}{" "}
-                        <span className="text-xs font-normal text-muted-foreground">inkl. MwSt.</span>
+                        <span className="whitespace-nowrap">CHF {totalInkl.toFixed(2)}</span>{" "}
+                        <span className="text-xs font-normal text-muted-foreground whitespace-nowrap">inkl. MwSt.</span>
                       </p>
                     </div>
 
