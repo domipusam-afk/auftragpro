@@ -9,7 +9,7 @@ import bcrypt from "bcryptjs";
 import * as OTPAuth from "otpauth";
 import QRCode from "qrcode";
 import { fileURLToPath } from "url";
-import { finanzenSummen, type FinanzenUebersichtZeile, berechneVorkalkulationsAngebotspreis } from "../shared/schema";
+import { finanzenSummen, type FinanzenUebersichtZeile, berechneVorkalkulationsAngebotspreis, rechnungBruttoBetrag, MWST_SATZ_RECHNUNG } from "../shared/schema";
 
 // Robust logo path resolution: works in both ESM (dev) and CJS (production build)
 function getLogoPath(): string {
@@ -2395,11 +2395,13 @@ export async function registerRoutes(
         for (const a of (auftraege || [])) auftraegeMap[a.id] = a;
       }
 
-      const mwstSatz = 8.1;
+      const mwstSatz = MWST_SATZ_RECHNUNG;
 
       // Banana Buchhaltung Format:
-      // Datum (DD.MM.YYYY) ; BelegNr ; Beschreibung ; Konto ; Gegenkonto ; Betrag (netto) ; MwSt-Code ; MwSt-Betrag
-      // Spaltenbezeichnungen auf Deutsch (Banana Standard)
+      // Datum (DD.MM.YYYY) ; BelegNr ; Beschreibung ; Konto ; Gegenkonto ; Betrag Netto CHF ; MwSt-Satz % ; MwSt-Betrag CHF ; Betrag Brutto CHF
+      // Spaltenbezeichnungen auf Deutsch (Banana Standard). Netto, MWST und Brutto
+      // werden als drei getrennte, klar beschriftete Spalten ausgewiesen (Schweizer
+      // MWST-Abrechnung braucht Netto-Umsatz und MWST-Betrag separat ausgewiesen).
       const sep = ";";
       const csvLines: string[] = [];
 
@@ -2412,22 +2414,28 @@ export async function registerRoutes(
       // Spaltenheader (Banana Buchhaltung Standard)
       csvLines.push([
         "Datum", "BelegNr", "Beschreibung", "Konto", "Gegenkonto",
-        "Betrag (netto)", "MwSt-Satz %", "MwSt-Betrag", "Betrag (brutto)", "Waehrung"
+        "Betrag Netto CHF", "MwSt-Satz %", "MwSt-Betrag CHF", "Betrag Brutto CHF", "Waehrung"
       ].join(sep));
 
       // === AUSGANGSRECHNUNGEN ===
+      // rechnungen.betrag ist in der DB bereits NETTO (Positionssumme exkl. MWST) —
+      // dieselbe Umrechnungslogik wie bei der Rechnungsliste/PDF-Erzeugung (netto × 1.081).
       csvLines.push(`=== Ausgangsrechnungen ===`);
-      let totalAusgang = 0;
+      let totalNettoAusgang = 0;
+      let totalMwstAusgang = 0;
+      let totalBruttoAusgang = 0;
       for (const r of (rechnungen || [])) {
-        const brutto = Number(r.betrag) || 0;
-        const netto  = Math.round((brutto / (1 + mwstSatz / 100)) * 100) / 100;
+        const netto  = Number(r.betrag) || 0;
+        const brutto = rechnungBruttoBetrag(netto);
         const mwst   = Math.round((brutto - netto) * 100) / 100;
         const auftrag = auftraegeMap[r.auftrag_id] || {};
         const datum  = r.erstellt
           ? new Date(r.erstellt).toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "numeric" })
           : "";
         const beschr = [auftrag.titel, auftrag.kunde].filter(Boolean).join(" / ").replace(/;/g, ",") || "Rechnung";
-        totalAusgang += brutto;
+        totalNettoAusgang += netto;
+        totalMwstAusgang += mwst;
+        totalBruttoAusgang += brutto;
 
         csvLines.push([
           datum,
@@ -2442,7 +2450,7 @@ export async function registerRoutes(
           r.waehrung || "CHF"
         ].join(sep));
       }
-      csvLines.push([`Total Ausgangsrechnungen`, "", "", "", "", "", "", "", totalAusgang.toFixed(2), "CHF"].join(sep));
+      csvLines.push([`Total Ausgangsrechnungen`, "", "", "", "", totalNettoAusgang.toFixed(2), "", totalMwstAusgang.toFixed(2), totalBruttoAusgang.toFixed(2), "CHF"].join(sep));
 
       // === EINGANGSRECHNUNGEN ===
       const { data: eingang } = await supabase
@@ -2455,7 +2463,12 @@ export async function registerRoutes(
       if (eingang && eingang.length > 0) {
         csvLines.push(``);
         csvLines.push(`=== Eingangsrechnungen (Aufwand) ===`);
-        let totalEingang = 0;
+        // eingangsrechnungen.betrag ist der vom Lieferanten in Rechnung gestellte
+        // Gesamtbetrag (BRUTTO, inkl. MWST) — hier ist die Ableitung Brutto→Netto/MWST
+        // korrekt (im Gegensatz zu den Ausgangsrechnungen oben, die netto in der DB sind).
+        let totalNettoEingang = 0;
+        let totalMwstEingang = 0;
+        let totalBruttoEingang = 0;
         for (const e of eingang) {
           const brutto = Number(e.betrag) || 0;
           const netto  = Math.round((brutto / (1 + mwstSatz / 100)) * 100) / 100;
@@ -2464,11 +2477,13 @@ export async function registerRoutes(
             ? new Date(e.erstellt).toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "numeric" })
             : "";
           const beschr = (e.beschreibung || e.lieferant || "Eingangsrechnung").replace(/;/g, ",");
-          totalEingang += brutto;
+          totalNettoEingang += netto;
+          totalMwstEingang += mwst;
+          totalBruttoEingang += brutto;
 
           csvLines.push([
             datum,
-            e.nr || "",
+            e.id || "",
             beschr,
             "2000",           // Kreditoren
             "4000",           // Aufwand
@@ -2479,7 +2494,7 @@ export async function registerRoutes(
             e.waehrung || "CHF"
           ].join(sep));
         }
-        csvLines.push([`Total Eingangsrechnungen`, "", "", "", "", "", "", "", totalEingang.toFixed(2), "CHF"].join(sep));
+        csvLines.push([`Total Eingangsrechnungen`, "", "", "", "", totalNettoEingang.toFixed(2), "", totalMwstEingang.toFixed(2), totalBruttoEingang.toFixed(2), "CHF"].join(sep));
       }
 
       const csvContent = csvLines.join("\r\n");
@@ -6464,15 +6479,18 @@ export async function registerRoutes(
         if (bis) q = q.lte("erstellt", bis);
         const { data: rechnungen, error: rErr } = await q;
         if (rErr) console.error("[FIBU] Ausgangsrechnungen Fehler:", rErr.message);
-        lines.push("Typ;Nummer;Datum;Faellig;Empfaenger;Betrag_exkl;MWST_Betrag;Betrag_inkl;Bezahlt_am;Status");
+        // rechnungen.betrag ist in der DB NETTO (Positionssumme exkl. MWST) —
+        // dieselbe Umrechnung wie bei Rechnungsliste/PDF (netto × 1.081 = brutto).
+        lines.push("Typ;Nummer;Datum;Faellig;Empfaenger;Betrag_Netto_CHF;MWST_Satz_Prozent;MWST_Betrag_CHF;Betrag_Brutto_CHF;Bezahlt_am;Status");
         for (const r of (rechnungen || [])) {
-          const exkl = (Number(r.betrag) / 1.081).toFixed(2);
-          const mwst = (Number(r.betrag) - Number(exkl)).toFixed(2);
+          const netto = Number(r.betrag) || 0;
+          const brutto = rechnungBruttoBetrag(netto);
+          const mwst = Math.round((brutto - netto) * 100) / 100;
           // Datum: erstellt als ISO-Datum (nur Datumsteil)
           const datumStr = r.erstellt ? String(r.erstellt).slice(0, 10) : "";
           // Empfaenger: aus Auftrag.kunde (JOIN)
           const empfaenger = ((r as any).auftraege?.kunde || (r as any).auftraege?.kunde_name || "").replace(/;/g, " ");
-          lines.push(`Ausgangsrechnung;${r.nr || ""};${datumStr};${r.faellig_datum || ""};${empfaenger};${exkl};${mwst};${Number(r.betrag).toFixed(2)};${r.bezahlt_am || ""};${r.bezahlt_am ? "Bezahlt" : "Offen"}`);
+          lines.push(`Ausgangsrechnung;${r.nr || ""};${datumStr};${r.faellig_datum || ""};${empfaenger};${netto.toFixed(2)};${MWST_SATZ_RECHNUNG.toFixed(1)};${mwst.toFixed(2)};${brutto.toFixed(2)};${r.bezahlt_am || ""};${r.bezahlt_am ? "Bezahlt" : "Offen"}`);
         }
       }
 
@@ -6482,13 +6500,16 @@ export async function registerRoutes(
         const { data: eingang, error: eErr } = eirResult;
         if (eErr) console.error("[FIBU] Eingangsrechnungen Fehler:", eErr.message);
         if (!typ) lines.push(""); // Leerzeile Trennung
-        lines.push("Typ;Nummer;Datum;Faellig;Lieferant;Betrag_exkl;MWST_Betrag;Betrag_inkl;Status");
+        // eingangsrechnungen.betrag ist der vom Lieferanten fakturierte Gesamtbetrag
+        // (BRUTTO, inkl. MWST) — hier ist Brutto→Netto/MWST-Ableitung korrekt.
+        lines.push("Typ;Nummer;Datum;Faellig;Lieferant;Betrag_Netto_CHF;MWST_Satz_Prozent;MWST_Betrag_CHF;Betrag_Brutto_CHF;Status");
         for (const e of (eingang || [])) {
-          const exkl = (Number(e.betrag) / 1.081).toFixed(2);
-          const mwst = (Number(e.betrag) - Number(exkl)).toFixed(2);
+          const brutto = Number(e.betrag) || 0;
+          const netto = Math.round((brutto / (1 + MWST_SATZ_RECHNUNG / 100)) * 100) / 100;
+          const mwst = Math.round((brutto - netto) * 100) / 100;
           const datumStr = (e.datum || e.erstellt || "");
           const datumFmt = datumStr ? String(datumStr).slice(0, 10) : "";
-          lines.push(`Eingangsrechnung;${e.nr || ""};${datumFmt};${e.faellig_datum || ""};${(e.lieferant || "").replace(/;/g, " ")};${exkl};${mwst};${Number(e.betrag).toFixed(2)};${e.status || "offen"}`);
+          lines.push(`Eingangsrechnung;${e.id || ""};${datumFmt};${e.faellig_datum || ""};${(e.lieferant || "").replace(/;/g, " ")};${netto.toFixed(2)};${MWST_SATZ_RECHNUNG.toFixed(1)};${mwst.toFixed(2)};${brutto.toFixed(2)};${e.status || "offen"}`);
         }
       }
 
