@@ -1243,8 +1243,12 @@ function OffertenTab({ id, auftrag, vorlage, onVorlageUebernommen }: {
             const inkl  = (total - total * (Number(o.rabatt_prozent) / 100)) * (1 + 0.081);
             return (
               <Card key={o.id} className="p-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
+                {/* Titel-Zeile IMMER als eigene volle Zeile ueber der Button-Spalte:
+                    flex-col (mobil) -> sm:flex-row (Desktop) statt flex-wrap, damit
+                    der Umbruch garantiert VOR dem Titel-Text passiert (siehe
+                    Offerten.tsx Standalone-Liste fuer denselben Fix). */}
+                <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-start justify-between gap-3">
+                  <div className="min-w-0 w-full sm:w-auto sm:flex-1">
                     <div className="flex items-center gap-2 flex-wrap mb-1">
                       <span className="font-bold text-[#6b4c2a] whitespace-nowrap">Offerte {o.nr}</span>
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${STATUS_COLORS[o.status] || STATUS_COLORS.offen}`}>
