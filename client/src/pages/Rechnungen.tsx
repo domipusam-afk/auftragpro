@@ -12,6 +12,8 @@ import { Label } from "@/components/ui/label";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import type { Rechnung, Auftrag } from "@shared/schema";
+import { rechnungBruttoBetrag } from "@shared/schema";
+
 import { formatCHF, formatDate } from "@/lib/format";
 import { Download, FileSpreadsheet, FileText, AlertCircle, CheckCircle2, Clock, Mail, Banknote, RotateCcw, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -234,7 +236,10 @@ export default function Rechnungen() {
     if (filterStatus === "storniert") return !!(r as any).storniert_am;
     return true;
   });
-  const total = filteredRechnungen.reduce((s, r) => s + (Number(r.betrag) || 0), 0);
+  // Anzeige in dieser Liste ist konsequent Brutto (inkl. MWST) — das, was der Kunde
+  // tatsaechlich bezahlt/bezahlen muss. rechnungen.betrag in der DB bleibt netto,
+  // Buchhaltungs-Exports (FIBU/Q3) rechnen unveraendert damit weiter.
+  const total = filteredRechnungen.reduce((s, r) => s + rechnungBruttoBetrag(r.betrag), 0);
   const ueberfaellig = (rechnungen || []).filter(r => {
     if ((r as any).bezahlt_am) return false; // bezahlte nicht als überfällig zählen
     if ((r as any).storniert_am) return false;
@@ -365,7 +370,7 @@ export default function Rechnungen() {
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">{a?.kunde || "—"}</td>
                       <td className="px-4 py-3 text-right font-semibold tabular-nums">
-                        {formatCHF(r.betrag, r.waehrung)}
+                        {formatCHF(rechnungBruttoBetrag(r.betrag), r.waehrung)}
                       </td>
                       <td className="px-4 py-3 text-center">
                         {statusBadge(r)}
@@ -430,7 +435,7 @@ export default function Rechnungen() {
                               subject: `Rechnung ${r.nr}`,
                               body: `Guten Tag,
 
-erbeiliegend senden wir Ihnen Ihre Rechnung ${r.nr} über CHF ${r.betrag?.toFixed(2) || "—"}.
+erbeiliegend senden wir Ihnen Ihre Rechnung ${r.nr} über CHF ${rechnungBruttoBetrag(r.betrag).toFixed(2)}.
 
 Freundliche Grüsse
 Schneggenburger GmbH`,
@@ -521,7 +526,7 @@ Schneggenburger GmbH`,
                     <p className="text-xs text-muted-foreground mt-0.5">{a?.kunde || "—"}</p>
                   </div>
                   <div className="text-right shrink-0">
-                    <p className="font-bold tabular-nums text-base">{formatCHF(r.betrag, r.waehrung)}</p>
+                    <p className="font-bold tabular-nums text-base">{formatCHF(rechnungBruttoBetrag(r.betrag), r.waehrung)}</p>
                     <div className="mt-1">{statusBadge(r)}</div>
                   </div>
                 </div>

@@ -229,6 +229,7 @@ export interface Rechnung {
   id: string;
   auftrag_id: string;
   nr: string;
+  /** Netto-Betrag exkl. MWST, wie in der Tabelle "rechnungen" gespeichert (Positionssumme). */
   betrag: number;
   waehrung: string;
   positionen: RechnungsPosition[];
@@ -238,6 +239,26 @@ export interface Rechnung {
   datum?: string | null;
   empfaenger_name?: string | null;
   erstellt: string;
+}
+
+/**
+ * Schweizer Standard-MWST-Satz, der aktuell überall im Rechnungs-PDF und in der
+ * QR-Rechnung verwendet wird (server/routes.ts). Rechnungen kennen (noch) keinen
+ * abweichenden Satz pro Rechnung — deshalb ein fixer Prozentsatz statt eines
+ * Felds auf der Tabelle "rechnungen".
+ */
+export const MWST_SATZ_RECHNUNG = 8.1;
+
+/**
+ * Bruttobetrag (inkl. MWST) einer Rechnung — das, was der Kunde tatsächlich
+ * bezahlen muss/bezahlt hat. rechnungen.betrag ist netto (Positionssumme exkl.
+ * MWST); dieselbe Umrechnung verwendet bereits die PDF-Erzeugung
+ * (server/routes.ts, mwstPct = 8.1). Einzige Stelle für diese Umrechnung im
+ * Frontend, damit Listenanzeige und PDF nicht auseinanderlaufen.
+ */
+export function rechnungBruttoBetrag(betragNetto: number | null | undefined): number {
+  const netto = Number(betragNetto) || 0;
+  return Math.round(netto * (1 + MWST_SATZ_RECHNUNG / 100) * 100) / 100;
 }
 
 export interface Stats {
