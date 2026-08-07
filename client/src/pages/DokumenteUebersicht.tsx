@@ -1,21 +1,15 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { FolderOpen, FileText, Image, File, Download, Search } from "lucide-react";
+import { FolderOpen, FileText, Image, File, Download, Search, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Auftrag } from "@shared/schema";
-
-interface Dokument {
-  id: string;
-  auftrag_id: string;
-  name: string;
-  mime_type: string;
-  datei_data?: string;
-  erstellt: string;
-}
+import { formatDate } from "@/lib/format";
+import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/hooks/use-confirm";
+import type { Auftrag, Dokument } from "@shared/schema";
 
 interface Foto {
   id: string;
@@ -26,15 +20,6 @@ interface Foto {
   datei_mime: string;
   kategorie: string;
   erstellt: string;
-}
-
-interface Eingangsrechnung {
-  id: string;
-  lieferant: string;
-  auftrag_id?: string;
-  betrag: number;
-  datum: string;
-  datei_name?: string;
 }
 
 const MIME_ICONS: Record<string, any> = {
@@ -49,10 +34,16 @@ const getIcon = (mime: string) => {
   return File;
 };
 
-const formatBytes = (b: number) => {
-  if (b < 1024) return `${b} B`;
-  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
-  return `${(b / (1024 * 1024)).toFixed(1)} MB`;
+const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
+
+type DateiEintrag = {
+  id: string;
+  name: string;
+  mime: string;
+  auftrag_id: string;
+  typ: "Dokument" | "Foto";
+  datum?: string | null;
+  previewData?: string;
 };
 
 const FORMATE_INFO = [
@@ -69,6 +60,8 @@ const FORMATE_INFO = [
 export default function DokumenteUebersicht() {
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<"alle" | "formate">("alle");
+  const { toast } = useToast();
+  const { confirm: confirmDelete, ConfirmDialog: DokumentConfirmDialog } = useConfirm();
 
   const { data: auftraege = [] } = useQuery<Auftrag[]>({
     queryKey: ["/api/auftraege"],
@@ -91,7 +84,7 @@ export default function DokumenteUebersicht() {
     enabled: auftraege.length > 0,
   });
 
-  const { data: allFotos = [] } = useQuery<Foto[]>({
+  const { data: allFotos = [], isLoading: fotosLoading } = useQuery<Foto[]>({
     queryKey: ["/api/fotos/alle"],
     queryFn: async () => {
       const results = await Promise.all(
@@ -106,36 +99,43 @@ export default function DokumenteUebersicht() {
     enabled: auftraege.length > 0,
   });
 
-  const getAuftragNr = (id: string) => {
-    return auftraege.find((a) => a.id === id)?.nr || id;
+  const getAuftrag = (id: string) => {
+    return auftraege.find((a) => a.id === id);
+  };
+
+  const getAuftragMeta = (id: string) => {
+    const auftrag = getAuftrag(id);
+    return [auftrag?.nr || id, auftrag?.kunde, auftrag?.titel].filter(Boolean).join(" · ");
   };
 
   const downloadFile = (data: string, name: string) => {
     const a = document.createElement("a");
     a.href = data;
     a.download = name;
+    a.style.display = "none";
+    document.body.appendChild(a);
     a.click();
+    a.remove();
   };
 
   // Combine all files
-  const allFiles = [
+  const allFiles: DateiEintrag[] = [
     ...allDocs.map((d) => ({
       id: d.id,
       name: d.name,
-      mime: d.mime_type || "application/octet-stream",
+      mime: d.mime || "application/octet-stream",
       auftrag_id: d.auftrag_id,
-      data: d.datei_data || "",
-      typ: "Dokument",
-      erstellt: d.erstellt,
+      typ: "Dokument" as const,
+      datum: d.datum,
     })),
     ...allFotos.filter((f) => f.datei_data).map((f) => ({
       id: f.id,
       name: f.datei_name || f.bezeichnung,
       mime: f.datei_mime || "image/jpeg",
       auftrag_id: f.auftrag_id,
-      data: f.datei_data,
-      typ: "Foto",
-      erstellt: f.erstellt,
+      previewData: f.datei_data,
+      typ: "Foto" as const,
+      datum: f.erstellt,
     })),
   ];
 
@@ -144,12 +144,38 @@ export default function DokumenteUebersicht() {
     return (
       !q ||
       f.name.toLowerCase().includes(q) ||
-      getAuftragNr(f.auftrag_id).toLowerCase().includes(q) ||
+      getAuftragMeta(f.auftrag_id).toLowerCase().includes(q) ||
       f.typ.toLowerCase().includes(q)
     );
   });
 
-  const sorted = [...filtered].sort((a, b) => (b.erstellt ?? '').localeCompare(a.erstellt ?? ''));
+  const sorted = [...filtered].sort((a, b) => (b.datum ?? "").localeCompare(a.datum ?? ""));
+
+  const deleteMutation = useMutation({
+    mutationFn: async (file: DateiEintrag) => {
+      const endpoint = file.typ === "Dokument"
+        ? `/api/auftraege/${file.auftrag_id}/dokumente/${file.id}`
+        : `/api/fotos/${file.id}`;
+      await apiRequest("DELETE", endpoint);
+    },
+    onSuccess: (_, file) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/dokumente/alle"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/fotos/alle"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/auftraege", file.auftrag_id] });
+      toast({ title: `${file.typ} gelöscht` });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Löschen fehlgeschlagen", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleDelete = async (file: DateiEintrag) => {
+    const confirmed = await confirmDelete({
+      title: `${file.typ} löschen?`,
+      description: `„${file.name}“ wird endgültig gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.`,
+    });
+    if (confirmed) deleteMutation.mutate(file);
+  };
 
   return (
     <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-6">
@@ -208,7 +234,7 @@ export default function DokumenteUebersicht() {
           </div>
 
           {/* Files List */}
-          {docsLoading ? (
+          {docsLoading || fotosLoading ? (
             <div className="space-y-2">{[1,2,3,4].map(i => <Skeleton key={i} className="h-14 w-full" />)}</div>
           ) : sorted.length === 0 ? (
             <Card className="p-10 text-center">
@@ -223,10 +249,13 @@ export default function DokumenteUebersicht() {
                 {sorted.map((f) => {
                   const Icon = getIcon(f.mime);
                   const isImage = f.mime.startsWith("image/");
+                  const downloadUrl = f.typ === "Dokument"
+                    ? `${API_BASE}/api/auftraege/${f.auftrag_id}/dokumente/${f.id}/download`
+                    : undefined;
                   return (
                     <div key={f.id} className="flex items-center gap-3 p-3 hover:bg-muted/50 transition-colors">
-                      {isImage && f.data ? (
-                        <img src={f.data} className="w-10 h-10 rounded object-cover shrink-0 border" />
+                      {isImage && f.previewData ? (
+                        <img src={f.previewData} alt="" className="w-10 h-10 rounded object-cover shrink-0 border" />
                       ) : (
                         <div className="w-10 h-10 rounded bg-muted flex items-center justify-center shrink-0">
                           <Icon className="h-5 w-5 text-muted-foreground" />
@@ -235,18 +264,44 @@ export default function DokumenteUebersicht() {
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium truncate">{f.name}</p>
                         <p className="text-xs text-muted-foreground">
-                          {getAuftragNr(f.auftrag_id)} · {f.typ} · {new Date(f.erstellt).toLocaleDateString("de-CH")}
+                          {getAuftragMeta(f.auftrag_id)} · {f.typ} · {formatDate(f.datum)}
                         </p>
                       </div>
-                      {f.data && (
+                      <div className="flex items-center gap-1 shrink-0">
+                        {downloadUrl ? (
+                          <a
+                            href={downloadUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                            title="Herunterladen"
+                            aria-label={`${f.name} herunterladen`}
+                            data-testid={`button-download-dokument-${f.id}`}
+                          >
+                            <Download className="h-4 w-4" />
+                          </a>
+                        ) : (
+                          <button
+                            onClick={() => f.previewData && downloadFile(f.previewData, f.name)}
+                            className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                            title="Herunterladen"
+                            aria-label={`${f.name} herunterladen`}
+                            data-testid={`button-download-foto-${f.id}`}
+                          >
+                            <Download className="h-4 w-4" />
+                          </button>
+                        )}
                         <button
-                          onClick={() => downloadFile(f.data, f.name)}
+                          onClick={() => void handleDelete(f)}
                           className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors shrink-0"
-                          title="Herunterladen"
+                          title="Löschen"
+                          aria-label={`${f.name} löschen`}
+                          data-testid={`button-delete-${f.typ.toLowerCase()}-${f.id}`}
+                          disabled={deleteMutation.isPending}
                         >
-                          <Download className="h-4 w-4" />
+                          <Trash2 className="h-4 w-4 text-destructive" />
                         </button>
-                      )}
+                      </div>
                     </div>
                   );
                 })}
@@ -273,6 +328,7 @@ export default function DokumenteUebersicht() {
           </div>
         </div>
       )}
+      <DokumentConfirmDialog />
     </div>
   );
 }

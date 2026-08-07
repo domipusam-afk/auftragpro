@@ -274,6 +274,7 @@ function DokumenteTab({ id, dokumente }: { id: string; dokumente: Dokument[] }) 
   const [kat, setKat] = useState("Plan/Zeichnung");
   const [beschreibung, setBeschreibung] = useState("");
   const { toast } = useToast();
+  const { confirm: confirmDelete, ConfirmDialog: DokumentConfirmDialog } = useConfirm();
 
   const uploadMut = useMutation({
     mutationFn: async (file: File) => {
@@ -310,6 +311,13 @@ function DokumenteTab({ id, dokumente }: { id: string; dokumente: Dokument[] }) 
   });
 
   const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
+  const handleDelete = async (dokument: Dokument) => {
+    const confirmed = await confirmDelete({
+      title: "Dokument löschen?",
+      description: `„${dokument.name}“ wird endgültig gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.`,
+    });
+    if (confirmed) delMut.mutate(dokument.id);
+  };
 
   return (
     <div className="space-y-4">
@@ -397,7 +405,8 @@ function DokumenteTab({ id, dokumente }: { id: string; dokumente: Dokument[] }) 
                   size="icon"
                   variant="ghost"
                   data-testid={`button-delete-doc-${d.id}`}
-                  onClick={() => delMut.mutate(d.id)}
+                  onClick={() => void handleDelete(d)}
+                  disabled={delMut.isPending}
                 >
                   <Trash className="h-4 w-4 text-destructive" />
                 </Button>
@@ -406,6 +415,7 @@ function DokumenteTab({ id, dokumente }: { id: string; dokumente: Dokument[] }) 
           ))
         )}
       </div>
+      <DokumentConfirmDialog />
     </div>
   );
 }
