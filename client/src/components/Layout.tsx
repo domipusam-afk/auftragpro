@@ -68,46 +68,41 @@ const AUFTRAEGE_SUB_NAV = [
 ];
 
 const FINANZ_NAV = [
-  { href: "/finanzen-uebersicht", label: "Finanzen-Übersicht", icon: Wallet2 },
-  { href: "/mahnwesen", label: "Mahnwesen", icon: AlertTriangle },
-  { href: "/mwst", label: "MWST-Abrechnung", icon: ReceiptText },
-  { href: "/eingangsrechnungen", label: "Eingangsrechnungen", icon: Receipt },
-  { href: "/garantien", label: "Garantieübersicht", icon: BadgeCheck },
+  { href: "/finanzen-uebersicht", label: "Finanzen-Übersicht", icon: Wallet2, berechtigung: "finanzmanagement_finanzen_uebersicht" as const },
+  { href: "/mahnwesen", label: "Mahnwesen", icon: AlertTriangle, berechtigung: "finanzmanagement_mahnwesen" as const },
+  { href: "/mwst", label: "MWST-Abrechnung", icon: ReceiptText, berechtigung: "finanzmanagement_mwst" as const },
+  { href: "/eingangsrechnungen", label: "Eingangsrechnungen", icon: Receipt, berechtigung: "finanzmanagement_eingangsrechnungen" as const },
+  { href: "/garantien", label: "Garantieübersicht", icon: BadgeCheck, berechtigung: "finanzmanagement_garantien" as const },
 ];
 
 
 const KALKULATION_NAV = [
-  { href: "/vorkalkulation-uebersicht", label: "Vorkalkulation", icon: Calculator },
-  { href: "/nachkalkulation", label: "Nachkalkulation", icon: TrendingUp },
+  { href: "/vorkalkulation-uebersicht", label: "Vorkalkulation", icon: Calculator, berechtigung: "kalkulation_vorkalkulation" as const },
+  { href: "/nachkalkulation", label: "Nachkalkulation", icon: TrendingUp, berechtigung: "kalkulation_nachkalkulation" as const },
 ];
 
 const RESSOURCE_NAV = [
-  { href: "/mitarbeiter", label: "Mitarbeiterakte", icon: Users },
-  { href: "/termine", label: "Planung & Termine", icon: CalendarDays },
-  { href: "/kalender", label: "Kalender", icon: CalendarCheck },
-  { href: "/plantafel", label: "Plantafel", icon: LayoutGrid },
-  { href: "/ferienplanung", label: "Ferienplanung", icon: Umbrella },
-  { href: "/stundenauswertung", label: "Stundenauswertung", icon: BarChart2 },
-  { href: "/lohnabrechnung", label: "Lohnabrechnung", icon: Banknote },
-];
-
-// Aufgaben sind für jede Person mit App-Zugang sichtbar. Die übrigen Punkte in
-// der Ressourcen-Gruppe behalten ihre bestehende Ressourcen-Berechtigung.
-const ALL_USERS_RESSOURCE_NAV = [
-  { href: "/aufgaben", label: "Aufgaben", icon: ClipboardCheck },
+  { href: "/mitarbeiter", label: "Mitarbeiterakte", icon: Users, berechtigung: "ressourcen_mitarbeiterakte" as const },
+  { href: "/termine", label: "Planung & Termine", icon: CalendarDays, berechtigung: "ressourcen_planung_termine" as const },
+  { href: "/kalender", label: "Kalender", icon: CalendarCheck, berechtigung: "ressourcen_kalender" as const },
+  { href: "/plantafel", label: "Plantafel", icon: LayoutGrid, berechtigung: "ressourcen_plantafel" as const },
+  { href: "/ferienplanung", label: "Ferienplanung", icon: Umbrella, berechtigung: "ressourcen_ferienplanung" as const },
+  { href: "/stundenauswertung", label: "Stundenauswertung", icon: BarChart2, berechtigung: "ressourcen_stundenauswertung" as const },
+  { href: "/lohnabrechnung", label: "Lohnabrechnung", icon: Banknote, berechtigung: "ressourcen_lohnabrechnung" as const },
+  { href: "/aufgaben", label: "Aufgaben", icon: ClipboardCheck, berechtigung: "ressourcen_aufgaben" as const },
 ];
 
 const EINKAUF_NAV = [
-  { href: "/lieferanten", label: "Lieferanten & Material", icon: Package },
-  { href: "/lager", label: "Lagerverwaltung", icon: ReceiptText },
+  { href: "/lieferanten", label: "Lieferanten & Material", icon: Package, berechtigung: "einkauf_lieferanten_material" as const },
+  { href: "/lager", label: "Lagerverwaltung", icon: ReceiptText, berechtigung: "einkauf_lagerverwaltung" as const },
 ];
 
 const DOKUMENT_NAV = [
-  { href: "/fotodokumentation", label: "Bild-/Fotodoku", icon: Camera },
-  { href: "/formulare", label: "Formulare & Unterschriften", icon: FileSignature },
-  { href: "/chat", label: "Chat & Historie", icon: MessageSquare },
-  { href: "/kundendatencenter", label: "Kundendatencenter", icon: Building2 },
-  { href: "/dokumente", label: "Dokumente (+40)", icon: FolderOpen },
+  { href: "/fotodokumentation", label: "Bild-/Fotodoku", icon: Camera, berechtigung: "dokumente_fotodokumentation" as const },
+  { href: "/formulare", label: "Formulare & Unterschriften", icon: FileSignature, berechtigung: "dokumente_formulare" as const },
+  { href: "/chat", label: "Chat & Historie", icon: MessageSquare, berechtigung: "dokumente_chat_historie" as const },
+  { href: "/kundendatencenter", label: "Kundendatencenter", icon: Building2, berechtigung: "dokumente_kundendatencenter" as const },
+  { href: "/dokumente", label: "Dokumente (+40)", icon: FolderOpen, berechtigung: "dokumente_uebersicht" as const },
 ];
 
 const BOTTOM_NAV = [
@@ -525,7 +520,7 @@ export default function Layout({ children }: { children: ReactNode }) {
     FINANZ_NAV.some((n) => location === n.href || location.startsWith(n.href + "/"))
   );
   const [ressourceOpen, setRessourceOpen] = useState(
-    [...RESSOURCE_NAV, ...ALL_USERS_RESSOURCE_NAV].some(
+    RESSOURCE_NAV.some(
       (n) => location === n.href || location.startsWith(n.href + "/")
     )
   );
@@ -560,7 +555,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (location === "/auftraege" || location.startsWith("/auftraege/")) setAuftraegeOpen(true);
     if (FINANZ_NAV.some((n) => location === n.href)) setFinanzOpen(true);
-    if ([...RESSOURCE_NAV, ...ALL_USERS_RESSOURCE_NAV].some((n) => location === n.href)) setRessourceOpen(true);
+    if (RESSOURCE_NAV.some((n) => location === n.href)) setRessourceOpen(true);
     if (DOKUMENT_NAV.some((n) => location === n.href)) setDokumentOpen(true);
     if (EINKAUF_NAV.some((n) => location === n.href)) setEinkaufOpen(true);
   }, [location]);
@@ -624,14 +619,14 @@ export default function Layout({ children }: { children: ReactNode }) {
               </button>
               {kalkulationOpen && (
                 <div className="flex flex-col gap-0.5 mt-0.5">
-                  {KALKULATION_NAV.map((item) => <NavItem key={item.href} {...item} collapsed={false} indent />)}
+                  {KALKULATION_NAV.filter((item) => isAdmin || hatZugriff(item.berechtigung)).map(({ berechtigung: _berechtigung, ...item }) => <NavItem key={item.href} {...item} collapsed={false} indent />)}
                 </div>
               )}
             </>
           ) : (
             <>
               <div className="my-2 border-t border-white/10" />
-              {KALKULATION_NAV.map((item) => <NavItem key={item.href} {...item} collapsed={true} />)}
+              {KALKULATION_NAV.filter((item) => isAdmin || hatZugriff(item.berechtigung)).map(({ berechtigung: _berechtigung, ...item }) => <NavItem key={item.href} {...item} collapsed={true} />)}
             </>
           )}
         </div>
@@ -652,14 +647,14 @@ export default function Layout({ children }: { children: ReactNode }) {
               </button>
               {finanzOpen && (
                 <div className="flex flex-col gap-0.5 mt-0.5">
-                  {FINANZ_NAV.map((item) => <NavItem key={item.href} {...item} collapsed={false} indent />)}
+                  {FINANZ_NAV.filter((item) => isAdmin || hatZugriff(item.berechtigung)).map(({ berechtigung: _berechtigung, ...item }) => <NavItem key={item.href} {...item} collapsed={false} indent />)}
                 </div>
               )}
             </>
           ) : (
             <>
               <div className="my-2 border-t border-white/10" />
-              {FINANZ_NAV.map((item) => <NavItem key={item.href} {...item} collapsed={true} />)}
+              {FINANZ_NAV.filter((item) => isAdmin || hatZugriff(item.berechtigung)).map(({ berechtigung: _berechtigung, ...item }) => <NavItem key={item.href} {...item} collapsed={true} />)}
             </>
           )}
         </div>
@@ -680,14 +675,14 @@ export default function Layout({ children }: { children: ReactNode }) {
               </button>
               {einkaufOpen && (
                 <div className="flex flex-col gap-0.5 mt-0.5">
-                  {EINKAUF_NAV.map((item) => <NavItem key={item.href} {...item} collapsed={false} indent />)}
+                  {EINKAUF_NAV.filter((item) => isAdmin || hatZugriff(item.berechtigung)).map(({ berechtigung: _berechtigung, ...item }) => <NavItem key={item.href} {...item} collapsed={false} indent />)}
                 </div>
               )}
             </>
           ) : (
             <>
               <div className="my-2 border-t border-white/10" />
-              {EINKAUF_NAV.map((item) => <NavItem key={item.href} {...item} collapsed={true} />)}
+              {EINKAUF_NAV.filter((item) => isAdmin || hatZugriff(item.berechtigung)).map(({ berechtigung: _berechtigung, ...item }) => <NavItem key={item.href} {...item} collapsed={true} />)}
             </>
           )}
         </div>
@@ -712,7 +707,7 @@ export default function Layout({ children }: { children: ReactNode }) {
               </button>
               {dokumentOpen && (
                 <div className="flex flex-col gap-0.5 mt-0.5">
-                  {DOKUMENT_NAV.map((item) => (
+                  {DOKUMENT_NAV.filter((item) => isAdmin || hatZugriff(item.berechtigung)).map(({ berechtigung: _berechtigung, ...item }) => (
                     <NavItem
                       key={item.href}
                       {...item}
@@ -727,7 +722,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           ) : (
             <>
               <div className="my-2 border-t border-white/10" />
-              {DOKUMENT_NAV.map((item) => (
+              {DOKUMENT_NAV.filter((item) => isAdmin || hatZugriff(item.berechtigung)).map(({ berechtigung: _berechtigung, ...item }) => (
                 <NavItem
                   key={item.href}
                   {...item}
@@ -739,8 +734,8 @@ export default function Layout({ children }: { children: ReactNode }) {
           )}
         </div>}
 
-        {/* Ressourcenmanagement Group — Aufgaben sind für alle eingeloggten Nutzer zugänglich. */}
-        <div className="px-2 mt-1">
+        {/* Ressourcenmanagement — sichtbar, sobald mindestens ein Unterpunkt erlaubt ist. */}
+        {(isAdmin || hatZugriff("ressourcen")) && <div className="px-2 mt-1">
           {show ? (
             <>
               <button
@@ -753,21 +748,17 @@ export default function Layout({ children }: { children: ReactNode }) {
               </button>
               {ressourceOpen && (
                 <div className="flex flex-col gap-0.5 mt-0.5">
-                  {(isAdmin || hatZugriff("ressourcen")) &&
-                    RESSOURCE_NAV.map((item) => <NavItem key={item.href} {...item} collapsed={false} indent />)}
-                  {ALL_USERS_RESSOURCE_NAV.map((item) => <NavItem key={item.href} {...item} collapsed={false} indent />)}
+                  {RESSOURCE_NAV.filter((item) => isAdmin || hatZugriff(item.berechtigung)).map(({ berechtigung: _berechtigung, ...item }) => <NavItem key={item.href} {...item} collapsed={false} indent />)}
                 </div>
               )}
             </>
           ) : (
             <>
               <div className="my-2 border-t border-white/10" />
-              {(isAdmin || hatZugriff("ressourcen")) &&
-                RESSOURCE_NAV.map((item) => <NavItem key={item.href} {...item} collapsed={true} />)}
-              {ALL_USERS_RESSOURCE_NAV.map((item) => <NavItem key={item.href} {...item} collapsed={true} />)}
+              {RESSOURCE_NAV.filter((item) => isAdmin || hatZugriff(item.berechtigung)).map(({ berechtigung: _berechtigung, ...item }) => <NavItem key={item.href} {...item} collapsed={true} />)}
             </>
           )}
-        </div>
+        </div>}
 
         {/* New Order Button */}
         <div className={cn("px-2 mt-4", !show && "px-2")}>

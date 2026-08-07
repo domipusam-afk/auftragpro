@@ -9,9 +9,18 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Users, Plus, Pencil, Trash2, ShieldOff, ShieldCheck, Eye, EyeOff, SlidersHorizontal, Check } from "lucide-react";
+import { Users, Plus, Pencil, Trash2, ShieldOff, ShieldCheck, Eye, EyeOff, SlidersHorizontal, Check, ChevronDown, ChevronRight } from "lucide-react";
 import { formatDate } from "@/lib/format";
-import { ALLE_MODULE, standardBerechtigungen, ModulKey } from "@/lib/permissions";
+import {
+  ALLE_EINZELBERECHTIGUNGEN,
+  ALLE_MODULE,
+  BerechtigungKey,
+  Berechtigungen,
+  ModulInfo,
+  parseBerechtigungen,
+  setzeModulBerechtigung,
+  standardBerechtigungen,
+} from "@/lib/permissions";
 
 interface Benutzer {
   id: string;
@@ -33,13 +42,9 @@ function BerechtigungenModal({
 }) {
   const { toast } = useToast();
 
-  // Aktuelle Berechtigungen laden (oder Standard)
-  const initPerms = (): Record<ModulKey, boolean> => {
-    if (!benutzer.berechtigungen) return standardBerechtigungen();
-    try { return JSON.parse(benutzer.berechtigungen); } catch { return standardBerechtigungen(); }
-  };
-
-  const [perms, setPerms] = useState<Record<ModulKey, boolean>>(initPerms);
+  // Alte Hauptmodul-Flags werden beim Laden auf die neuen Unterpunkte übertragen.
+  const [perms, setPerms] = useState<Berechtigungen>(() => parseBerechtigungen(benutzer.berechtigungen));
+  const [openModule, setOpenModule] = useState<Set<string>>(new Set());
 
   const saveMut = useMutation({
     mutationFn: async () => {
@@ -56,10 +61,27 @@ function BerechtigungenModal({
     onError: (e: Error) => toast({ title: "Fehler", description: e.message, variant: "destructive" }),
   });
 
-  const toggle = (key: ModulKey) => setPerms(p => ({ ...p, [key]: !p[key] }));
+  const toggle = (key: BerechtigungKey) => setPerms(p => ({ ...p, [key]: !p[key] }));
+  const modulIstErlaubt = (modul: ModulInfo) =>
+    modul.unterpunkte?.some((unterpunkt) => perms[unterpunkt.key]) ?? perms[modul.key];
+  const setModul = (modul: ModulInfo, erlaubt: boolean) =>
+    setPerms((p) => setzeModulBerechtigung(p, modul, erlaubt));
+  const toggleOpen = (key: string) => setOpenModule((offene) => {
+    const next = new Set(offene);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
 
-  const alleAn = () => setPerms(Object.fromEntries(ALLE_MODULE.map(m => [m.key, true])) as Record<ModulKey, boolean>);
-  const alleAus = () => setPerms(Object.fromEntries(ALLE_MODULE.map(m => [m.key, false])) as Record<ModulKey, boolean>);
+  const alleAn = () => setPerms(() => {
+    let next = standardBerechtigungen();
+    for (const modul of ALLE_MODULE) next = setzeModulBerechtigung(next, modul, true);
+    return next;
+  });
+  const alleAus = () => setPerms(() => {
+    let next = standardBerechtigungen();
+    for (const modul of ALLE_MODULE) next = setzeModulBerechtigung(next, modul, false);
+    return next;
+  });
   const standard = () => setPerms(standardBerechtigungen());
 
   return (
@@ -87,34 +109,105 @@ function BerechtigungenModal({
 
             {/* Modul-Liste */}
             <div className="space-y-1.5">
-              {ALLE_MODULE.map((modul) => (
-                <div
-                  key={modul.key}
-                  onClick={() => toggle(modul.key)}
-                  className={`flex items-start gap-3 rounded-lg px-3 py-2.5 cursor-pointer border transition-colors ${
-                    perms[modul.key]
-                      ? "bg-primary/5 border-primary/20 hover:bg-primary/10"
-                      : "bg-muted/30 border-transparent hover:bg-muted/50"
-                  }`}
-                  data-testid={`perm-toggle-${modul.key}`}
-                >
-                  {/* Checkbox */}
-                  <div className={`mt-0.5 w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors ${
-                    perms[modul.key] ? "bg-primary border-primary" : "border-muted-foreground/40"
-                  }`}>
-                    {perms[modul.key] && <Check className="h-2.5 w-2.5 text-primary-foreground" />}
+              {ALLE_MODULE.map((modul) => {
+                const hasUnterpunkte = !!modul.unterpunkte?.length;
+                const erlaubt = modulIstErlaubt(modul);
+                const expanded = openModule.has(modul.key);
+                return (
+                  <div
+                    key={modul.key}
+                    className={`rounded-lg border transition-colors ${
+                      erlaubt ? "bg-primary/5 border-primary/20" : "bg-muted/30 border-transparent"
+                    }`}
+                    data-testid={`permission-module-${modul.key}`}
+                  >
+                    <div className="flex items-start gap-3 px-3 py-2.5">
+                      {hasUnterpunkte ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleOpen(modul.key)}
+                          className="mt-0.5 rounded p-0.5 text-muted-foreground hover:text-foreground"
+                          aria-expanded={expanded}
+                          aria-label={`${modul.label} ${expanded ? "zuklappen" : "aufklappen"}`}
+                          data-testid={`perm-expand-${modul.key}`}
+                        >
+                          {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => toggle(modul.key)}
+                          aria-label={`${modul.label} ${erlaubt ? "sperren" : "erlauben"}`}
+                          className={`mt-0.5 w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors ${
+                            erlaubt ? "bg-primary border-primary" : "border-muted-foreground/40"
+                          }`}
+                          data-testid={`perm-toggle-${modul.key}`}
+                        >
+                          {erlaubt && <Check className="h-2.5 w-2.5 text-primary-foreground" />}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => hasUnterpunkte ? toggleOpen(modul.key) : toggle(modul.key)}
+                        className="flex-1 min-w-0 text-left"
+                      >
+                        <p className={`text-sm font-medium leading-none ${erlaubt ? "text-foreground" : "text-muted-foreground"}`}>
+                          {modul.label}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{modul.beschreibung}</p>
+                      </button>
+                      {hasUnterpunkte ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={erlaubt ? "default" : "outline"}
+                          onClick={() => setModul(modul, !erlaubt)}
+                          className="h-7 text-[10px] shrink-0"
+                          data-testid={`perm-toggle-${modul.key}`}
+                        >
+                          {erlaubt ? "Alle sperren" : "Alle erlauben"}
+                        </Button>
+                      ) : (
+                        <Badge variant={erlaubt ? "default" : "secondary"} className="text-[10px] shrink-0 mt-0.5">
+                          {erlaubt ? "Erlaubt" : "Gesperrt"}
+                        </Badge>
+                      )}
+                    </div>
+
+                    {hasUnterpunkte && expanded && (
+                      <div className="border-t border-border/60 px-3 py-2 space-y-1.5">
+                        {modul.unterpunkte!.map((unterpunkt) => (
+                          <button
+                            key={unterpunkt.key}
+                            type="button"
+                            onClick={() => toggle(unterpunkt.key)}
+                            className={`w-full flex items-start gap-3 rounded-md px-2.5 py-2 text-left transition-colors ${
+                              perms[unterpunkt.key] ? "bg-background/80 hover:bg-background" : "hover:bg-muted/60"
+                            }`}
+                            data-testid={`perm-toggle-${unterpunkt.key}`}
+                            aria-pressed={perms[unterpunkt.key]}
+                          >
+                            <span className={`mt-0.5 w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors ${
+                              perms[unterpunkt.key] ? "bg-primary border-primary" : "border-muted-foreground/40"
+                            }`}>
+                              {perms[unterpunkt.key] && <Check className="h-2.5 w-2.5 text-primary-foreground" />}
+                            </span>
+                            <span className="flex-1 min-w-0">
+                              <span className={`block text-sm font-medium leading-none ${perms[unterpunkt.key] ? "text-foreground" : "text-muted-foreground"}`}>
+                                {unterpunkt.label}
+                              </span>
+                              <span className="block text-xs text-muted-foreground mt-0.5">{unterpunkt.beschreibung}</span>
+                            </span>
+                            <Badge variant={perms[unterpunkt.key] ? "default" : "secondary"} className="text-[10px] shrink-0">
+                              {perms[unterpunkt.key] ? "Erlaubt" : "Gesperrt"}
+                            </Badge>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-sm font-medium leading-none ${perms[modul.key] ? "text-foreground" : "text-muted-foreground"}`}>
-                      {modul.label}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{modul.beschreibung}</p>
-                  </div>
-                  <Badge variant={perms[modul.key] ? "default" : "secondary"} className="text-[10px] shrink-0 mt-0.5">
-                    {perms[modul.key] ? "Erlaubt" : "Gesperrt"}
-                  </Badge>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <Button
@@ -230,8 +323,8 @@ export default function Benutzerverwaltung() {
         {benutzer.map((u) => {
           // Berechtigungen-Zähler
           const permCount = u.rolle === "admin" ? null : (() => {
-            const p = u.berechtigungen ? JSON.parse(u.berechtigungen) : standardBerechtigungen();
-            return Object.values(p).filter(Boolean).length;
+            const p = parseBerechtigungen(u.berechtigungen);
+            return ALLE_EINZELBERECHTIGUNGEN.filter((key) => p[key]).length;
           })();
 
           return (
@@ -253,7 +346,7 @@ export default function Benutzerverwaltung() {
                   }
                   {!u.aktiv && <Badge variant="destructive" className="text-xs">Deaktiviert</Badge>}
                   {permCount !== null && (
-                    <span className="text-muted-foreground">· {permCount} von {ALLE_MODULE.length} Module erlaubt</span>
+                    <span className="text-muted-foreground">· {permCount} von {ALLE_EINZELBERECHTIGUNGEN.length} Bereichen erlaubt</span>
                   )}
                   {u.rolle === "admin" && (
                     <span className="text-muted-foreground">· Voller Zugriff</span>

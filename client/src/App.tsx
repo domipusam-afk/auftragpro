@@ -52,7 +52,7 @@ import Lagerverwaltung from "@/pages/Lagerverwaltung";
 import ProjektStatus from "@/pages/ProjektStatus";
 import ZugriffGesperrt from "@/components/ZugriffGesperrt";
 
-function Geschuetzt({ modul, children, label }: { modul: import('@/lib/permissions').ModulKey; children: React.ReactNode; label?: string }) {
+function Geschuetzt({ modul, children, label }: { modul: import('@/lib/permissions').BerechtigungKey; children: React.ReactNode; label?: string }) {
   const { hatZugriff } = useAuth();
   if (!hatZugriff(modul)) return <ZugriffGesperrt modul={label} />;
   return <>{children}</>;
@@ -73,35 +73,35 @@ function AppRouter() {
       <Route path="/einstellungen">{() => <Geschuetzt modul="einstellungen" label="Einstellungen"><Einstellungen /></Geschuetzt>}</Route>
       <Route path="/benutzerverwaltung">{() => <Geschuetzt modul="benutzerverwaltung" label="Benutzerverwaltung"><Benutzerverwaltung /></Geschuetzt>}</Route>
       <Route path="/2fa" component={ZweiFA} />
-      <Route path="/mahnwesen">{() => <Geschuetzt modul="finanzmanagement" label="Mahnwesen"><Mahnwesen /></Geschuetzt>}</Route>
-      <Route path="/mwst">{() => <Geschuetzt modul="finanzmanagement" label="MWST-Auswertung"><MwstAuswertung /></Geschuetzt>}</Route>
-      <Route path="/finanzen-uebersicht">{() => <Geschuetzt modul="finanzmanagement" label="Finanzen-Übersicht"><FinanzenUebersicht /></Geschuetzt>}</Route>
-      <Route path="/vorkalkulation">{() => <Geschuetzt modul="kalkulation" label="Vorkalkulation"><Vorkalkulation /></Geschuetzt>}</Route>
-      <Route path="/auftraege/:id/kalkulation">{() => <Geschuetzt modul="kalkulation" label="Kalkulation"><Vorkalkulation /></Geschuetzt>}</Route>
-      <Route path="/eingangsrechnungen">{() => <Geschuetzt modul="finanzmanagement" label="Eingangsrechnungen"><Eingangsrechnungen /></Geschuetzt>}</Route>
-      <Route path="/nachkalkulation">{() => <Geschuetzt modul="kalkulation" label="Nachkalkulation"><NachkalkulationUebersicht /></Geschuetzt>}</Route>
-      <Route path="/vorkalkulation/:id">{(p) => <Geschuetzt modul="kalkulation" label="Vorkalkulation"><VorkalkulationDetail {...p} /></Geschuetzt>}</Route>
-      <Route path="/nachkalkulation/:id">{(p) => <Geschuetzt modul="kalkulation" label="Nachkalkulation"><NachkalkulationDetail {...p} /></Geschuetzt>}</Route>
-      <Route path="/mitarbeiter">{() => <Geschuetzt modul="ressourcen" label="Mitarbeiterakte"><Mitarbeiterakte /></Geschuetzt>}</Route>
-      <Route path="/termine" component={Termine} />
-      <Route path="/kalender" component={Kalender} />
-      <Route path="/plantafel" component={Plantafel} />
-      <Route path="/aufgaben" component={Aufgaben} />
-      <Route path="/fotodokumentation" component={Fotodokumentation} />
-      <Route path="/formulare" component={Formulare} />
-      <Route path="/chat" component={ChatHistorie} />
-      <Route path="/kundendatencenter" component={Kundendatencenter} />
-      <Route path="/dokumente">{() => <Geschuetzt modul="dokumente" label="Dokumente"><DokumenteUebersicht /></Geschuetzt>}</Route>
+      <Route path="/mahnwesen">{() => <Geschuetzt modul="finanzmanagement_mahnwesen" label="Mahnwesen"><Mahnwesen /></Geschuetzt>}</Route>
+      <Route path="/mwst">{() => <Geschuetzt modul="finanzmanagement_mwst" label="MWST-Auswertung"><MwstAuswertung /></Geschuetzt>}</Route>
+      <Route path="/finanzen-uebersicht">{() => <Geschuetzt modul="finanzmanagement_finanzen_uebersicht" label="Finanzen-Übersicht"><FinanzenUebersicht /></Geschuetzt>}</Route>
+      <Route path="/vorkalkulation">{() => <Geschuetzt modul="kalkulation_vorkalkulation" label="Vorkalkulation"><Vorkalkulation /></Geschuetzt>}</Route>
+      <Route path="/auftraege/:id/kalkulation">{() => <Geschuetzt modul="kalkulation_vorkalkulation" label="Kalkulation"><Vorkalkulation /></Geschuetzt>}</Route>
+      <Route path="/eingangsrechnungen">{() => <Geschuetzt modul="finanzmanagement_eingangsrechnungen" label="Eingangsrechnungen"><Eingangsrechnungen /></Geschuetzt>}</Route>
+      <Route path="/nachkalkulation">{() => <Geschuetzt modul="kalkulation_nachkalkulation" label="Nachkalkulation"><NachkalkulationUebersicht /></Geschuetzt>}</Route>
+      <Route path="/vorkalkulation/:id">{(p) => <Geschuetzt modul="kalkulation_vorkalkulation" label="Vorkalkulation"><VorkalkulationDetail {...p} /></Geschuetzt>}</Route>
+      <Route path="/nachkalkulation/:id">{(p) => <Geschuetzt modul="kalkulation_nachkalkulation" label="Nachkalkulation"><NachkalkulationDetail {...p} /></Geschuetzt>}</Route>
+      <Route path="/mitarbeiter">{() => <Geschuetzt modul="ressourcen_mitarbeiterakte" label="Mitarbeiterakte"><Mitarbeiterakte /></Geschuetzt>}</Route>
+      <Route path="/termine">{() => <Geschuetzt modul="ressourcen_planung_termine" label="Planung & Termine"><Termine /></Geschuetzt>}</Route>
+      <Route path="/kalender">{() => <Geschuetzt modul="ressourcen_kalender" label="Kalender"><Kalender /></Geschuetzt>}</Route>
+      <Route path="/plantafel">{() => <Geschuetzt modul="ressourcen_plantafel" label="Plantafel"><Plantafel /></Geschuetzt>}</Route>
+      <Route path="/aufgaben">{() => <Geschuetzt modul="ressourcen_aufgaben" label="Aufgaben"><Aufgaben /></Geschuetzt>}</Route>
+      <Route path="/fotodokumentation">{() => <Geschuetzt modul="dokumente_fotodokumentation" label="Bild-/Fotodoku"><Fotodokumentation /></Geschuetzt>}</Route>
+      <Route path="/formulare">{() => <Geschuetzt modul="dokumente_formulare" label="Formulare & Unterschriften"><Formulare /></Geschuetzt>}</Route>
+      <Route path="/chat">{() => <Geschuetzt modul="dokumente_chat_historie" label="Chat & Historie"><ChatHistorie /></Geschuetzt>}</Route>
+      <Route path="/kundendatencenter">{() => <Geschuetzt modul="dokumente_kundendatencenter" label="Kundendatencenter"><Kundendatencenter /></Geschuetzt>}</Route>
+      <Route path="/dokumente">{() => <Geschuetzt modul="dokumente_uebersicht" label="Dokumente"><DokumenteUebersicht /></Geschuetzt>}</Route>
       <Route path="/offerten">{() => <Geschuetzt modul="offerten" label="Offerten"><Offerten /></Geschuetzt>}</Route>
-      <Route path="/lohnabrechnung">{() => <Geschuetzt modul="ressourcen" label="Lohnabrechnung"><Lohnabrechnung /></Geschuetzt>}</Route>
-      <Route path="/ferienplanung">{() => <Geschuetzt modul="ressourcen" label="Ferienplanung"><Ferienplanung /></Geschuetzt>}</Route>
-      <Route path="/stundenauswertung">{() => <Geschuetzt modul="ressourcen" label="Stundenauswertung"><Stundenauswertung /></Geschuetzt>}</Route>
-      <Route path="/lieferanten">{() => <Geschuetzt modul="einkauf" label="Lieferanten"><Lieferanten /></Geschuetzt>}</Route>
-      <Route path="/garantien" component={GarantieUebersicht} />
-      <Route path="/vorkalkulation-uebersicht">{() => <Geschuetzt modul="kalkulation" label="Vorkalkulation"><VorkalkulationUebersicht /></Geschuetzt>}</Route>
-      <Route path="/nachkalkulation-uebersicht">{() => <Geschuetzt modul="kalkulation" label="Nachkalkulation"><NachkalkulationUebersicht /></Geschuetzt>}</Route>
+      <Route path="/lohnabrechnung">{() => <Geschuetzt modul="ressourcen_lohnabrechnung" label="Lohnabrechnung"><Lohnabrechnung /></Geschuetzt>}</Route>
+      <Route path="/ferienplanung">{() => <Geschuetzt modul="ressourcen_ferienplanung" label="Ferienplanung"><Ferienplanung /></Geschuetzt>}</Route>
+      <Route path="/stundenauswertung">{() => <Geschuetzt modul="ressourcen_stundenauswertung" label="Stundenauswertung"><Stundenauswertung /></Geschuetzt>}</Route>
+      <Route path="/lieferanten">{() => <Geschuetzt modul="einkauf_lieferanten_material" label="Lieferanten & Material"><Lieferanten /></Geschuetzt>}</Route>
+      <Route path="/garantien">{() => <Geschuetzt modul="finanzmanagement_garantien" label="Garantieübersicht"><GarantieUebersicht /></Geschuetzt>}</Route>
+      <Route path="/vorkalkulation-uebersicht">{() => <Geschuetzt modul="kalkulation_vorkalkulation" label="Vorkalkulation"><VorkalkulationUebersicht /></Geschuetzt>}</Route>
+      <Route path="/nachkalkulation-uebersicht">{() => <Geschuetzt modul="kalkulation_nachkalkulation" label="Nachkalkulation"><NachkalkulationUebersicht /></Geschuetzt>}</Route>
 
-      <Route path="/lager">{() => <Geschuetzt modul="einkauf" label="Lagerverwaltung"><Lagerverwaltung /></Geschuetzt>}</Route>
+      <Route path="/lager">{() => <Geschuetzt modul="einkauf_lagerverwaltung" label="Lagerverwaltung"><Lagerverwaltung /></Geschuetzt>}</Route>
 
       <Route path="/projekt/:token">{(params) => <ProjektStatus token={params.token} />}</Route>
       <Route component={NotFound} />
