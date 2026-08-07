@@ -146,10 +146,13 @@ const LEER_FORM = {
 export default function PositionenTab({
   auftragId,
   onOfferteErstellen,
+  preiseSichtbar = true,
 }: {
   auftragId: string;
   /** Öffnet die Offerte-Maske mit diesen Positionen vorausgefüllt (ohne zu speichern). */
   onOfferteErstellen?: (positionen: OffertePosition[]) => void;
+  /** Blendet alle Einzel- und Summenpreise für Mitarbeiter ohne Preisrecht aus. */
+  preiseSichtbar?: boolean;
 }) {
   const { toast } = useToast();
   const [filterKat, setFilterKat] = useState<Kategorie | "alle">("alle");
@@ -180,7 +183,7 @@ export default function PositionenTab({
       apiRequest("POST", `/api/auftraege/${auftragId}/positionen`, {
         ...body,
         menge: parseFloat(body.menge) || 0,
-        einzelpreis: parseFloat(body.einzelpreis) || 0,
+        einzelpreis: preiseSichtbar ? parseFloat(body.einzelpreis) || 0 : 0,
         lohn_bereich: body.kategorie === "lohn" ? body.lohn_bereich : null,
       }).then(r => r.json()),
     onSuccess: () => {
@@ -240,9 +243,13 @@ export default function PositionenTab({
       toast({ title: "Keine Material-Positionen vorhanden" });
       return;
     }
-    const header = "Pos;Bezeichnung;Beschreibung;Menge;Einheit;Einzelpreis CHF;Total CHF";
+    const header = preiseSichtbar
+      ? "Pos;Bezeichnung;Beschreibung;Menge;Einheit;Einzelpreis CHF;Total CHF"
+      : "Pos;Bezeichnung;Beschreibung;Menge;Einheit";
     const rows = material.map((p, i) =>
-      `${i + 1};"${p.bezeichnung}";"${p.beschreibung ?? ""}";"${p.menge}";"${p.einheit}";"${p.einzelpreis}";"${total(p).toFixed(2)}"`
+      preiseSichtbar
+        ? `${i + 1};"${p.bezeichnung}";"${p.beschreibung ?? ""}";"${p.menge}";"${p.einheit}";"${p.einzelpreis}";"${total(p).toFixed(2)}"`
+        : `${i + 1};"${p.bezeichnung}";"${p.beschreibung ?? ""}";"${p.menge}";"${p.einheit}"`
     );
     const csv = [header, ...rows].join("\n");
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
@@ -264,7 +271,7 @@ export default function PositionenTab({
       kategorie: p.kategorie,
       menge: p.menge,
       einheit: p.einheit,
-      einzelpreis: p.einzelpreis,
+      ...(preiseSichtbar ? { einzelpreis: p.einzelpreis } : {}),
       lohn_bereich: p.lohn_bereich ?? "",
     });
   };
@@ -328,9 +335,13 @@ export default function PositionenTab({
 
   const saveEdit = () => {
     if (!editId) return;
+    const { einzelpreis: _einzelpreis, ...editDataOhnePreis } = editData;
     bearbeiteMutation.mutate({
       pid: editId,
-      body: { ...editData, lohn_bereich: editData.kategorie === "lohn" ? editData.lohn_bereich : null },
+      body: {
+        ...(preiseSichtbar ? editData : editDataOhnePreis),
+        lohn_bereich: editData.kategorie === "lohn" ? editData.lohn_bereich : null,
+      },
     });
   };
 
@@ -366,7 +377,7 @@ export default function PositionenTab({
       </div>
 
       {/* Kategorie-Filter */}
-      {positionen.length > 0 && (
+      {preiseSichtbar && positionen.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 mb-3">
           {(["alle", "material", "lohn", "fremdleistung"] as const).map(k => (
             <button
@@ -406,8 +417,12 @@ export default function PositionenTab({
                 <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground hidden sm:table-cell">Kategorie</th>
                 <th className="text-right px-3 py-2 text-xs font-semibold text-muted-foreground">Menge</th>
                 <th className="text-left px-2 py-2 text-xs font-semibold text-muted-foreground hidden sm:table-cell">Einh.</th>
-                <th className="text-right px-3 py-2 text-xs font-semibold text-muted-foreground hidden md:table-cell">Einzelpr.</th>
-                <th className="text-right px-3 py-2 text-xs font-semibold text-muted-foreground">Total</th>
+                {preiseSichtbar && (
+                  <>
+                    <th className="text-right px-3 py-2 text-xs font-semibold text-muted-foreground hidden md:table-cell">Einzelpr.</th>
+                    <th className="text-right px-3 py-2 text-xs font-semibold text-muted-foreground">Total</th>
+                  </>
+                )}
                 <th className="px-2 py-2 w-16"></th>
               </tr>
             </thead>
@@ -540,29 +555,33 @@ export default function PositionenTab({
                     )}
                   </td>
 
-                  {/* Einzelpreis */}
-                  <td className="px-3 py-2.5 text-right hidden md:table-cell">
-                    {editId === p.id ? (
-                      <Input
-                        type="number"
-                        value={editData.einzelpreis ?? ""}
-                        onChange={e => setEditData(d => ({ ...d, einzelpreis: parseFloat(e.target.value) || 0 }))}
-                        className="h-7 text-xs w-24 text-right ml-auto"
-                        step="0.01"
-                        min="0"
-                        data-testid="input-edit-einzelpreis"
-                      />
-                    ) : (
-                      <span className="text-xs tabular-nums text-muted-foreground">{formatCHF(p.einzelpreis)}</span>
-                    )}
-                  </td>
+                  {preiseSichtbar && (
+                    <>
+                      {/* Einzelpreis */}
+                      <td className="px-3 py-2.5 text-right hidden md:table-cell">
+                        {editId === p.id ? (
+                          <Input
+                            type="number"
+                            value={editData.einzelpreis ?? ""}
+                            onChange={e => setEditData(d => ({ ...d, einzelpreis: parseFloat(e.target.value) || 0 }))}
+                            className="h-7 text-xs w-24 text-right ml-auto"
+                            step="0.01"
+                            min="0"
+                            data-testid="input-edit-einzelpreis"
+                          />
+                        ) : (
+                          <span className="text-xs tabular-nums text-muted-foreground">{formatCHF(p.einzelpreis)}</span>
+                        )}
+                      </td>
 
-                  {/* Total */}
-                  <td className="px-3 py-2.5 text-right">
-                    <span className="text-xs font-bold tabular-nums text-green-700">
-                      {formatCHF(total(p))}
-                    </span>
-                  </td>
+                      {/* Total */}
+                      <td className="px-3 py-2.5 text-right">
+                        <span className="text-xs font-bold tabular-nums text-green-700">
+                          {formatCHF(total(p))}
+                        </span>
+                      </td>
+                    </>
+                  )}
 
                   {/* Aktionen */}
                   <td className="px-2 py-2.5">
@@ -653,7 +672,7 @@ export default function PositionenTab({
           </div>
 
           {/* Zeile 2: Kategorie + Menge + Einheit + Preis */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div className={`grid grid-cols-2 ${preiseSichtbar ? "sm:grid-cols-4" : "sm:grid-cols-3"} gap-2`}>
             <div>
               <label className="text-xs text-muted-foreground mb-1 block font-medium">Kategorie</label>
               <Select
@@ -697,19 +716,21 @@ export default function PositionenTab({
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block font-medium">Einzelpreis (CHF)</label>
-              <Input
-                type="number"
-                value={neuesFormular.einzelpreis}
-                onChange={e => setNeuesFormular(f => ({ ...f, einzelpreis: e.target.value }))}
-                placeholder="0.00"
-                className="h-8 text-xs text-right"
-                step="0.01"
-                min="0"
-                data-testid="input-neu-einzelpreis"
-              />
-            </div>
+            {preiseSichtbar && (
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block font-medium">Einzelpreis (CHF)</label>
+                <Input
+                  type="number"
+                  value={neuesFormular.einzelpreis}
+                  onChange={e => setNeuesFormular(f => ({ ...f, einzelpreis: e.target.value }))}
+                  placeholder="0.00"
+                  className="h-8 text-xs text-right"
+                  step="0.01"
+                  min="0"
+                  data-testid="input-neu-einzelpreis"
+                />
+              </div>
+            )}
           </div>
 
           {/* Zeile 3: Bereich — nur bei Lohn, steuert das Ziel in der Vorkalkulation */}
@@ -762,7 +783,7 @@ export default function PositionenTab({
       )}
 
       {/* Totals — nur wenn Positionen vorhanden */}
-      {positionen.length > 0 && (
+      {preiseSichtbar && positionen.length > 0 && (
         <div className="mt-4 rounded-md border border-border bg-muted/30 p-4">
           <div className="flex flex-wrap gap-6 justify-between">
 

@@ -49,6 +49,8 @@ function KpiCard({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const { hatZugriff } = useAuth();
+  const darfPreiseSehen = hatZugriff("auftraege_preise_sichtbar");
 
   // Klick außerhalb schliesst Dropdown
   useEffect(() => {
@@ -127,7 +129,7 @@ function KpiCard({
                     <div className="text-xs text-muted-foreground truncate mt-0.5">{a.kunde}</div>
                   </div>
                   <div className="flex items-center gap-2 ml-2 shrink-0">
-                    {a.angebots_betrag != null && (
+                    {darfPreiseSehen && a.angebots_betrag != null && (
                       <span className="text-xs font-semibold tabular-nums" style={{ color: "#6b4c2a" }}>
                         {formatCHF(a.angebots_betrag, a.waehrung)}
                       </span>
@@ -156,6 +158,7 @@ function KpiCard({
 export default function Dashboard() {
   const { hatZugriff } = useAuth();
   const darf_finanzen = hatZugriff("dashboard_finanzen");
+  const darfPreiseSehen = hatZugriff("auftraege_preise_sichtbar");
 
   const { data: stats, isLoading: lStats } = useQuery<Stats>({
     queryKey: ["/api/stats"],
@@ -355,18 +358,12 @@ export default function Dashboard() {
       </div>
 
       {/* Offerten Übersicht */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6">
         <KpiCard
           label="Offene Offerten"
           value={offerten.filter((o: any) => o.status !== 'angenommen' && o.status !== 'abgelehnt').length}
           icon={FileText}
           tone="amber"
-        />
-        <KpiCard
-          label="Offerten-Wert"
-          value={formatCHF(offerten.filter((o: any) => o.status !== 'angenommen' && o.status !== 'abgelehnt').reduce((s: number, o: any) => s + (Number(o.betrag_total) || 0), 0))}
-          icon={TrendingUp}
-          tone="primary"
         />
         <KpiCard
           label="Angenommen"
@@ -735,7 +732,7 @@ export default function Dashboard() {
                     </div>
                     <div className="text-sm font-medium mt-1 truncate">{a.titel}</div>
                     <div className="text-xs text-muted-foreground truncate">{a.kunde}</div>
-                    {a.angebots_betrag != null && (
+                    {darfPreiseSehen && a.angebots_betrag != null && (
                       <div className="text-xs mt-1 font-medium">
                         {formatCHF(a.angebots_betrag, a.waehrung)}
                       </div>

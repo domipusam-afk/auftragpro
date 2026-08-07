@@ -41,6 +41,7 @@ import { STATUS_LABEL, STATUS_ORDER, PRIORITAETEN } from "@shared/schema";
 import { STATUS_BADGE, PRIO_BADGE, formatCHF, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/lib/auth";
 
 // Status, die als "abgeschlossen / archiviert" gelten
 const DONE_STATUSES: Status[] = ["abgeschlossen", "storniert"];
@@ -57,6 +58,8 @@ export default function AuftragsListe() {
   const [archivOpen, setArchivOpen] = useState(initialStatus === "abgeschlossen" || initialStatus === "storniert");
   const [wiederkehrendOpen, setWiederkehrendOpen] = useState(false);
   const { toast } = useToast();
+  const { hatZugriff } = useAuth();
+  const darfPreiseSehen = hatZugriff("auftraege_preise_sichtbar");
 
   // Wenn sich die URL ändert (z.B. Navigation via Dashboard), Filter aktualisieren
   useEffect(() => {
@@ -207,17 +210,19 @@ export default function AuftragsListe() {
             </div>
             <div className="text-sm text-muted-foreground mt-0.5">{a.kunde}</div>
           </div>
-          <div className="text-right shrink-0 space-y-0.5">
-            <div>
-              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Angebot</div>
-              <div className="font-medium tabular-nums text-sm">{formatCHF(a.angebots_betrag, a.waehrung)}</div>
+          {darfPreiseSehen && (
+            <div className="text-right shrink-0 space-y-0.5">
+              <div>
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Angebot</div>
+                <div className="font-medium tabular-nums text-sm">{formatCHF(a.angebots_betrag, a.waehrung)}</div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Rechnung</div>
+                <div className="font-medium tabular-nums text-sm">{formatCHF(a.rechnungs_betrag, a.waehrung)}</div>
+                <BezahltHinweis a={a} />
+              </div>
             </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Rechnung</div>
-              <div className="font-medium tabular-nums text-sm">{formatCHF(a.rechnungs_betrag, a.waehrung)}</div>
-              <BezahltHinweis a={a} />
-            </div>
-          </div>
+          )}
         </div>
         <div className="flex items-center flex-wrap gap-1.5">
           <Badge variant="outline" className={cn(STATUS_BADGE[a.status])}>
@@ -296,13 +301,17 @@ export default function AuftragsListe() {
             {a.prioritaet}
           </Badge>
         </td>
-        <td className="px-4 py-3 text-right font-medium tabular-nums">
-          {formatCHF(a.angebots_betrag, a.waehrung)}
-        </td>
-        <td className="px-4 py-3 text-right font-medium tabular-nums">
-          <div>{formatCHF(a.rechnungs_betrag, a.waehrung)}</div>
-          <BezahltHinweis a={a} />
-        </td>
+        {darfPreiseSehen && (
+          <>
+            <td className="px-4 py-3 text-right font-medium tabular-nums">
+              {formatCHF(a.angebots_betrag, a.waehrung)}
+            </td>
+            <td className="px-4 py-3 text-right font-medium tabular-nums">
+              <div>{formatCHF(a.rechnungs_betrag, a.waehrung)}</div>
+              <BezahltHinweis a={a} />
+            </td>
+          </>
+        )}
         <td className="px-4 py-3 text-right text-muted-foreground text-xs">
           {formatDate(a.erstellt)}
         </td>
@@ -365,8 +374,12 @@ export default function AuftragsListe() {
         <th className="text-left px-4 py-3 font-medium">Kunde</th>
         <th className="text-left px-4 py-3 font-medium">Status</th>
         <th className="text-left px-4 py-3 font-medium">Priorität</th>
-        <th className="text-right px-4 py-3 font-medium">Angebot</th>
-        <th className="text-right px-4 py-3 font-medium">Rechnung</th>
+        {darfPreiseSehen && (
+          <>
+            <th className="text-right px-4 py-3 font-medium">Angebot</th>
+            <th className="text-right px-4 py-3 font-medium">Rechnung</th>
+          </>
+        )}
         <th className="text-right px-4 py-3 font-medium">Erstellt</th>
         <th className="px-4 py-3"></th>
       </tr>

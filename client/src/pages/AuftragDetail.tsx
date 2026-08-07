@@ -90,6 +90,7 @@ import { cn } from "@/lib/utils";
 import { downloadPdf as triggerPdfDownload } from "@/lib/pdf";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirm } from "@/hooks/use-confirm";
+import { useAuth } from "@/lib/auth";
 
 const openPdfInTab = (url: string, filename = "dokument.pdf") => {
   triggerPdfDownload(url, filename);
@@ -462,9 +463,11 @@ type RechnungsPositionForm = Omit<RechnungsPosition, "menge" | "einzelpreis"> & 
 function RechnungenTab({
   id,
   auftrag,
+  preiseSichtbar,
 }: {
   id: string;
   auftrag: Auftrag;
+  preiseSichtbar: boolean;
 }) {
   const [positionen, setPositionen] = useState<RechnungsPositionForm[]>([
     { beschreibung: "", menge: 1, einzelpreis: 0, betrag: 0 },
@@ -585,7 +588,7 @@ function RechnungenTab({
 
   return (
     <div className="space-y-6">
-      <Card className="p-4">
+      {preiseSichtbar && <Card className="p-4">
         <h3 className="font-semibold mb-3" style={{ fontFamily: "var(--font-display)" }}>
           Neue Rechnung
         </h3>
@@ -696,7 +699,7 @@ function RechnungenTab({
             Rechnung speichern
           </Button>
         </div>
-      </Card>
+      </Card>}
 
       <div>
         <h3 className="font-semibold mb-3" style={{ fontFamily: "var(--font-display)" }}>
@@ -726,23 +729,27 @@ function RechnungenTab({
                       {Array.isArray(r.positionen) ? r.positionen.length : 0} Pos.
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className={`font-bold tabular-nums ${r.bezahlt_am ? "text-green-700 line-through" : ""}`}>
-                      {formatCHF(r.betrag, r.waehrung)}
+                  {preiseSichtbar && (
+                    <div className="text-right">
+                      <div className={`font-bold tabular-nums ${r.bezahlt_am ? "text-green-700 line-through" : ""}`}>
+                        {formatCHF(r.betrag, r.waehrung)}
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    data-testid={`button-pdf-${r.id}`}
-                    onClick={() => downloadPdf(r.id, r.nr)}
-                    className="h-7 text-xs"
-                  >
-                    <Printer className="h-3 w-3 mr-1" />
-                    PDF
-                  </Button>
+                  {preiseSichtbar && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      data-testid={`button-pdf-${r.id}`}
+                      onClick={() => downloadPdf(r.id, r.nr)}
+                      className="h-7 text-xs"
+                    >
+                      <Printer className="h-3 w-3 mr-1" />
+                      PDF
+                    </Button>
+                  )}
                   {r.bezahlt_am ? (
                     <Button
                       size="sm"
@@ -805,12 +812,13 @@ type OffertePositionForm = Omit<OffertePosition, "menge" | "einzelpreis"> & {
   einzelpreis: string | number;
 };
 
-function OffertenTab({ id, auftrag, vorlage, onVorlageUebernommen }: {
+function OffertenTab({ id, auftrag, vorlage, onVorlageUebernommen, preiseSichtbar }: {
   id: string;
   auftrag: Auftrag;
   /** Positionen aus dem Positionen-Tab, die in die Maske vorgeladen werden sollen. */
   vorlage?: OffertePosition[] | null;
   onVorlageUebernommen?: () => void;
+  preiseSichtbar: boolean;
 }) {
   const { toast } = useToast();
   const { confirm: confirmAction, ConfirmDialog: OfferteConfirmDialog } = useConfirm();
@@ -1032,13 +1040,15 @@ function OffertenTab({ id, auftrag, vorlage, onVorlageUebernommen }: {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm font-semibold">Offerten ({offerten.length})</p>
-        <Button size="sm" onClick={() => setShowForm(!showForm)}
-          className="bg-[#6b4c2a] hover:bg-[#5a3e22] text-white">
-          <Plus className="w-4 h-4 mr-1" /> Neue Offerte
-        </Button>
+        {preiseSichtbar && (
+          <Button size="sm" onClick={() => setShowForm(!showForm)}
+            className="bg-[#6b4c2a] hover:bg-[#5a3e22] text-white">
+            <Plus className="w-4 h-4 mr-1" /> Neue Offerte
+          </Button>
+        )}
       </div>
 
-      {showForm && (
+      {preiseSichtbar && showForm && (
         <Card className="p-4 space-y-4 border-2 border-[#6b4c2a]/30">
           <p className="text-sm font-bold text-[#6b4c2a]">{editOfferte ? `Offerte ${editOfferte.nr} bearbeiten` : "Neue Offerte erstellen"}</p>
 
@@ -1272,34 +1282,40 @@ function OffertenTab({ id, auftrag, vorlage, onVorlageUebernommen }: {
                     <p className="text-sm text-muted-foreground">
                       <span className="whitespace-nowrap">{o.empfaenger_name}</span> · <span className="whitespace-nowrap">{o.empfaenger_plz_ort}</span>
                     </p>
-                    <p className="text-sm font-semibold mt-1">
-                      Total inkl. MwSt.: <span className="text-[#6b4c2a] whitespace-nowrap">{fmtCHF(inkl)}</span>
-                    </p>
+                    {preiseSichtbar && (
+                      <p className="text-sm font-semibold mt-1">
+                        Total inkl. MwSt.: <span className="text-[#6b4c2a] whitespace-nowrap">{fmtCHF(inkl)}</span>
+                      </p>
+                    )}
                   </div>
                   <div className="flex flex-col gap-1.5 shrink-0">
-                    <Button size="sm" variant="outline"
-                      onClick={() => handlePdf(o.id, o.nr)}
-                      disabled={pdfLoading === o.id}>
-                      {pdfLoading === o.id ? "PDF..." : <><Eye className="w-3.5 h-3.5 mr-1" /> PDF</>}
-                    </Button>
-                    <Button size="sm" variant="outline"
-                      className="text-[#6b4c2a] border-[#6b4c2a]/40 hover:bg-[#6b4c2a]/10"
-                      onClick={() => openEditForm(o)}>
-                      <Pencil className="w-3.5 h-3.5 mr-1" /> Bearbeiten
-                    </Button>
-                    <Button size="sm" variant="outline"
-                      className="text-green-700 border-green-300 hover:bg-green-50"
-                      disabled={converting === o.id || o.status === "abgelehnt"}
-                      onClick={() => {
-                        if (confirm(`Offerte ${o.nr} in eine Rechnung umwandeln?`)) {
-                          setConverting(o.id);
-                          zuRechnungMutation.mutate(o.id);
-                        }
-                      }}>
-                      {converting === o.id
-                        ? "..."
-                        : <><ArrowRightLeft className="w-3.5 h-3.5 mr-1" /> Rechnung</>}
-                    </Button>
+                    {preiseSichtbar && (
+                      <>
+                        <Button size="sm" variant="outline"
+                          onClick={() => handlePdf(o.id, o.nr)}
+                          disabled={pdfLoading === o.id}>
+                          {pdfLoading === o.id ? "PDF..." : <><Eye className="w-3.5 h-3.5 mr-1" /> PDF</>}
+                        </Button>
+                        <Button size="sm" variant="outline"
+                          className="text-[#6b4c2a] border-[#6b4c2a]/40 hover:bg-[#6b4c2a]/10"
+                          onClick={() => openEditForm(o)}>
+                          <Pencil className="w-3.5 h-3.5 mr-1" /> Bearbeiten
+                        </Button>
+                        <Button size="sm" variant="outline"
+                          className="text-green-700 border-green-300 hover:bg-green-50"
+                          disabled={converting === o.id || o.status === "abgelehnt"}
+                          onClick={() => {
+                            if (confirm(`Offerte ${o.nr} in eine Rechnung umwandeln?`)) {
+                              setConverting(o.id);
+                              zuRechnungMutation.mutate(o.id);
+                            }
+                          }}>
+                          {converting === o.id
+                            ? "..."
+                            : <><ArrowRightLeft className="w-3.5 h-3.5 mr-1" /> Rechnung</>}
+                        </Button>
+                      </>
+                    )}
                     <Select value={o.status} onValueChange={s => statusMutation.mutate({ oid: o.id, status: s })}>
                       <SelectTrigger className="h-8 text-xs w-28">
                         <SelectValue />
@@ -1366,7 +1382,15 @@ function getGesamtSatz(
   return getOrtSatz(saetze, ort, maschine);
 }
 
-function ZeiterfassungTab({ id, offerteBetrag }: { id: string; offerteBetrag?: number }) {
+function ZeiterfassungTab({
+  id,
+  offerteBetrag,
+  preiseSichtbar,
+}: {
+  id: string;
+  offerteBetrag?: number;
+  preiseSichtbar: boolean;
+}) {
   const { toast } = useToast();
   const [mitarbeiter, setMitarbeiter] = useState("");
   const [beschreibung, setBeschreibung] = useState("");
@@ -1626,7 +1650,9 @@ function ZeiterfassungTab({ id, offerteBetrag }: { id: string; offerteBetrag?: n
 
           {/* Stunden pro Ort/Maschine */}
           <div>
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Stunden &amp; Kosten nach Ort</p>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
+              {preiseSichtbar ? "Stunden & Kosten nach Ort" : "Stunden nach Ort"}
+            </p>
             <div className="space-y-1.5">
               {Object.values(byOrt).map((v) => (
                 <div key={v.label} className="flex items-center justify-between gap-2 text-sm rounded-md bg-muted/40 px-3 py-2">
@@ -1636,9 +1662,11 @@ function ZeiterfassungTab({ id, offerteBetrag }: { id: string; offerteBetrag?: n
                   <span className="font-mono text-xs" style={{ color: "hsl(var(--primary))" }}>
                     {Math.floor(v.minuten / 60)}h {v.minuten % 60}min
                   </span>
-                  <span className="text-xs font-semibold">
-                    {v.kosten > 0 ? `CHF ${v.kosten.toFixed(2)}` : "—"}
-                  </span>
+                  {preiseSichtbar && (
+                    <span className="text-xs font-semibold">
+                      {v.kosten > 0 ? `CHF ${v.kosten.toFixed(2)}` : "—"}
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
@@ -1656,19 +1684,21 @@ function ZeiterfassungTab({ id, offerteBetrag }: { id: string; offerteBetrag?: n
                       {Math.floor(v.minuten / 60)}h {v.minuten % 60}min
                     </span>
                   </div>
-                  <div className="flex items-center justify-between mt-0.5">
-                    <span className="text-xs text-muted-foreground">Kosten nach Ort-Satz (Einstellungen)</span>
-                    <span className="text-xs text-muted-foreground">
-                      {v.kosten > 0 ? `CHF ${v.kosten.toFixed(2)}` : "—"}
-                    </span>
-                  </div>
+                  {preiseSichtbar && (
+                    <div className="flex items-center justify-between mt-0.5">
+                      <span className="text-xs text-muted-foreground">Kosten nach Ort-Satz (Einstellungen)</span>
+                      <span className="text-xs text-muted-foreground">
+                        {v.kosten > 0 ? `CHF ${v.kosten.toFixed(2)}` : "—"}
+                      </span>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
           </div>
 
           {/* Total + Soll-Ist-Vergleich */}
-          <div className="space-y-2 border-t pt-3">
+          {preiseSichtbar && <div className="space-y-2 border-t pt-3">
             <div className="flex items-center justify-between text-sm font-semibold">
               <span>Total Istkosten</span>
               <span style={{ color: "hsl(var(--primary))" }}>CHF {totalKosten.toFixed(2)}</span>
@@ -1699,7 +1729,7 @@ function ZeiterfassungTab({ id, offerteBetrag }: { id: string; offerteBetrag?: n
                 </div>
               </>
             )}
-          </div>
+          </div>}
         </Card>
       )}
 
@@ -2431,6 +2461,8 @@ function KundenportalTab({ id }: { id: string }) {
 export default function AuftragDetail({ id }: Props) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { hatZugriff } = useAuth();
+  const darfPreiseSehen = hatZugriff("auftraege_preise_sichtbar");
   const { confirm: confirmAction, ConfirmDialog: ActionConfirmDialog } = useConfirm();
   const [delOpen, setDelOpen] = useState(false);
   const [aktiverTab, setAktiverTab] = useState("verlauf");
@@ -2547,39 +2579,45 @@ export default function AuftragDetail({ id }: Props) {
               <Truck className="h-4 w-4 mr-1" />
               Lieferschein
             </Button>
-            <Button
-              variant="outline"
-              className="bg-background/80 backdrop-blur-sm border border-border"
-              onClick={async () => {
-                try {
-                  const r = await apiRequest("POST", `/api/auftraege/${id}/auftragsbestaetigung-pdf`, { ansprechpersonIntern: data.verantwortlicher || "" });
-                  const blob = await r.blob();
-                  const url = URL.createObjectURL(blob);
-                  openPdfInTab(url, `Auftragsbestaetigung_${data.nr}.pdf`);
-                } catch (e: any) {
-                  toast({ title: "Fehler", description: e.message, variant: "destructive" });
-                }
-              }}
-            >
-              <FileCheck className="h-4 w-4 mr-1" />
-              Auftragsbestätigung
-            </Button>
-            <Link href={`/vorkalkulation/${id}`}>
-              <a>
-                <Button variant="outline" data-testid="button-vorkalkulation" className="bg-background/80 backdrop-blur-sm border border-border" style={{ color: "#1a3a6b" }}>
-                  <Calculator className="h-4 w-4 mr-1" />
-                  Vorkalkulation
-                </Button>
-              </a>
-            </Link>
-            <Link href={`/nachkalkulation/${id}`}>
-              <a>
-                <Button variant="outline" data-testid="button-nachkalkulation" className="bg-background/80 backdrop-blur-sm border border-border" style={{ color: "#e8620a" }}>
-                  <BarChart3 className="h-4 w-4 mr-1" />
-                  Nachkalkulation
-                </Button>
-              </a>
-            </Link>
+            {darfPreiseSehen && (
+              <Button
+                variant="outline"
+                className="bg-background/80 backdrop-blur-sm border border-border"
+                onClick={async () => {
+                  try {
+                    const r = await apiRequest("POST", `/api/auftraege/${id}/auftragsbestaetigung-pdf`, { ansprechpersonIntern: data.verantwortlicher || "" });
+                    const blob = await r.blob();
+                    const url = URL.createObjectURL(blob);
+                    openPdfInTab(url, `Auftragsbestaetigung_${data.nr}.pdf`);
+                  } catch (e: any) {
+                    toast({ title: "Fehler", description: e.message, variant: "destructive" });
+                  }
+                }}
+              >
+                <FileCheck className="h-4 w-4 mr-1" />
+                Auftragsbestätigung
+              </Button>
+            )}
+            {darfPreiseSehen && (
+              <>
+                <Link href={`/vorkalkulation/${id}`}>
+                  <a>
+                    <Button variant="outline" data-testid="button-vorkalkulation" className="bg-background/80 backdrop-blur-sm border border-border" style={{ color: "#1a3a6b" }}>
+                      <Calculator className="h-4 w-4 mr-1" />
+                      Vorkalkulation
+                    </Button>
+                  </a>
+                </Link>
+                <Link href={`/nachkalkulation/${id}`}>
+                  <a>
+                    <Button variant="outline" data-testid="button-nachkalkulation" className="bg-background/80 backdrop-blur-sm border border-border" style={{ color: "#e8620a" }}>
+                      <BarChart3 className="h-4 w-4 mr-1" />
+                      Nachkalkulation
+                    </Button>
+                  </a>
+                </Link>
+              </>
+            )}
             <Link href={`/auftraege/${id}/bearbeiten`}>
               <a>
                 <Button variant="outline" data-testid="button-edit" className="bg-background/80 backdrop-blur-sm border border-border">
@@ -2709,38 +2747,40 @@ export default function AuftragDetail({ id }: Props) {
             )}
           </Card>
 
-          <Card className="p-5 bg-card">
-            <h3 className="font-semibold mb-3 text-sm uppercase tracking-wide text-muted-foreground">
-              Finanzen
-            </h3>
-            <dl className="text-sm space-y-2">
-              <div className="flex justify-between gap-2">
-                <dt className="text-muted-foreground">Angebot</dt>
-                <dd className="font-semibold tabular-nums">
-                  {formatCHF(data.angebots_betrag, data.waehrung)}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-2">
-                <dt className="text-muted-foreground">Rechnung</dt>
-                <dd className="font-semibold tabular-nums">
-                  {formatCHF(data.rechnungs_betrag, data.waehrung)}
-                </dd>
-              </div>
-              {Number(data.angebots_betrag) > 0 && Number(data.rechnungs_betrag) > 0 && (
-                <div className="flex justify-between gap-2 pt-2 border-t">
-                  <dt className="text-muted-foreground">Differenz (Rechnung − Angebot)</dt>
-                  <dd className={`font-semibold tabular-nums ${Number(data.rechnungs_betrag) - Number(data.angebots_betrag) >= 0 ? "text-green-600" : "text-red-600"}`}>
-                    {Number(data.rechnungs_betrag) - Number(data.angebots_betrag) >= 0 ? "+" : ""}
-                    {formatCHF(Number(data.rechnungs_betrag) - Number(data.angebots_betrag), data.waehrung)}
+          {darfPreiseSehen && (
+            <Card className="p-5 bg-card">
+              <h3 className="font-semibold mb-3 text-sm uppercase tracking-wide text-muted-foreground">
+                Finanzen
+              </h3>
+              <dl className="text-sm space-y-2">
+                <div className="flex justify-between gap-2">
+                  <dt className="text-muted-foreground">Angebot</dt>
+                  <dd className="font-semibold tabular-nums">
+                    {formatCHF(data.angebots_betrag, data.waehrung)}
                   </dd>
                 </div>
-              )}
-              <div className="flex justify-between gap-2">
-                <dt className="text-muted-foreground">Währung</dt>
-                <dd className="font-medium">{data.waehrung}</dd>
-              </div>
-            </dl>
-          </Card>
+                <div className="flex justify-between gap-2">
+                  <dt className="text-muted-foreground">Rechnung</dt>
+                  <dd className="font-semibold tabular-nums">
+                    {formatCHF(data.rechnungs_betrag, data.waehrung)}
+                  </dd>
+                </div>
+                {Number(data.angebots_betrag) > 0 && Number(data.rechnungs_betrag) > 0 && (
+                  <div className="flex justify-between gap-2 pt-2 border-t">
+                    <dt className="text-muted-foreground">Differenz (Rechnung − Angebot)</dt>
+                    <dd className={`font-semibold tabular-nums ${Number(data.rechnungs_betrag) - Number(data.angebots_betrag) >= 0 ? "text-green-600" : "text-red-600"}`}>
+                      {Number(data.rechnungs_betrag) - Number(data.angebots_betrag) >= 0 ? "+" : ""}
+                      {formatCHF(Number(data.rechnungs_betrag) - Number(data.angebots_betrag), data.waehrung)}
+                    </dd>
+                  </div>
+                )}
+                <div className="flex justify-between gap-2">
+                  <dt className="text-muted-foreground">Währung</dt>
+                  <dd className="font-medium">{data.waehrung}</dd>
+                </div>
+              </dl>
+            </Card>
+          )}
         </div>
 
         <div className="lg:col-span-2">
@@ -2836,25 +2876,27 @@ export default function AuftragDetail({ id }: Props) {
               </TabsContent>
 
               <TabsContent value="rechnung" className="mt-4">
-                <RechnungenTab id={id} auftrag={data} />
+                <RechnungenTab id={id} auftrag={data} preiseSichtbar={darfPreiseSehen} />
               </TabsContent>
 
               <TabsContent value="zeit" className="mt-4">
-                <ZeiterfassungTab id={id} offerteBetrag={offerteBetragNK} />
+                <ZeiterfassungTab id={id} offerteBetrag={offerteBetragNK} preiseSichtbar={darfPreiseSehen} />
               </TabsContent>
 
               <TabsContent value="offerte" className="mt-4">
                 <OffertenTab
                   id={id}
                   auftrag={data}
-                  vorlage={offerteVorlage}
+                  vorlage={darfPreiseSehen ? offerteVorlage : null}
                   onVorlageUebernommen={() => setOfferteVorlage(null)}
+                  preiseSichtbar={darfPreiseSehen}
                 />
               </TabsContent>
               <TabsContent value="positionen" className="mt-4">
                 <PositionenTab
                   auftragId={data.id}
-                  onOfferteErstellen={(pos) => { setOfferteVorlage(pos); setAktiverTab("offerte"); }}
+                  preiseSichtbar={darfPreiseSehen}
+                  onOfferteErstellen={darfPreiseSehen ? (pos) => { setOfferteVorlage(pos); setAktiverTab("offerte"); } : undefined}
                 />
               </TabsContent>
 

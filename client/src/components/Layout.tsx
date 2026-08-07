@@ -228,6 +228,8 @@ function LogoutButton({ collapsed }: { collapsed: boolean }) {
 
 // ─── Globale Suche ──────────────────────────────────────────────────────────
 function GlobalSearch({ collapsed }: { collapsed: boolean }) {
+  const { hatZugriff } = useAuth();
+  const darfPreiseSehen = hatZugriff("auftraege_preise_sichtbar");
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [results, setResults] = useState<any>(null);
@@ -340,7 +342,7 @@ function GlobalSearch({ collapsed }: { collapsed: boolean }) {
                         </div>
                         <div className="text-xs truncate" style={{ color: "rgba(255,255,255,0.45)" }}>{a.kunde}</div>
                       </div>
-                      {a.angebots_betrag > 0 && (
+                      {darfPreiseSehen && a.angebots_betrag > 0 && (
                         <span className="text-xs font-semibold tabular-nums shrink-0" style={{ color: "rgba(255,255,255,0.6)" }}>CHF {Number(a.angebots_betrag).toLocaleString("de-CH")}</span>
                       )}
                     </button>
@@ -381,7 +383,9 @@ function GlobalSearch({ collapsed }: { collapsed: boolean }) {
                     >
                       <span className="font-mono text-sm">{r.nr}</span>
                       <span className="text-xs" style={{ color: r.bezahlt_am ? "rgba(134,239,172,0.8)" : "rgba(255,255,255,0.4)" }}>{r.bezahlt_am ? "✓ Bezahlt" : "Offen"}</span>
-                      <span className="text-xs font-semibold tabular-nums" style={{ color: "rgba(255,255,255,0.6)" }}>CHF {Number(r.betrag).toLocaleString("de-CH")}</span>
+                      {darfPreiseSehen && (
+                        <span className="text-xs font-semibold tabular-nums" style={{ color: "rgba(255,255,255,0.6)" }}>CHF {Number(r.betrag).toLocaleString("de-CH")}</span>
+                      )}
                     </button>
                   ))}
                 </div>

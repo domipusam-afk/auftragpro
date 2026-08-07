@@ -22,6 +22,8 @@ export type ModulKey =
   | "einstellungen";
 
 export type UnterpunktKey =
+  | "auftraege_anzeigen"
+  | "auftraege_preise_sichtbar"
   | "kalkulation_vorkalkulation"
   | "kalkulation_nachkalkulation"
   | "finanzmanagement_finanzen_uebersicht"
@@ -52,6 +54,10 @@ export interface UnterpunktInfo {
   key: UnterpunktKey;
   label: string;
   beschreibung: string;
+  /** Standard für neue Mitarbeiter, falls kein gespeicherter Wert vorhanden ist. */
+  standard?: boolean;
+  /** Übernimmt bei einer alten Berechtigungs-JSON den bisherigen Modulschalter. */
+  uebernimmtAltesModulFlag?: boolean;
 }
 
 export interface ModulInfo {
@@ -65,6 +71,11 @@ export interface ModulInfo {
 const KALKULATION_UNTERPUNKTE = [
   { key: "kalkulation_vorkalkulation", label: "Vorkalkulation", beschreibung: "Vor- und Angebotskalkulation" },
   { key: "kalkulation_nachkalkulation", label: "Nachkalkulation", beschreibung: "Nachkalkulation auswerten" },
+] as const satisfies readonly UnterpunktInfo[];
+
+const AUFTRAEGE_UNTERPUNKTE = [
+  { key: "auftraege_anzeigen", label: "Aufträge anzeigen", beschreibung: "Aufträge anzeigen, erstellen und bearbeiten", standard: true },
+  { key: "auftraege_preise_sichtbar", label: "Preise sichtbar", beschreibung: "Angebots- und Rechnungsbeträge in Aufträgen sehen", standard: false, uebernimmtAltesModulFlag: false },
 ] as const satisfies readonly UnterpunktInfo[];
 
 const FINANZMANAGEMENT_UNTERPUNKTE = [
@@ -101,7 +112,7 @@ const RESSOURCEN_UNTERPUNKTE = [
 
 export const ALLE_MODULE: readonly ModulInfo[] = [
   { key: "dashboard_finanzen", label: "Dashboard Finanzübersicht", beschreibung: "Umsatz, Mahnungen und Finanzkennzahlen im Dashboard", standard: false },
-  { key: "auftraege", label: "Aufträge", beschreibung: "Aufträge anzeigen, erstellen und bearbeiten", standard: true },
+  { key: "auftraege", label: "Aufträge", beschreibung: "Aufträge anzeigen, erstellen und Preisansicht verwalten", standard: true, unterpunkte: AUFTRAEGE_UNTERPUNKTE },
   { key: "zeiterfassung", label: "Zeiterfassung", beschreibung: "Arbeitszeiten erfassen und anzeigen", standard: true },
   { key: "rechnungen", label: "Rechnungen", beschreibung: "Rechnungen anzeigen und erstellen", standard: false },
   { key: "offerten", label: "Offerten", beschreibung: "Offerten anzeigen und erstellen", standard: true },
@@ -134,9 +145,9 @@ function asObjekt(value: unknown): Record<string, unknown> {
 /**
  * Normalisiert gespeicherte Rechte in das aktuelle Format.
  *
- * Fehlt ein Unterpunkt-Flag (bei einem alten Benutzerobjekt), übernimmt es den
- * Wert des früheren Hauptmodul-Flags. Dadurch behalten bestehende Mitarbeiter
- * beim Release exakt ihren bisherigen Zugriff.
+ * Fehlt ein Unterpunkt-Flag (bei einem alten Benutzerobjekt), übernimmt es
+ * grundsätzlich den Wert des früheren Hauptmodul-Flags. Sensible neue
+ * Zusatzrechte können diesen Legacy-Fallback bewusst deaktivieren.
  */
 export function normalisiereBerechtigungen(value?: unknown): Berechtigungen {
   const raw = asObjekt(value);
@@ -150,11 +161,15 @@ export function normalisiereBerechtigungen(value?: unknown): Berechtigungen {
         const rawUnterpunktwert = raw[unterpunkt.key];
         result[unterpunkt.key] = istBoolean(rawUnterpunktwert)
           ? rawUnterpunktwert
-          : legacyModulwert;
+          : unterpunkt.uebernimmtAltesModulFlag !== false && istBoolean(rawModulwert)
+            ? legacyModulwert
+            : unterpunkt.standard ?? legacyModulwert;
       }
       // Das Hauptmodul ist eine abgeleitete Sammelberechtigung: sichtbar, wenn
       // mindestens ein Unterpunkt verfügbar ist.
-      result[modul.key] = modul.unterpunkte.some((unterpunkt) => result[unterpunkt.key]);
+      result[modul.key] = modul.key === "auftraege"
+        ? result.auftraege_anzeigen
+        : modul.unterpunkte.some((unterpunkt) => result[unterpunkt.key]);
     } else {
       const rawModulwert = raw[modul.key];
       result[modul.key] = istBoolean(rawModulwert) ? rawModulwert : modul.standard;

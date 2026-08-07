@@ -38,6 +38,7 @@ import {
 } from "@shared/schema";
 import { FileSpreadsheet, Coins } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/lib/auth";
 
 interface Props {
   id?: string;
@@ -77,6 +78,8 @@ const empty = {
 export default function AuftragForm({ id }: Props) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { hatZugriff } = useAuth();
+  const darfPreiseSehen = hatZugriff("auftraege_preise_sichtbar");
   const editing = !!id;
   const [form, setForm] = useState({ ...empty });
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -106,14 +109,14 @@ export default function AuftragForm({ id }: Props) {
         kategorie: existing.kategorie || "",
         start_datum: existing.start_datum?.slice(0, 10) || "",
         end_datum: existing.end_datum?.slice(0, 10) || "",
-        angebots_typ: (existing.angebots_typ as AngebotsTyp) || "detailliert",
-        angebots_betrag: existing.angebots_betrag != null ? String(existing.angebots_betrag) : "",
-        waehrung: existing.waehrung || "CHF",
+        angebots_typ: darfPreiseSehen ? (existing.angebots_typ as AngebotsTyp) || "detailliert" : "detailliert",
+        angebots_betrag: darfPreiseSehen && existing.angebots_betrag != null ? String(existing.angebots_betrag) : "",
+        waehrung: darfPreiseSehen ? existing.waehrung || "CHF" : "CHF",
         verantwortlicher: existing.verantwortlicher || "",
         wiederkehrend_interval: (existing as any).wiederkehrend_interval || null,
       });
     }
-  }, [existing]);
+  }, [existing, darfPreiseSehen]);
 
   // Bestehenden Kunden auswählen → Felder befüllen
   const selectKunde = (k: Kunde) => {
@@ -138,9 +141,11 @@ export default function AuftragForm({ id }: Props) {
       setErrors(errs);
       if (Object.keys(errs).length) throw new Error("Bitte Pflichtfelder ausfüllen");
 
+      const { angebots_betrag: _angebotsBetrag, angebots_typ: _angebotsTyp, waehrung: _waehrung, ...auftragOhnePreise } = form;
+      const payload = darfPreiseSehen ? form : auftragOhnePreise;
       const res = editing
-        ? await apiRequest("PATCH", `/api/auftraege/${id}`, form)
-        : await apiRequest("POST", "/api/auftraege", form);
+        ? await apiRequest("PATCH", `/api/auftraege/${id}`, payload)
+        : await apiRequest("POST", "/api/auftraege", payload);
       const data = await res.json();
 
       // Auto-Sync: Kunde im Kundenzentrum anlegen/aktualisieren
@@ -163,7 +168,7 @@ export default function AuftragForm({ id }: Props) {
       if (editing) queryClient.invalidateQueries({ queryKey: ["/api/auftraege", id] });
       toast({
         title: editing ? "Auftrag aktualisiert" : "Auftrag erstellt",
-        description: data?.angebots_betrag_aus_offerte
+        description: darfPreiseSehen && data?.angebots_betrag_aus_offerte
           ? "Der Angebotsbetrag stammt aus der Offerte und wurde deshalb nicht überschrieben."
           : undefined,
       });
@@ -378,18 +383,19 @@ export default function AuftragForm({ id }: Props) {
           </div>
         </Card>
 
-        {/* Finanzen */}
-        <Card className="p-6 bg-card">
-          <h2 className="font-semibold mb-4" style={{ fontFamily: "var(--font-display)" }}>
-            Finanzen &amp; Kalkulationsart
-          </h2>
+        {/* Preise und Kalkulationsart */}
+        {darfPreiseSehen && (
+          <Card className="p-6 bg-card">
+            <h2 className="font-semibold mb-4" style={{ fontFamily: "var(--font-display)" }}>
+              Finanzen &amp; Kalkulationsart
+            </h2>
 
           {/* Kalkulationsart: klar sichtbarer Umschalter zwischen voller Vorkalkulation
               und einfachem Pauschalbetrag (Pauschalbetrag-Feature). Wird explizit in
               auftraege.angebots_typ gespeichert, nicht nur implizit abgeleitet. */}
-          <div className="mb-5">
-            <Label className="mb-2 block">Kalkulationsart *</Label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="mb-5">
+              <Label className="mb-2 block">Kalkulationsart *</Label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <button
                 type="button"
                 data-testid="radio-angebotstyp-detailliert"
@@ -427,57 +433,58 @@ export default function AuftragForm({ id }: Props) {
                   </p>
                 </div>
               </button>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <Label htmlFor="angebots_betrag">
-                {form.angebots_typ === "pauschal" ? "Pauschal-Angebotsbetrag (brutto) *" : "Angebotsbetrag (brutto)"}
-              </Label>
-              <Input
-                id="angebots_betrag"
-                type="number"
-                step="0.01"
-                data-testid="input-angebots-betrag"
-                value={form.angebots_betrag}
-                onChange={(e) => setField("angebots_betrag", e.target.value)}
-                className={cn("mt-1", form.angebots_typ === "pauschal" && "border-primary")}
-                placeholder={form.angebots_typ === "pauschal" ? "z.B. 350.00" : undefined}
-              />
-              {form.angebots_typ === "pauschal" ? (
-                <p className="text-xs text-muted-foreground mt-1">
-                  Dieser Betrag gilt als vereinbarter Pauschalpreis (inkl. MWST) und wird in der
-                  Nachkalkulation als Vergleichswert statt einer Vorkalkulation angezeigt.
-                </p>
-              ) : (
-                <p className="text-xs text-muted-foreground mt-1">
-                  Wird bei „Detaillierte Vorkalkulation” automatisch aus der Vorkalkulation befüllt,
-                  kann hier aber vorab manuell erfasst werden.
-                </p>
-              )}
-            </div>
-            <div>
-              <Label>Rechnungsbetrag</Label>
-              <div className="mt-1 h-10 flex items-center px-3 rounded-md border border-dashed bg-muted/40 text-sm tabular-nums text-muted-foreground">
-                {formatCHF(existing?.rechnungs_betrag, form.waehrung)}
               </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Ergibt sich automatisch aus den erfassten Rechnungen.
-              </p>
             </div>
-            <div>
-              <Label>Währung</Label>
-              <Select value={form.waehrung} onValueChange={(v) => setField("waehrung", v)}>
-                <SelectTrigger data-testid="select-waehrung" className="mt-1"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="CHF">CHF</SelectItem>
-                  <SelectItem value="EUR">EUR</SelectItem>
-                </SelectContent>
-              </Select>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <Label htmlFor="angebots_betrag">
+                  {form.angebots_typ === "pauschal" ? "Pauschal-Angebotsbetrag (brutto) *" : "Angebotsbetrag (brutto)"}
+                </Label>
+                <Input
+                  id="angebots_betrag"
+                  type="number"
+                  step="0.01"
+                  data-testid="input-angebots-betrag"
+                  value={form.angebots_betrag}
+                  onChange={(e) => setField("angebots_betrag", e.target.value)}
+                  className={cn("mt-1", form.angebots_typ === "pauschal" && "border-primary")}
+                  placeholder={form.angebots_typ === "pauschal" ? "z.B. 350.00" : undefined}
+                />
+                {form.angebots_typ === "pauschal" ? (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Dieser Betrag gilt als vereinbarter Pauschalpreis (inkl. MWST) und wird in der
+                    Nachkalkulation als Vergleichswert statt einer Vorkalkulation angezeigt.
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Wird bei „Detaillierte Vorkalkulation” automatisch aus der Vorkalkulation befüllt,
+                    kann hier aber vorab manuell erfasst werden.
+                  </p>
+                )}
+              </div>
+              <div>
+                <Label>Rechnungsbetrag</Label>
+                <div className="mt-1 h-10 flex items-center px-3 rounded-md border border-dashed bg-muted/40 text-sm tabular-nums text-muted-foreground">
+                  {formatCHF(existing?.rechnungs_betrag, form.waehrung)}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Ergibt sich automatisch aus den erfassten Rechnungen.
+                </p>
+              </div>
+              <div>
+                <Label>Währung</Label>
+                <Select value={form.waehrung} onValueChange={(v) => setField("waehrung", v)}>
+                  <SelectTrigger data-testid="select-waehrung" className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="CHF">CHF</SelectItem>
+                    <SelectItem value="EUR">EUR</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-          </div>
-        </Card>
+          </Card>
+        )}
 
         <div className="flex justify-end gap-3">
           <Link href={editing ? `/auftraege/${id}` : "/auftraege"}>

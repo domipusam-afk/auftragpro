@@ -63,7 +63,9 @@ function BerechtigungenModal({
 
   const toggle = (key: BerechtigungKey) => setPerms(p => ({ ...p, [key]: !p[key] }));
   const modulIstErlaubt = (modul: ModulInfo) =>
-    modul.unterpunkte?.some((unterpunkt) => perms[unterpunkt.key]) ?? perms[modul.key];
+    modul.key === "auftraege"
+      ? perms.auftraege_anzeigen
+      : modul.unterpunkte?.some((unterpunkt) => perms[unterpunkt.key]) ?? perms[modul.key];
   const setModul = (modul: ModulInfo, erlaubt: boolean) =>
     setPerms((p) => setzeModulBerechtigung(p, modul, erlaubt));
   const toggleOpen = (key: string) => setOpenModule((offene) => {
