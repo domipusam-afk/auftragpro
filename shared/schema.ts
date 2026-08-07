@@ -314,6 +314,26 @@ export interface Zeiteintrag {
 
 export type ZeiteintragInsert = Omit<Zeiteintrag, 'id' | 'erstellt'>;
 
+// ─── Aufgaben ────────────────────────────────────────────────────────────────
+/** Eigenständige, einfache Aufgabenliste – bewusst unabhängig von der Plantafel. */
+export type AufgabeStatus = "offen" | "abgeschlossen";
+
+export interface Aufgabe {
+  id: string;
+  titel: string;
+  beschreibung?: string | null;
+  /** Optionaler Bezug zu einem bestehenden Auftrag. */
+  auftrag_id?: string | null;
+  /** Optional zuständige Person aus der Mitarbeiterakte. */
+  mitarbeiter_id?: string | null;
+  /** ISO-Datum YYYY-MM-DD. */
+  faellig_datum?: string | null;
+  status: AufgabeStatus;
+  erstellt: string;
+  erledigt_am?: string | null;
+  aktualisiert?: string | null;
+}
+
 // ─── Offerten ─────────────────────────────────────────────────────────────────
 export interface OffertePosition {
   nr: number;

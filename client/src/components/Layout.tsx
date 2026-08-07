@@ -47,6 +47,7 @@ import {
   Wallet2,
   TrendingDown as TrendDown,
   ReceiptText,
+  ClipboardCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/lib/theme";
@@ -88,6 +89,12 @@ const RESSOURCE_NAV = [
   { href: "/ferienplanung", label: "Ferienplanung", icon: Umbrella },
   { href: "/stundenauswertung", label: "Stundenauswertung", icon: BarChart2 },
   { href: "/lohnabrechnung", label: "Lohnabrechnung", icon: Banknote },
+];
+
+// Aufgaben sind für jede Person mit App-Zugang sichtbar. Die übrigen Punkte in
+// der Ressourcen-Gruppe behalten ihre bestehende Ressourcen-Berechtigung.
+const ALL_USERS_RESSOURCE_NAV = [
+  { href: "/aufgaben", label: "Aufgaben", icon: ClipboardCheck },
 ];
 
 const EINKAUF_NAV = [
@@ -518,7 +525,9 @@ export default function Layout({ children }: { children: ReactNode }) {
     FINANZ_NAV.some((n) => location === n.href || location.startsWith(n.href + "/"))
   );
   const [ressourceOpen, setRessourceOpen] = useState(
-    RESSOURCE_NAV.some((n) => location === n.href || location.startsWith(n.href + "/"))
+    [...RESSOURCE_NAV, ...ALL_USERS_RESSOURCE_NAV].some(
+      (n) => location === n.href || location.startsWith(n.href + "/")
+    )
   );
   const [dokumentOpen, setDokumentOpen] = useState(
     DOKUMENT_NAV.some((n) => location === n.href || location.startsWith(n.href + "/"))
@@ -551,7 +560,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (location === "/auftraege" || location.startsWith("/auftraege/")) setAuftraegeOpen(true);
     if (FINANZ_NAV.some((n) => location === n.href)) setFinanzOpen(true);
-    if (RESSOURCE_NAV.some((n) => location === n.href)) setRessourceOpen(true);
+    if ([...RESSOURCE_NAV, ...ALL_USERS_RESSOURCE_NAV].some((n) => location === n.href)) setRessourceOpen(true);
     if (DOKUMENT_NAV.some((n) => location === n.href)) setDokumentOpen(true);
     if (EINKAUF_NAV.some((n) => location === n.href)) setEinkaufOpen(true);
   }, [location]);
@@ -730,8 +739,8 @@ export default function Layout({ children }: { children: ReactNode }) {
           )}
         </div>}
 
-        {/* Ressourcenmanagement Group */}
-        {(isAdmin || hatZugriff("ressourcen")) && <div className="px-2 mt-1">
+        {/* Ressourcenmanagement Group — Aufgaben sind für alle eingeloggten Nutzer zugänglich. */}
+        <div className="px-2 mt-1">
           {show ? (
             <>
               <button
@@ -744,17 +753,21 @@ export default function Layout({ children }: { children: ReactNode }) {
               </button>
               {ressourceOpen && (
                 <div className="flex flex-col gap-0.5 mt-0.5">
-                  {RESSOURCE_NAV.map((item) => <NavItem key={item.href} {...item} collapsed={false} indent />)}
+                  {(isAdmin || hatZugriff("ressourcen")) &&
+                    RESSOURCE_NAV.map((item) => <NavItem key={item.href} {...item} collapsed={false} indent />)}
+                  {ALL_USERS_RESSOURCE_NAV.map((item) => <NavItem key={item.href} {...item} collapsed={false} indent />)}
                 </div>
               )}
             </>
           ) : (
             <>
               <div className="my-2 border-t border-white/10" />
-              {RESSOURCE_NAV.map((item) => <NavItem key={item.href} {...item} collapsed={true} />)}
+              {(isAdmin || hatZugriff("ressourcen")) &&
+                RESSOURCE_NAV.map((item) => <NavItem key={item.href} {...item} collapsed={true} />)}
+              {ALL_USERS_RESSOURCE_NAV.map((item) => <NavItem key={item.href} {...item} collapsed={true} />)}
             </>
           )}
-        </div>}
+        </div>
 
         {/* New Order Button */}
         <div className={cn("px-2 mt-4", !show && "px-2")}>
@@ -911,4 +924,3 @@ export default function Layout({ children }: { children: ReactNode }) {
     </div>
   );
 }
-

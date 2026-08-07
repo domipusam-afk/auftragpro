@@ -3241,6 +3241,107 @@ export async function registerRoutes(
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
+  // ─── Aufgaben ───────────────────────────────────────────────────────────────
+  // Diese Liste ist absichtlich unabhängig von der Plantafel: Sie verwaltet
+  // einfache Alltags-To-Dos und kann einen Auftrag nur optional referenzieren.
+  app.get("/api/aufgaben", async (req, res) => {
+    try {
+      const status = req.query.status;
+      if (status !== undefined && status !== "offen" && status !== "abgeschlossen") {
+        return res.status(400).json({ message: "Ungültiger Aufgabenstatus" });
+      }
+
+      let query = supabase
+        .from("aufgaben")
+        .select("*")
+        .order("faellig_datum", { ascending: true, nullsFirst: false })
+        .order("erstellt", { ascending: false });
+      if (status) query = query.eq("status", status);
+
+      const { data, error } = await query;
+      if (error) throw error;
+      res.json(data || []);
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+  app.post("/api/aufgaben", async (req, res) => {
+    try {
+      const body = req.body || {};
+      const titel = typeof body.titel === "string" ? body.titel.trim() : "";
+      if (!titel) return res.status(400).json({ message: "Titel erforderlich" });
+
+      const now = new Date().toISOString();
+      const aufgabe = {
+        id: uid(),
+        titel,
+        beschreibung: typeof body.beschreibung === "string" && body.beschreibung.trim()
+          ? body.beschreibung.trim()
+          : null,
+        auftrag_id: body.auftrag_id || null,
+        mitarbeiter_id: body.mitarbeiter_id || null,
+        faellig_datum: body.faellig_datum || null,
+        status: "offen",
+        erstellt: now,
+        erledigt_am: null,
+        aktualisiert: now,
+      };
+      const { data, error } = await supabase.from("aufgaben").insert(aufgabe).select().single();
+      if (error) throw error;
+      res.status(201).json(data);
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+  app.patch("/api/aufgaben/:id", async (req, res) => {
+    try {
+      const body = req.body || {};
+      const update: Record<string, any> = {};
+
+      if ("titel" in body) {
+        const titel = typeof body.titel === "string" ? body.titel.trim() : "";
+        if (!titel) return res.status(400).json({ message: "Titel erforderlich" });
+        update.titel = titel;
+      }
+      if ("beschreibung" in body) {
+        update.beschreibung = typeof body.beschreibung === "string" && body.beschreibung.trim()
+          ? body.beschreibung.trim()
+          : null;
+      }
+      for (const field of ["auftrag_id", "mitarbeiter_id", "faellig_datum"]) {
+        if (field in body) update[field] = body[field] || null;
+      }
+      if ("status" in body) {
+        if (body.status !== "offen" && body.status !== "abgeschlossen") {
+          return res.status(400).json({ message: "Ungültiger Aufgabenstatus" });
+        }
+        update.status = body.status;
+        // Das Erledigt-Datum ist ein Systemwert und wird beim Wiederöffnen gelöscht.
+        update.erledigt_am = body.status === "abgeschlossen" ? new Date().toISOString() : null;
+      }
+
+      if (Object.keys(update).length === 0) {
+        return res.status(400).json({ message: "Keine änderbaren Felder übermittelt" });
+      }
+      update.aktualisiert = new Date().toISOString();
+
+      const { data, error } = await supabase
+        .from("aufgaben")
+        .update(update)
+        .eq("id", req.params.id)
+        .select()
+        .single();
+      if (error) throw error;
+      res.json(data);
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+  app.delete("/api/aufgaben/:id", async (req, res) => {
+    try {
+      const { error } = await supabase.from("aufgaben").delete().eq("id", req.params.id);
+      if (error) throw error;
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
   // ─── Plantafel ───────────────────────────────────────────────────────────────
   app.get("/api/plantafel", async (_req, res) => {
     try {

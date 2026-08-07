@@ -45,6 +45,7 @@ import VorkalkulationDetail from "@/pages/VorkalkulationDetail";
 import NachkalkulationDetail from "@/pages/NachkalkulationDetail";
 import VorkalkulationUebersicht from "@/pages/VorkalkulationUebersicht";
 import NachkalkulationUebersicht from "@/pages/NachkalkulationUebersicht";
+import Aufgaben from "@/pages/Aufgaben";
 
 import Lagerverwaltung from "@/pages/Lagerverwaltung";
 
@@ -85,6 +86,7 @@ function AppRouter() {
       <Route path="/termine" component={Termine} />
       <Route path="/kalender" component={Kalender} />
       <Route path="/plantafel" component={Plantafel} />
+      <Route path="/aufgaben" component={Aufgaben} />
       <Route path="/fotodokumentation" component={Fotodokumentation} />
       <Route path="/formulare" component={Formulare} />
       <Route path="/chat" component={ChatHistorie} />
