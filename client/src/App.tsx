@@ -12,6 +12,7 @@ import { useState } from "react";
 import { useIdleTimer } from "@/hooks/use-idle-timer";
 import { IdleWarningDialog } from "@/components/IdleWarningDialog";
 import Login from "@/pages/Login";
+import SupabaseLoginPreview from "@/pages/SupabaseLoginPreview";
 import Benutzerverwaltung from "@/pages/Benutzerverwaltung";
 import ZweiFA from "@/pages/ZweiFA";
 import Dashboard from "@/pages/Dashboard";
@@ -133,6 +134,12 @@ function AuthGuard() {
   if (hash.startsWith("#/projekt/")) {
     const token = hash.split("#/projekt/")[1];
     return <Router hook={useHashLocation}><ProjektStatus token={token} /></Router>;
+  }
+
+  // Intentionally unlinked Stage-6 technical preview. This does not use or
+  // replace the legacy app_benutzer auth context.
+  if (hash === "#/auth-preview" || window.location.pathname === "/auth-preview") {
+    return <SupabaseLoginPreview />;
   }
 
   if (!isLoggedIn) return <Login />;
