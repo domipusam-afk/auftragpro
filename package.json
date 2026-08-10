@@ -9,6 +9,7 @@
     "start": "NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
     "test:auth-middleware": "tsx server/auth-middleware.test.ts",
+    "test:policy-observer": "tsx server/policy-observer.test.ts",
     "db:push": "drizzle-kit push",
     "test:route-policy": "tsx server/route-policy.test.ts",
     "auth:import:rehearsal": "tsx scripts/auth-import-rehearsal.ts",

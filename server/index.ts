@@ -10,6 +10,8 @@ import {
   TENANCY_MODE,
   type TenantReadObservation,
 } from "./tenant-context";
+import { legacySessionContext } from "./legacy-session";
+import { policyObserver } from "./policy-observer";
 
 const app = express();
 const httpServer = createServer(app);
@@ -29,6 +31,10 @@ app.use(
   }),
 );
 app.use(express.urlencoded({ extended: false, limit: "10mb" }));
+// Stage 10: enrich API requests with the signed legacy login context before
+// observing the target policy. Neither middleware changes a response.
+app.use(legacySessionContext);
+app.use(policyObserver);
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {

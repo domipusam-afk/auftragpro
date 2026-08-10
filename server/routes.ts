@@ -10,6 +10,7 @@ import * as OTPAuth from "otpauth";
 import QRCode from "qrcode";
 import { fileURLToPath } from "url";
 import { finanzenSummen, type FinanzenUebersichtZeile, berechneVorkalkulationsAngebotspreis, rechnungBruttoBetrag, MWST_SATZ_RECHNUNG } from "../shared/schema";
+import { setLegacySessionCookie } from "./legacy-session";
 
 // Robust logo path resolution: works in both ESM (dev) and CJS (production build)
 function getLogoPath(): string {
@@ -320,12 +321,14 @@ export async function registerRoutes(
           const gueltig = tokens.find((t: any) => t.token === vertrauensToken && t.ablauf > now);
           if (gueltig) {
             // Gerät bekannt → kein 2FA nötig
+            setLegacySessionCookie(res, user.id);
             return res.json({ ok: true, requires2fa: false, user: { id: user.id, benutzername: user.benutzername, rolle: user.rolle, berechtigungen: user.berechtigungen || null } });
           }
         }
         return res.json({ ok: true, requires2fa: true, userId: user.id });
       }
 
+      setLegacySessionCookie(res, user.id);
       return res.json({
         ok: true,
         requires2fa: false,
@@ -358,6 +361,7 @@ export async function registerRoutes(
           .from("app_benutzer")
           .update({ backup_codes: user.backup_codes.filter((c: string) => c !== code.toUpperCase()) })
           .eq("id", userId);
+        setLegacySessionCookie(res, user.id);
         return res.json({ ok: true, user: { id: user.id, benutzername: user.benutzername, rolle: user.rolle, berechtigungen: user.berechtigungen || null } });
       }
 
@@ -383,6 +387,7 @@ export async function registerRoutes(
         await supabase.from("app_benutzer").update({ vertrauens_tokens: JSON.stringify(aktuell) }).eq("id", userId);
       }
 
+      setLegacySessionCookie(res, user.id);
       return res.json({
         ok: true,
         user: { id: user.id, benutzername: user.benutzername, rolle: user.rolle, berechtigungen: user.berechtigungen || null },

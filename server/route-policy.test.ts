@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { PERMISSIONS_CATALOG } from "../shared/permissions-catalog";
-import { ROUTE_POLICIES, getRoutePolicy, isRoutePolicyAllowed, type RoutePolicy } from "./route-policy";
+import { ROUTE_POLICIES, getRoutePolicy, isRoutePolicyAllowed, matchRoutePolicy, type RoutePolicy } from "./route-policy";
 
 const routesSourcePath = path.resolve(process.cwd(), "server/routes.ts");
 const routesSource = fs.readFileSync(routesSourcePath, "utf8");
@@ -94,6 +94,10 @@ function run(): void {
   assert.equal(isRoutePolicyAllowed(pricePolicy, "admin", {}), true);
   assert.equal(isRoutePolicyAllowed(getRoutePolicy("GET", "/api/ping")!, undefined, undefined), true);
   assert.equal(isRoutePolicyAllowed(getRoutePolicy("GET", "/api/backup")!, "mitarbeiter", {}), false);
+  assert.equal(matchRoutePolicy("GET", "/api/auftraege/123")?.path, "/api/auftraege/:id");
+  assert.equal(matchRoutePolicy("PATCH", "/api/auftraege/123/status")?.path, "/api/auftraege/:id/status");
+  assert.equal(matchRoutePolicy("GET", "/api/public/auftrag/token-123")?.path, "/api/public/auftrag/:token");
+  assert.equal(matchRoutePolicy("GET", "/api/nicht-vorhanden"), undefined);
 
   const discrepancies = ROUTE_POLICIES.filter((policy) => policy.access !== "public" && policy.currentEnforcement === "unguarded");
   assert.equal(discrepancies.length, 222, "Die erwarteten, noch nicht aktivierten Ziel-Gates müssen vollständig sichtbar bleiben.");

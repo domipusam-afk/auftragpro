@@ -10,6 +10,10 @@ services:
         value: 5000
       - key: AUTH_MODE
         value: legacy
+      - key: POLICY_MODE
+        value: observe
+      - key: LEGACY_SESSION_SECRET
+        generateValue: true
       - key: SUPABASE_URL
         value: https://rbklkyozbefdjzaufszk.supabase.co
       - key: SUPABASE_ANON_KEY
