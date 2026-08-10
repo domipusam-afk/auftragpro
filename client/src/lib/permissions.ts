@@ -7,47 +7,17 @@
  * zugehörigen Unterpunkte übertragen.
  */
 
-export type ModulKey =
-  | "dashboard_finanzen"
-  | "auftraege"
-  | "zeiterfassung"
-  | "rechnungen"
-  | "offerten"
-  | "kalkulation"
-  | "finanzmanagement"
-  | "einkauf"
-  | "dokumente"
-  | "ressourcen"
-  | "benutzerverwaltung"
-  | "einstellungen";
+import {
+  PERMISSIONS_CATALOG,
+  type ModulePermissionKey,
+  type PermissionCatalogEntry,
+  type PermissionKey,
+  type SubPermissionKey,
+} from "@shared/permissions-catalog";
 
-export type UnterpunktKey =
-  | "auftraege_anzeigen"
-  | "auftraege_preise_sichtbar"
-  | "kalkulation_vorkalkulation"
-  | "kalkulation_nachkalkulation"
-  | "finanzmanagement_finanzen_uebersicht"
-  | "finanzmanagement_mahnwesen"
-  | "finanzmanagement_mwst"
-  | "finanzmanagement_eingangsrechnungen"
-  | "finanzmanagement_garantien"
-  | "einkauf_lieferanten_material"
-  | "einkauf_lagerverwaltung"
-  | "dokumente_fotodokumentation"
-  | "dokumente_formulare"
-  | "dokumente_chat_historie"
-  | "dokumente_kundendatencenter"
-  | "dokumente_uebersicht"
-  | "ressourcen_mitarbeiterakte"
-  | "ressourcen_planung_termine"
-  | "ressourcen_kalender"
-  | "ressourcen_plantafel"
-  | "ressourcen_ferienplanung"
-  | "ressourcen_stundenauswertung"
-  | "ressourcen_lohnabrechnung"
-  | "ressourcen_aufgaben";
-
-export type BerechtigungKey = ModulKey | UnterpunktKey;
+export type ModulKey = ModulePermissionKey;
+export type UnterpunktKey = SubPermissionKey;
+export type BerechtigungKey = PermissionKey;
 export type Berechtigungen = Record<BerechtigungKey, boolean>;
 
 export interface UnterpunktInfo {
@@ -68,62 +38,35 @@ export interface ModulInfo {
   unterpunkte?: readonly UnterpunktInfo[];
 }
 
-const KALKULATION_UNTERPUNKTE = [
-  { key: "kalkulation_vorkalkulation", label: "Vorkalkulation", beschreibung: "Vor- und Angebotskalkulation" },
-  { key: "kalkulation_nachkalkulation", label: "Nachkalkulation", beschreibung: "Nachkalkulation auswerten" },
-] as const satisfies readonly UnterpunktInfo[];
+const KATALOG_EINTRAEGE: readonly PermissionCatalogEntry[] = PERMISSIONS_CATALOG;
 
-const AUFTRAEGE_UNTERPUNKTE = [
-  { key: "auftraege_anzeigen", label: "Aufträge anzeigen", beschreibung: "Aufträge anzeigen, erstellen und bearbeiten", standard: true },
-  { key: "auftraege_preise_sichtbar", label: "Preise sichtbar", beschreibung: "Angebots- und Rechnungsbeträge in Aufträgen sehen", standard: false, uebernimmtAltesModulFlag: false },
-] as const satisfies readonly UnterpunktInfo[];
+const katalogUnterpunkte = (modul: ModulKey): readonly UnterpunktInfo[] =>
+  KATALOG_EINTRAEGE
+    .filter((permission) => permission.scope === "unterpunkt" && permission.module === modul)
+    .map((permission) => ({
+      key: permission.key as UnterpunktKey,
+      label: permission.name,
+      beschreibung: permission.description,
+      standard: permission.defaultForEmployee,
+      uebernimmtAltesModulFlag: permission.inheritsLegacyModuleFlag,
+    }));
 
-const FINANZMANAGEMENT_UNTERPUNKTE = [
-  { key: "finanzmanagement_finanzen_uebersicht", label: "Finanzen-Übersicht", beschreibung: "Finanzkennzahlen und Monatsübersicht" },
-  { key: "finanzmanagement_mahnwesen", label: "Mahnwesen", beschreibung: "Offene Rechnungen und Mahnungen" },
-  { key: "finanzmanagement_mwst", label: "MWST-Abrechnung", beschreibung: "MWST-Auswertung" },
-  { key: "finanzmanagement_eingangsrechnungen", label: "Eingangsrechnungen", beschreibung: "Eingangsrechnungen verwalten" },
-  { key: "finanzmanagement_garantien", label: "Garantieübersicht", beschreibung: "Garantien verwalten" },
-] as const satisfies readonly UnterpunktInfo[];
-
-const EINKAUF_UNTERPUNKTE = [
-  { key: "einkauf_lieferanten_material", label: "Lieferanten & Material", beschreibung: "Lieferanten und Material verwalten" },
-  { key: "einkauf_lagerverwaltung", label: "Lagerverwaltung", beschreibung: "Lagerbestände verwalten" },
-] as const satisfies readonly UnterpunktInfo[];
-
-const DOKUMENTE_UNTERPUNKTE = [
-  { key: "dokumente_fotodokumentation", label: "Bild-/Fotodoku", beschreibung: "Fotos und Bilddokumentation" },
-  { key: "dokumente_formulare", label: "Formulare & Unterschriften", beschreibung: "Formulare und Unterschriften" },
-  { key: "dokumente_chat_historie", label: "Chat & Historie", beschreibung: "Nachrichten und Verlauf" },
-  { key: "dokumente_kundendatencenter", label: "Kundendatencenter", beschreibung: "Kundendokumente und Datencenter" },
-  { key: "dokumente_uebersicht", label: "Dokumente (+40)", beschreibung: "Dokumentenübersicht" },
-] as const satisfies readonly UnterpunktInfo[];
-
-const RESSOURCEN_UNTERPUNKTE = [
-  { key: "ressourcen_mitarbeiterakte", label: "Mitarbeiterakte", beschreibung: "Mitarbeiter verwalten" },
-  { key: "ressourcen_planung_termine", label: "Planung & Termine", beschreibung: "Termine planen" },
-  { key: "ressourcen_kalender", label: "Kalender", beschreibung: "Kalender anzeigen" },
-  { key: "ressourcen_plantafel", label: "Plantafel", beschreibung: "Einsatzplanung auf der Plantafel" },
-  { key: "ressourcen_ferienplanung", label: "Ferienplanung", beschreibung: "Ferien und Abwesenheiten planen" },
-  { key: "ressourcen_stundenauswertung", label: "Stundenauswertung", beschreibung: "Arbeitsstunden auswerten" },
-  { key: "ressourcen_lohnabrechnung", label: "Lohnabrechnung", beschreibung: "Lohnabrechnungen verwalten" },
-  { key: "ressourcen_aufgaben", label: "Aufgaben", beschreibung: "Eigene und zugewiesene Aufgaben" },
-] as const satisfies readonly UnterpunktInfo[];
-
-export const ALLE_MODULE: readonly ModulInfo[] = [
-  { key: "dashboard_finanzen", label: "Dashboard Finanzübersicht", beschreibung: "Umsatz, Mahnungen und Finanzkennzahlen im Dashboard", standard: false },
-  { key: "auftraege", label: "Aufträge", beschreibung: "Aufträge anzeigen, erstellen und Preisansicht verwalten", standard: true, unterpunkte: AUFTRAEGE_UNTERPUNKTE },
-  { key: "zeiterfassung", label: "Zeiterfassung", beschreibung: "Arbeitszeiten erfassen und anzeigen", standard: true },
-  { key: "rechnungen", label: "Rechnungen", beschreibung: "Rechnungen anzeigen und erstellen", standard: false },
-  { key: "offerten", label: "Offerten", beschreibung: "Offerten anzeigen und erstellen", standard: true },
-  { key: "kalkulation", label: "Kalkulation", beschreibung: "Vor- und Nachkalkulation", standard: false, unterpunkte: KALKULATION_UNTERPUNKTE },
-  { key: "finanzmanagement", label: "Finanzmanagement", beschreibung: "Finanzen, Mahnungen, MWST und Garantien", standard: false, unterpunkte: FINANZMANAGEMENT_UNTERPUNKTE },
-  { key: "einkauf", label: "Einkauf", beschreibung: "Lieferanten, Material und Lager", standard: true, unterpunkte: EINKAUF_UNTERPUNKTE },
-  { key: "dokumente", label: "Dokumente", beschreibung: "Dokumente, Fotos, Formulare und Chat", standard: true, unterpunkte: DOKUMENTE_UNTERPUNKTE },
-  { key: "ressourcen", label: "Ressourcen", beschreibung: "Mitarbeiter, Planung, Lohn und Aufgaben", standard: false, unterpunkte: RESSOURCEN_UNTERPUNKTE },
-  { key: "benutzerverwaltung", label: "Benutzerverwaltung", beschreibung: "Benutzer erstellen und verwalten", standard: false },
-  { key: "einstellungen", label: "Einstellungen", beschreibung: "App-Einstellungen und Konfiguration", standard: false },
-];
+/**
+ * UI-Metadaten werden aus dem gemeinsamen Katalog abgeleitet. Damit sind
+ * Client und künftige Server-Gates auf dieselben 36 Schlüssel festgelegt.
+ */
+export const ALLE_MODULE: readonly ModulInfo[] = KATALOG_EINTRAEGE
+  .filter((permission) => permission.scope === "module")
+  .map((permission) => {
+    const unterpunkte = katalogUnterpunkte(permission.key as ModulKey);
+    return {
+      key: permission.key as ModulKey,
+      label: permission.name,
+      beschreibung: permission.description,
+      standard: permission.defaultForEmployee ?? false,
+      ...(unterpunkte.length ? { unterpunkte } : {}),
+    };
+  });
 
 export const ALLE_UNTERPUNKTE = ALLE_MODULE.flatMap((modul) => modul.unterpunkte || []);
 
