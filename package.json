@@ -11,7 +11,9 @@
     "test:auth-middleware": "tsx server/auth-middleware.test.ts",
     "db:push": "drizzle-kit push",
     "test:route-policy": "tsx server/route-policy.test.ts",
-    "auth:import:rehearsal": "tsx scripts/auth-import-rehearsal.ts"
+    "auth:import:rehearsal": "tsx scripts/auth-import-rehearsal.ts",
+    "auth:import:production": "tsx scripts/auth-import-production.ts",
+    "auth:import:rollback": "tsx scripts/auth-import-rollback.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
