@@ -1,28 +1,23 @@
-/**
- * Auth rollout switch.
- *
- * Supabase Auth is intentionally not connected to the existing request chain
- * in Stage 6. Keeping the default fail-closed prevents an accidental deploy
- * configuration from changing the legacy username/password login.
- */
+/** Runtime rollout switches. Values are read for every request so a deployed
+ * process can use an environment change without requiring a fresh build. */
 export type AuthMode = "legacy" | "supabase";
 export type PolicyMode = "observe" | "enforce" | "off";
 
-export const AUTH_MODE: AuthMode =
-  process.env.AUTH_MODE === "supabase" ? "supabase" : "legacy";
+export function getAuthMode(): AuthMode {
+  return process.env.AUTH_MODE === "supabase" ? "supabase" : "legacy";
+}
 
-export const isSupabaseAuthMode = AUTH_MODE === "supabase";
+export function isSupabaseAuthMode(): boolean {
+  return getAuthMode() === "supabase";
+}
 
-/**
- * Policy rollout switch.
- *
- * The Stage-10 default is deliberately observe-only. "enforce" is reserved
- * for a later, separately reviewed rollout and intentionally does not block
- * requests yet.
- */
-export const POLICY_MODE: PolicyMode =
-  process.env.POLICY_MODE === "off"
-    ? "off"
-    : process.env.POLICY_MODE === "enforce"
-      ? "enforce"
-      : "observe";
+export function getPolicyMode(): PolicyMode {
+  if (process.env.POLICY_MODE === "off") return "off";
+  if (process.env.POLICY_MODE === "enforce") return "enforce";
+  return "observe";
+}
+
+// Compatibility exports for code that only needs an initial diagnostic value.
+// Request middleware must use getAuthMode()/getPolicyMode() instead.
+export const AUTH_MODE: AuthMode = getAuthMode();
+export const POLICY_MODE: PolicyMode = getPolicyMode();

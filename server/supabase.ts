@@ -1,4 +1,6 @@
-import { createClient } from "@supabase/supabase-js";
+import { AsyncLocalStorage } from "node:async_hooks";
+import type { Request, RequestHandler } from "express";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import WS from "ws";
 import {
   DEFAULT_TENANT_SLUG,
@@ -6,6 +8,7 @@ import {
   recordTenantReadObservation,
   TENANCY_MODE,
 } from "./tenant-context";
+import { getAuthMode } from "./auth-context";
 
 // Fallback-Werte für Render-Deployment (werden durch ENV-Variablen überschrieben)
 const SUPABASE_URL_FALLBACK = "https://rbklkyozbefdjzaufszk.supabase.co";
@@ -16,13 +19,24 @@ const key = process.env.SUPABASE_ANON_KEY || SUPABASE_KEY_FALLBACK;
 
 console.log("Supabase URL:", url.substring(0, 40) + "...");
 
-const rawSupabase = createClient(url, key, {
-  auth: { persistSession: false, autoRefreshToken: false },
-  realtime: {
-    // ws polyfill for Node < 22
-    transport: WS as unknown as typeof WebSocket,
-  },
-});
+function createBaseClient(accessToken?: string): SupabaseClient {
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    ...(accessToken ? { global: { headers: { Authorization: `Bearer ${accessToken}` } } } : {}),
+    realtime: {
+      // ws polyfill for Node < 22
+      transport: WS as unknown as typeof WebSocket,
+    },
+  });
+}
+
+const rawAnonymousSupabase = createBaseClient();
+
+function getBearerToken(req: Request): string | null {
+  const authorization = req.get("authorization");
+  const match = authorization?.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() || null;
+}
 
 const TENANT_TABLES = new Set([
   "auftraege",
@@ -215,17 +229,65 @@ function tenantAwareQuery(
   });
 }
 
-const supabase = new Proxy(rawSupabase, {
-  get(target, property, receiver) {
-    const value = Reflect.get(target, property, receiver);
+function tenantAwareClient(rawClient: SupabaseClient): SupabaseClient {
+  return new Proxy(rawClient, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver);
 
-    if (property === "from") {
-      return (table: string) => tenantAwareQuery(value.call(target, table), table);
-    }
+      if (property === "from") {
+        return (table: string) => tenantAwareQuery(value.call(target, table), table);
+      }
 
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  }) as SupabaseClient;
+}
+
+const anonymousSupabase = tenantAwareClient(rawAnonymousSupabase);
+const requestSupabaseContext = new AsyncLocalStorage<SupabaseClient>();
+
+/**
+ * Gives database requests the caller's JWT in Supabase Auth mode. In legacy
+ * mode (or without a bearer token) it deliberately returns the historic anon
+ * client so AUTH_MODE=legacy remains a full compatibility switch.
+ */
+export function getSupabaseForRequest(req: Request): SupabaseClient {
+  if (getAuthMode() !== "supabase") return anonymousSupabase;
+  const accessToken = getBearerToken(req);
+  return accessToken ? tenantAwareClient(createBaseClient(accessToken)) : anonymousSupabase;
+}
+
+/** Bind the per-request client for existing route helpers that import default supabase. */
+export const supabaseRequestContext: RequestHandler = (req, _res, next) => {
+  requestSupabaseContext.run(getSupabaseForRequest(req), () => next());
+};
+
+/** Fresh anon client for signInWithPassword; it never retains a user session across requests. */
+export function getSupabaseAuthClient(): SupabaseClient {
+  return createBaseClient();
+}
+
+/** Service role is only for narrowly scoped system operations (pre-login lookup/imports). */
+export function getServiceRoleClient(): SupabaseClient {
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  if (!serviceRoleKey) {
+    throw new Error("SUPABASE_SERVICE_ROLE_KEY fehlt für die privilegierte Systemoperation.");
+  }
+  return createClient(url, serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    realtime: { transport: WS as unknown as typeof WebSocket },
+  });
+}
+
+// Compatibility facade: all existing supabase.from(...) route calls resolve to
+// the current request's authenticated client while a request is in flight.
+const supabase = new Proxy(anonymousSupabase, {
+  get(_target, property) {
+    const target = requestSupabaseContext.getStore() || anonymousSupabase;
+    const value = Reflect.get(target, property);
     return typeof value === "function" ? value.bind(target) : value;
   },
-});
+}) as SupabaseClient;
 
 export async function initializeTenantContext(): Promise<void> {
   console.log(

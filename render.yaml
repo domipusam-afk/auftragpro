@@ -8,16 +8,20 @@ services:
         value: production
       - key: PORT
         value: 5000
+      # Kill-Switch: bei Problemen im Render-Dashboard AUTH_MODE=legacy und POLICY_MODE=observe setzen und neu deployen. Legacy-Login und -Policies sind bis Etappe 13 noch aktiv.
       - key: AUTH_MODE
-        value: legacy
+        value: supabase
       - key: POLICY_MODE
-        value: observe
+        value: enforce
       - key: LEGACY_SESSION_SECRET
         generateValue: true
       - key: SUPABASE_URL
         value: https://rbklkyozbefdjzaufszk.supabase.co
       - key: SUPABASE_ANON_KEY
         value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJia2xreW96YmVmZGp6YXVmc3prIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1Njk1MTUsImV4cCI6MjA5NDE0NTUxNX0.gcFKMlHay24dzaWZnL0y-oLrVDjGDoFTKmt0z_sTDsc
+      # Im Render-Dashboard als Secret setzen; niemals in Repository oder Reports eintragen.
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
       - key: PUPPETEER_SKIP_CHROMIUM_DOWNLOAD
         value: true
       - key: PUPPETEER_EXECUTABLE_PATH

@@ -14,7 +14,8 @@
     "test:route-policy": "tsx server/route-policy.test.ts",
     "auth:import:rehearsal": "tsx scripts/auth-import-rehearsal.ts",
     "auth:import:production": "tsx scripts/auth-import-production.ts",
-    "auth:import:rollback": "tsx scripts/auth-import-rollback.ts"
+    "auth:import:rollback": "tsx scripts/auth-import-rollback.ts",
+    "test:policy-enforcer": "tsx server/policy-enforcer.test.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

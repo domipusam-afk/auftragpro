@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import type { Server } from "node:http";
 import multer from "multer";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import supabase from "./supabase";
+import supabase, { getServiceRoleClient, getSupabaseAuthClient } from "./supabase";
 import * as fs from "fs";
 import * as path from "path";
 import bcrypt from "bcryptjs";
@@ -11,6 +11,7 @@ import QRCode from "qrcode";
 import { fileURLToPath } from "url";
 import { finanzenSummen, type FinanzenUebersichtZeile, berechneVorkalkulationsAngebotspreis, rechnungBruttoBetrag, MWST_SATZ_RECHNUNG } from "../shared/schema";
 import { setLegacySessionCookie } from "./legacy-session";
+import { getAuthMode } from "./auth-context";
 
 // Robust logo path resolution: works in both ESM (dev) and CJS (production build)
 function getLogoPath(): string {
@@ -271,22 +272,93 @@ export async function registerRoutes(
     return e.count;
   }
 
-  // Step 1: Login with username + password
+  // Step 1: Login with username + password. AUTH_MODE is read for every
+  // request: legacy keeps the established bcrypt flow below verbatim, while
+  // supabase returns the GoTrue session for Bearer-authenticated API calls.
   app.post("/api/auth/login", async (req, res) => {
     try {
       const { benutzername, passwort, vertrauensToken } = req.body;
       if (!benutzername || !passwort)
         return res.status(400).json({ ok: false, message: "Benutzername und Passwort erforderlich" });
 
-      const key = getLoginKey(req, benutzername);
+      const normalizedUsername = String(benutzername).toLowerCase().trim();
+      const key = getLoginKey(req, normalizedUsername);
       const sperre = pruefeSperre(key);
       if (sperre.gesperrt)
         return res.status(429).json({ ok: false, message: `Zu viele Fehlversuche. Bitte ${sperre.minutenNoch} Minute(n) warten.`, gesperrt: true, minutenNoch: sperre.minutenNoch });
 
+      if (getAuthMode() === "supabase") {
+        const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedUsername);
+        let email = normalizedUsername;
+        let serviceClient;
+        try {
+          serviceClient = getServiceRoleClient();
+          // Historic non-email login names are resolved before sign-in. Email
+          // input deliberately goes straight to GoTrue as the cutover contract
+          // requires; the app-user record is still checked by authenticated id.
+          if (!isEmail) {
+            const { data: legacyUser, error: lookupError } = await serviceClient
+              .from("app_benutzer")
+              .select("benutzername")
+              .eq("benutzername", normalizedUsername)
+              .eq("aktiv", true)
+              .maybeSingle();
+            if (lookupError || !legacyUser || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(legacyUser.benutzername || ""))) {
+              const count = registriereFehlversuch(key);
+              const verbleibend = MAX_VERSUCHE - count;
+              return res.status(401).json({ ok: false, message: verbleibend > 0
+                ? `Benutzername oder Passwort falsch (${verbleibend} Versuch${verbleibend === 1 ? "" : "e"} verbleibend)`
+                : `Konto gesperrt für ${SPERRE_MS / 60000} Minuten.` });
+            }
+            email = String(legacyUser.benutzername).toLowerCase().trim();
+          }
+        } catch {
+          return res.status(503).json({ ok: false, message: "Supabase-Login ist serverseitig noch nicht konfiguriert" });
+        }
+
+        const { data: signInData, error: signInError } = await getSupabaseAuthClient().auth.signInWithPassword({
+          email,
+          password: String(passwort),
+        });
+        if (signInError || !signInData.session || !signInData.user) {
+          const count = registriereFehlversuch(key);
+          const verbleibend = MAX_VERSUCHE - count;
+          return res.status(401).json({ ok: false, message: verbleibend > 0
+            ? `Benutzername oder Passwort falsch (${verbleibend} Versuch${verbleibend === 1 ? "" : "e"} verbleibend)`
+            : `Konto gesperrt für ${SPERRE_MS / 60000} Minuten.` });
+        }
+
+        // The UUID is the trust boundary: a matching email alone must never
+        // grant access if auth.users and app_benutzer drifted during import.
+        const { data: user, error: userError } = await serviceClient
+          .from("app_benutzer")
+          .select("id, benutzername, rolle, berechtigungen")
+          .eq("id", signInData.user.id)
+          .eq("aktiv", true)
+          .maybeSingle();
+        if (userError || !user) {
+          return res.status(403).json({ ok: false, message: "Für dieses Supabase-Konto ist kein aktiver AuftragsPro-Benutzer vorhanden" });
+        }
+
+        loginVersuche.delete(key);
+        // Transitional fallback only; Etappe 13 removes this legacy cookie.
+        setLegacySessionCookie(res, user.id);
+        return res.json({
+          ok: true,
+          requires2fa: false,
+          user: { id: user.id, benutzername: user.benutzername, rolle: user.rolle, berechtigungen: user.berechtigungen || null },
+          session: {
+            access_token: signInData.session.access_token,
+            refresh_token: signInData.session.refresh_token,
+            expires_at: signInData.session.expires_at,
+          },
+        });
+      }
+
       const { data: user, error } = await supabase
         .from("app_benutzer")
         .select("*")
-        .eq("benutzername", benutzername.toLowerCase().trim())
+        .eq("benutzername", normalizedUsername)
         .eq("aktiv", true)
         .single();
 

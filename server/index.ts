@@ -4,13 +4,15 @@ import type { Request } from 'express';
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "node:http";
-import { initializeTenantContext } from "./supabase";
+import { initializeTenantContext, supabaseRequestContext } from "./supabase";
 import {
   runWithTenantReadObservation,
   TENANCY_MODE,
   type TenantReadObservation,
 } from "./tenant-context";
 import { legacySessionContext } from "./legacy-session";
+import { supabaseRequestAuthContext } from "./auth-middleware";
+import { getAuthMode } from "./auth-context";
 import { policyObserver } from "./policy-observer";
 
 const app = express();
@@ -31,10 +33,15 @@ app.use(
   }),
 );
 app.use(express.urlencoded({ extended: false, limit: "10mb" }));
-// Stage 10: enrich API requests with the signed legacy login context before
-// observing the target policy. Neither middleware changes a response.
-app.use(legacySessionContext);
+// Etappe 12: Both auth modes remain live runtime switches. Supabase JWT
+// verification supplies req.auth before policy enforcement; legacy keeps its
+// signed-cookie context. The scoped client then forwards the JWT to PostgREST.
+app.use((req, res, next) => getAuthMode() === "legacy"
+  ? legacySessionContext(req, res, next)
+  : next());
+app.use(supabaseRequestAuthContext);
 app.use(policyObserver);
+app.use(supabaseRequestContext);
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {

@@ -1,6 +1,8 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import { createClient, type JwtPayload, type SupabaseClient } from "@supabase/supabase-js";
 import WS from "ws";
+import { getAuthMode } from "./auth-context";
+import { matchRoutePolicy } from "./route-policy";
 
 const SUPABASE_URL_FALLBACK = "https://rbklkyozbefdjzaufszk.supabase.co";
 const SUPABASE_ANON_KEY_FALLBACK =
@@ -184,3 +186,23 @@ export function createRequireAuth(
 }
 
 export const requireAuth = createRequireAuth();
+
+/**
+ * Runtime auth bridge. Public routes remain reachable; every known protected
+ * API route receives req.auth from a verified Supabase JWT in supabase mode.
+ * In legacy mode the signed cookie context remains the sole auth source.
+ */
+export const supabaseRequestAuthContext: RequestHandler = (req, res, next) => {
+  if (!req.path.startsWith("/api") || getAuthMode() !== "supabase") {
+    next();
+    return;
+  }
+
+  const policy = matchRoutePolicy(req.method, req.path);
+  if (!policy || policy.access === "public") {
+    next();
+    return;
+  }
+
+  return requireAuth(req, res, next);
+};

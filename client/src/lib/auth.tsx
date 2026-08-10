@@ -1,6 +1,7 @@
-import { createContext, useContext, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { apiRequest } from "./queryClient";
 import { lsGet, lsSet } from "./storage";
+import { clearAccessToken, onApiUnauthorized, setAccessToken } from "./api-auth";
 import { hatZugriff as checkZugriff, BerechtigungKey } from "./permissions";
 
 export type Rolle = "admin" | "mitarbeiter";
@@ -33,7 +34,7 @@ const AuthContext = createContext<AuthContextType>({
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  // In-Memory only — kein sessionStorage (blockiert im Preview-Iframe)
+  // Nutzerprofil bleibt im React-State; der Supabase access_token liegt für API-Header im bestehenden sicheren Storage-Wrapper.
   const [user, setUser] = useState<AppUser | null>(null);
 
   const login = async (benutzername: string, passwort: string) => {
@@ -44,6 +45,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await res.json();
       if (!res.ok) return { ok: false, message: data.message, gesperrt: data.gesperrt, minutenNoch: data.minutenNoch };
       if (data.requires2fa) return { ok: true, requires2fa: true, userId: data.userId };
+      if (data.session?.access_token) setAccessToken(data.session.access_token);
+      else clearAccessToken();
       setUser(data.user);
       return { ok: true };
     } catch { return { ok: false, message: "Verbindungsfehler" }; }
@@ -58,14 +61,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (geraetMerken && data.vertrauensToken && benutzername) {
         lsSet(`ap_vt_${benutzername}`, data.vertrauensToken);
       }
+      clearAccessToken();
       setUser(data.user);
       return { ok: true };
     } catch { return { ok: false, message: "Verbindungsfehler" }; }
   };
 
   const logout = () => {
+    clearAccessToken();
     setUser(null);
   };
+
+  useEffect(() => onApiUnauthorized(() => {
+    clearAccessToken();
+    setUser(null);
+  }), []);
 
   return (
     <AuthContext.Provider value={{

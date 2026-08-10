@@ -1,5 +1,5 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
-import { POLICY_MODE, type PolicyMode } from "./auth-context";
+import { getAuthMode, getPolicyMode, type PolicyMode } from "./auth-context";
 import {
   isRoutePolicyAllowed,
   matchRoutePolicy,
@@ -30,15 +30,18 @@ export interface PolicyObserverDependencies {
   summaryIntervalMs?: number;
 }
 
+function requestIdentity(req: Request) {
+  return getAuthMode() === "supabase" ? req.auth : req.legacyAuth;
+}
+
 /**
- * Evaluates the Stage-7 matrix against the context produced by
- * legacySessionContext. It intentionally never writes a response, throws, or
- * withholds next(): Stage 10 is shadow-mode only.
+ * Observe retains Etappe 10's discrepancy logging. Enforce is intentionally
+ * evaluated per request so POLICY_MODE can be a deploy-time emergency switch.
  */
 export function createPolicyObserver(
   dependencies: PolicyObserverDependencies = {},
 ): RequestHandler {
-  const mode = dependencies.mode || POLICY_MODE;
+  const configuredMode = dependencies.mode;
   const getPolicy = dependencies.getPolicy || matchRoutePolicy;
   const log = dependencies.log || console.warn;
   const now = dependencies.now || (() => new Date());
@@ -46,42 +49,50 @@ export function createPolicyObserver(
   let matchedRequests = 0;
   let lastSummaryAt = now().getTime();
 
-  return (req: Request, _res: Response, next: NextFunction): void => {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const mode = configuredMode || getPolicyMode();
     if (mode === "off") {
       next();
       return;
     }
 
-    if (mode === "enforce") {
-      // TODO(Stage 11+): add an explicitly reviewed enforcement rollout here.
-      // Do not block or otherwise alter legacy requests in Stage 10.
-      next();
-      return;
-    }
-
     const policy = getPolicy(req.method, req.path);
-    if (!policy) {
+    // Unknown endpoints keep Etappe-10 behavior. Registered public endpoints
+    // must never require an auth context, even in enforce mode.
+    if (!policy || policy.access === "public") {
       next();
       return;
     }
 
-    const hasAccess = isRoutePolicyAllowed(
-      policy,
-      req.legacyAuth?.rolle,
-      req.legacyAuth?.berechtigungen,
-    );
-    // All Stage-10 routes remain unguarded. A policy denial therefore differs
-    // from what the live legacy route currently permits.
+    const identity = requestIdentity(req);
+    if (mode === "enforce") {
+      if (!identity) {
+        res.status(401).json({ ok: false, message: "Authentifizierung erforderlich" });
+        return;
+      }
+      const hasAccess = isRoutePolicyAllowed(policy, identity.rolle, identity.berechtigungen);
+      if (!hasAccess) {
+        res.status(403).json({
+          ok: false,
+          message: "Fehlende Berechtigung",
+          requiredPermission: policy.permissions.join(", "),
+        });
+        return;
+      }
+      next();
+      return;
+    }
+
+    const hasAccess = isRoutePolicyAllowed(policy, identity?.rolle, identity?.berechtigungen);
+    // All Stage-10 routes were still unguarded; this is the reference behavior
+    // against which observe mode reports policy discrepancies.
     const legacyAllows = policy.currentEnforcement === "unguarded" ? true : hasAccess;
     const observation: PolicyObservation = {
       method: req.method,
       path: req.path,
-      userId: req.legacyAuth?.userId || null,
-      rolle: req.legacyAuth?.rolle || null,
-      expected: {
-        access: policy.access,
-        permissions: policy.permissions,
-      },
+      userId: identity?.userId || null,
+      rolle: identity?.rolle || null,
+      expected: { access: policy.access, permissions: policy.permissions },
       hasAccess,
       matchesLegacy: hasAccess === legacyAllows,
       timestamp: now().toISOString(),
