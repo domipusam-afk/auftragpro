@@ -4,6 +4,12 @@ import type { Request } from 'express';
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "node:http";
+import { initializeTenantContext } from "./supabase";
+import {
+  runWithTenantReadObservation,
+  TENANCY_MODE,
+  type TenantReadObservation,
+} from "./tenant-context";
 
 const app = express();
 const httpServer = createServer(app);
@@ -36,6 +42,22 @@ export function log(message: string, source = "express") {
 }
 
 app.use((req, res, next) => {
+  if (!req.path.startsWith("/api") || TENANCY_MODE !== "observe") {
+    next();
+    return;
+  }
+
+  runWithTenantReadObservation((observation: TenantReadObservation) => {
+    res.on("finish", () => {
+      console.warn(
+        `[TENANCY_OBSERVE] ${req.method} ${req.path}: read_queries=${observation.readQueries} tenant_id_present=${observation.tenantIdPresent} tenant_id_null=${observation.tenantIdNull} tenant_id_unavailable=${observation.tenantIdUnavailable}.`,
+      );
+    });
+    next();
+  });
+});
+
+app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
   let capturedJsonResponse: Record<string, any> | undefined = undefined;
@@ -62,6 +84,7 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  await initializeTenantContext();
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
