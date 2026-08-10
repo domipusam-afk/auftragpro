@@ -10,7 +10,8 @@
     "check": "tsc",
     "test:auth-middleware": "tsx server/auth-middleware.test.ts",
     "db:push": "drizzle-kit push",
-    "test:route-policy": "tsx server/route-policy.test.ts"
+    "test:route-policy": "tsx server/route-policy.test.ts",
+    "auth:import:rehearsal": "tsx scripts/auth-import-rehearsal.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

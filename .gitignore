@@ -14,3 +14,8 @@ data.db-journal
 
 *.log
 .DS_Store
+
+# Etappe 8 rehearsal reports are generated outside the repository by default.
+# Never commit reports or ad-hoc exports that could contain credential material.
+auftragpro_etappe8_import_rehearsal_*.md
+auth-import-rehearsal*.md
