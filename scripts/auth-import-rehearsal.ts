@@ -5,7 +5,9 @@
  * non-secret import plan. It never writes to Supabase.
  *
  * `--live-test`: an intentionally constrained, self-cleaning proof for the
- * explicitly approved placeholder `test.muster@schneggenburger.ch` only.
+ * explicitly approved placeholder `test.muster@schneggenburger.ch` only,
+ * except when the explicit `--retain-live-test-user` verification flag is
+ * used for an immediately following privileged SQL check.
  * The two real administrators are hard-blocked here. It uses the officially
  * supported GoTrue Admin API (`auth.admin.createUser`) with `password_hash`,
  * `email_confirm: true`, and the legacy UUID supplied as `id`.
@@ -21,6 +23,15 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { createClient, type User } from "@supabase/supabase-js";
+import WebSocket from "ws";
+
+// @supabase/supabase-js always constructs a Realtime client, even though this
+// script only calls the HTTP-based Auth Admin API. Node.js 20 does not provide
+// a native WebSocket global, so give the unused Realtime client a compatible
+// constructor before createClient() is called.
+if (!globalThis.WebSocket) {
+  globalThis.WebSocket = WebSocket as unknown as typeof globalThis.WebSocket;
+}
 
 const DEFAULT_BACKUP_PATH = "/home/user/workspace/backup_2026-08-10/app_benutzer.json";
 const DEFAULT_TENANT_ID = "cbb89e60-d328-4daf-a5a5-be56f488e897";
@@ -61,6 +72,7 @@ interface ImportPlanUser {
 
 interface CliOptions {
   liveTest: boolean;
+  retainLiveTestUser: boolean;
   backupPath: string;
   reportPath?: string;
 }
@@ -96,9 +108,10 @@ function usage(message?: string): never {
     [
       "Verwendung:",
       "  npx tsx scripts/auth-import-rehearsal.ts [--backup <pfad>] [--report <pfad>]",
-      "  SUPABASE_URL=https://... SUPABASE_SERVICE_ROLE_KEY=... npx tsx scripts/auth-import-rehearsal.ts --live-test [--report <pfad>]",
+      "  SUPABASE_URL=https://... SUPABASE_SERVICE_ROLE_KEY=... npx tsx scripts/auth-import-rehearsal.ts --live-test [--retain-live-test-user] [--report <pfad>]",
       "",
       "Ohne --live-test ist der Lauf rein lesend/simulierend.",
+      "--retain-live-test-user ist nur für eine unmittelbar folgende, privilegierte SQL-Prüfung vorgesehen; die Bereinigung muss danach explizit erfolgen.",
     ].join("\n"),
   );
   process.exit(2);
@@ -107,6 +120,7 @@ function usage(message?: string): never {
 function parseOptions(argv: string[]): CliOptions {
   const options: CliOptions = {
     liveTest: false,
+    retainLiveTestUser: false,
     backupPath: DEFAULT_BACKUP_PATH,
   };
 
@@ -114,6 +128,8 @@ function parseOptions(argv: string[]): CliOptions {
     const arg = argv[index];
     if (arg === "--live-test") {
       options.liveTest = true;
+    } else if (arg === "--retain-live-test-user") {
+      options.retainLiveTestUser = true;
     } else if (arg === "--backup" || arg === "--report") {
       const value = argv[index + 1];
       if (!value || value.startsWith("--")) usage(`Wert für ${arg} fehlt.`);
@@ -125,6 +141,10 @@ function parseOptions(argv: string[]): CliOptions {
     } else {
       usage(`Unbekannte Option ${arg}.`);
     }
+  }
+
+  if (options.retainLiveTestUser && !options.liveTest) {
+    usage("--retain-live-test-user setzt --live-test voraus.");
   }
 
   return options;
@@ -226,7 +246,8 @@ function renderPlan(users: ImportPlanUser[], createdAt: string, mode: "rehearsal
     "## Sicherheitsgrenzen dieser Etappe",
     "",
     "- Ohne `--live-test` erfolgen keinerlei Schreibvorgänge.",
-    "- Auch mit `--live-test` darf ausschließlich `test.muster@schneggenburger.ch` angelegt und wieder gelöscht werden.",
+    "- Auch mit `--live-test` darf ausschließlich `test.muster@schneggenburger.ch` angelegt werden; standardmäßig wird er im selben Lauf wieder gelöscht.",
+    "- `--retain-live-test-user` ist ausschließlich für eine unmittelbar folgende, privilegierte SQL-Prüfung zulässig; danach ist eine explizite Löschung über `auth.admin.deleteUser` verpflichtend.",
     "- `philipp@schneggenburger.ch` und `domipusam@gmail.com` werden in dieser Etappe unter keinen Umständen geschrieben, aktualisiert oder gelöscht.",
     "- `tenant_memberships` werden in diesem Skript nie erstellt.",
     "",
@@ -281,7 +302,7 @@ async function assertNoExistingTarget(
   return data.user ?? emailUser ?? null;
 }
 
-async function runLiveTest(target: ImportPlanUser): Promise<string[]> {
+async function runLiveTest(target: ImportPlanUser, retainLiveTestUser: boolean): Promise<string[]> {
   if (target.email !== TEST_EMAIL || target.id !== TEST_USER_ID || BLOCKED_ADMIN_EMAILS.has(target.email)) {
     throw new Error("Live-Test-Schutz ausgelöst: nur der explizite Testplatzhalter ist zulässig.");
   }
@@ -305,6 +326,7 @@ async function runLiveTest(target: ImportPlanUser): Promise<string[]> {
   }
 
   let created = false;
+  let verified = false;
   try {
     const { data, error } = await admin.auth.admin.createUser({
       id: target.id,
@@ -323,17 +345,18 @@ async function runLiveTest(target: ImportPlanUser): Promise<string[]> {
     created = true;
     events.push(`auth.admin.createUser erfolgreich; zurückgelieferte id=${data.user.id}.`);
 
-    const { data: verified, error: verifyError } = await admin.auth.admin.getUserById(target.id);
-    if (verifyError || !verified.user) throw new Error(`getUserById fehlgeschlagen: ${verifyError?.message ?? "kein User"}`);
-    if (verified.user.id !== target.id) throw new Error(`UUID wurde nicht beibehalten (${verified.user.id}).`);
-    if (verified.user.email !== target.email) throw new Error(`E-Mail stimmt nicht (${verified.user.email}).`);
-    if (!verified.user.email_confirmed_at) throw new Error("email_confirmed_at ist nicht gesetzt.");
+    const { data: verifiedResult, error: verifyError } = await admin.auth.admin.getUserById(target.id);
+    if (verifyError || !verifiedResult.user) throw new Error(`getUserById fehlgeschlagen: ${verifyError?.message ?? "kein User"}`);
+    if (verifiedResult.user.id !== target.id) throw new Error(`UUID wurde nicht beibehalten (${verifiedResult.user.id}).`);
+    if (verifiedResult.user.email !== target.email) throw new Error(`E-Mail stimmt nicht (${verifiedResult.user.email}).`);
+    if (!verifiedResult.user.email_confirmed_at) throw new Error("email_confirmed_at ist nicht gesetzt.");
+    verified = true;
     events.push("Nachprüfung erfolgreich: User existiert, UUID identisch, E-Mail bestätigt.");
     events.push(
       "Kein Klartext-Passwort vorhanden: signInWithPassword wurde bewusst nicht ausgeführt. Die Admin-API gibt encrypted_password nicht zurück; dessen bytegenaue SQL-Prüfung erfordert eine separat autorisierte, privilegierte Datenbankabfrage.",
     );
   } finally {
-    if (created) {
+    if (created && (!retainLiveTestUser || !verified)) {
       const { error: deleteError } = await admin.auth.admin.deleteUser(target.id);
       if (deleteError) {
         throw new Error(`KRITISCH: Bereinigung fehlgeschlagen: ${deleteError.message}`);
@@ -344,6 +367,10 @@ async function runLiveTest(target: ImportPlanUser): Promise<string[]> {
       }
       if (afterDelete.user) throw new Error("KRITISCH: Testuser verblieb in auth.users.");
       events.push("auth.admin.deleteUser erfolgreich; abschließende getUserById-Nachprüfung: 0 Testuser.");
+    } else if (created) {
+      events.push(
+        "Testuser für die unmittelbar folgende privilegierte SQL-Prüfung beibehalten; er muss anschließend explizit über auth.admin.deleteUser gelöscht werden.",
+      );
     }
   }
 
@@ -362,7 +389,7 @@ async function main(): Promise<void> {
     if (!target) throw new Error(`Testplatzhalter ${TEST_EMAIL} nicht im Backup-Plan gefunden.`);
     report += "\n## Ergebnis des eingeschränkten Live-Tests\n\n";
     try {
-      const events = await runLiveTest(target);
+      const events = await runLiveTest(target, options.retainLiveTestUser);
       report += `${events.map((event) => `- ${event}`).join("\n")}\n`;
     } catch (error) {
       report += `- Nicht ausgeführt/fehlgeschlagen: ${redactError(error)}\n`;
