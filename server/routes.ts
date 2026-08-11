@@ -6744,13 +6744,16 @@ export async function registerRoutes(
         // Spalte heisst "erstellt" (nicht "datum")
         let q = supabase
           .from("rechnungen")
-          .select("*, auftraege(kunde, kunde_name)")
+          .select("*, auftraege(kunde)")
           .order("erstellt");
         if (von) q = q.gte("erstellt", von);
         if (bis) q = q.lte("erstellt", bis);
         if (tenantId) q = q.eq("tenant_id", tenantId);
         const { data: rechnungen, error: rErr } = await q;
-        if (rErr) console.error("[FIBU] Ausgangsrechnungen Fehler:", rErr.message);
+        if (rErr) {
+          console.error("[FIBU] Ausgangsrechnungen Fehler:", rErr.message);
+          return res.status(500).json({ message: "FIBU-Export der Ausgangsrechnungen fehlgeschlagen." });
+        }
         // rechnungen.betrag ist in der DB NETTO (Positionssumme exkl. MWST) —
         // dieselbe Umrechnung wie bei Rechnungsliste/PDF (netto × 1.081 = brutto).
         lines.push("Typ;Nummer;Datum;Faellig;Empfaenger;Betrag_Netto_CHF;MWST_Satz_Prozent;MWST_Betrag_CHF;Betrag_Brutto_CHF;Bezahlt_am;Status");
@@ -6761,7 +6764,7 @@ export async function registerRoutes(
           // Datum: erstellt als ISO-Datum (nur Datumsteil)
           const datumStr = r.erstellt ? String(r.erstellt).slice(0, 10) : "";
           // Empfaenger: aus Auftrag.kunde (JOIN)
-          const empfaenger = ((r as any).auftraege?.kunde || (r as any).auftraege?.kunde_name || "").replace(/;/g, " ");
+          const empfaenger = ((r as any).auftraege?.kunde || "").replace(/;/g, " ");
           lines.push(`Ausgangsrechnung;${r.nr || ""};${datumStr};${r.faellig_datum || ""};${empfaenger};${netto.toFixed(2)};${MWST_SATZ_RECHNUNG.toFixed(1)};${mwst.toFixed(2)};${brutto.toFixed(2)};${r.bezahlt_am || ""};${r.bezahlt_am ? "Bezahlt" : "Offen"}`);
         }
       }
@@ -6774,7 +6777,10 @@ export async function registerRoutes(
           : eingangsrechnungenQuery
         );
         const { data: eingang, error: eErr } = eirResult;
-        if (eErr) console.error("[FIBU] Eingangsrechnungen Fehler:", eErr.message);
+        if (eErr) {
+          console.error("[FIBU] Eingangsrechnungen Fehler:", eErr.message);
+          return res.status(500).json({ message: "FIBU-Export der Eingangsrechnungen fehlgeschlagen." });
+        }
         if (!typ) lines.push(""); // Leerzeile Trennung
         // eingangsrechnungen.betrag ist der vom Lieferanten fakturierte Gesamtbetrag
         // (BRUTTO, inkl. MWST) — hier ist Brutto→Netto/MWST-Ableitung korrekt.
