@@ -34,6 +34,13 @@ export const DASHBOARD_WIDGETS = [
     default_order: 30,
   },
   {
+    id: "ueberfaellige_rechnungen",
+    label: "Überfällige Rechnungen",
+    description: "Offene Bruttobeträge und die ältesten überfälligen Rechnungen",
+    default_visible: true,
+    default_order: 35,
+  },
+  {
     id: "umsatz_charts",
     label: "Umsatzdiagramme",
     description: "Umsatz der letzten sechs Monate und Jahresvergleich",

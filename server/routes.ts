@@ -7605,5 +7605,100 @@ export async function registerRoutes(
     }
   });
 
+  // ─── Überfällige Rechnungen (Dashboard) ───────────────────────────────────
+  // rechnungen.faellig_datum ist im aktuellen Schema ein ISO-Datum als Text.
+  // Die Datenbank besitzt derzeit weder status noch storniert_am; sobald ein
+  // expliziter Storno-Zustand existiert, muss er hier und in der Rechnungsliste
+  // gemeinsam als zusätzlicher Ausschluss ergänzt werden.
+  app.get("/api/dashboard/ueberfaellige-rechnungen", async (req, res) => {
+    try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) {
+        return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      }
+
+      const today = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Europe/Zurich",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).formatToParts(new Date()).reduce<Record<string, string>>((parts, part) => {
+        if (part.type !== "literal") parts[part.type] = part.value;
+        return parts;
+      }, {});
+      const todayIso = `${today.year}-${today.month}-${today.day}`;
+
+      // The < filter lets Postgres use the tenant/date index once it exists.
+      // A second ISO validation below protects the response against legacy text
+      // values that could compare lexicographically but are not valid dates.
+      const { data: candidates, error } = await identity.client
+        .from("rechnungen")
+        .select("id, nr, auftrag_id, betrag, faellig_datum")
+        .eq("tenant_id", identity.tenantId)
+        .is("bezahlt_am", null)
+        .not("faellig_datum", "is", null)
+        .lt("faellig_datum", todayIso)
+        .order("faellig_datum", { ascending: true });
+      if (error) throw error;
+
+      const overdueInvoices = (candidates || []).filter((rechnung: any) => {
+        const dueDate = typeof rechnung.faellig_datum === "string" ? rechnung.faellig_datum.slice(0, 10) : "";
+        return /^\d{4}-\d{2}-\d{2}$/.test(dueDate) && dueDate < todayIso;
+      });
+
+      const auftragIds = Array.from(new Set(
+        overdueInvoices
+          .map((rechnung: any) => rechnung.auftrag_id)
+          .filter((id: unknown): id is string => typeof id === "string" && id.length > 0),
+      ));
+      const kundenByAuftragId = new Map<string, string | null>();
+
+      if (auftragIds.length > 0) {
+        const { data: auftraege, error: auftraegeError } = await identity.client
+          .from("auftraege")
+          .select("id, kunde")
+          .eq("tenant_id", identity.tenantId)
+          .in("id", auftragIds);
+        if (auftraegeError) throw auftraegeError;
+
+        for (const auftrag of auftraege || []) {
+          kundenByAuftragId.set(auftrag.id, auftrag.kunde || null);
+        }
+      }
+
+      const overdueDays = (dueDate: string) => {
+        const dueMs = Date.UTC(
+          Number(dueDate.slice(0, 4)),
+          Number(dueDate.slice(5, 7)) - 1,
+          Number(dueDate.slice(8, 10)),
+        );
+        const todayMs = Date.UTC(Number(today.year), Number(today.month) - 1, Number(today.day));
+        return Math.max(1, Math.floor((todayMs - dueMs) / 86_400_000));
+      };
+
+      const items = overdueInvoices.slice(0, 10).map((rechnung: any) => ({
+        id: rechnung.id,
+        rechnungsnummer: rechnung.nr || null,
+        auftrag_id: rechnung.auftrag_id || null,
+        faellig_am: rechnung.faellig_datum.slice(0, 10),
+        kunde: rechnung.auftrag_id ? kundenByAuftragId.get(rechnung.auftrag_id) || null : null,
+        betrag_brutto: rechnungBruttoBetrag(rechnung.betrag),
+        tage_ueberfaellig: overdueDays(rechnung.faellig_datum.slice(0, 10)),
+      }));
+      const totalOffenBrutto = overdueInvoices.reduce(
+        (sum: number, rechnung: any) => sum + rechnungBruttoBetrag(rechnung.betrag),
+        0,
+      );
+
+      return res.json({
+        count: overdueInvoices.length,
+        total_offen_brutto: Math.round(totalOffenBrutto * 100) / 100,
+        items,
+      });
+    } catch (e) {
+      return res.status(500).json({ message: asError(e) });
+    }
+  });
+
   return httpServer;
 }

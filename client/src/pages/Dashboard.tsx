@@ -16,7 +16,6 @@ import {
   ArrowRight,
   TrendingUp,
   TrendingDown,
-  Banknote,
   CheckSquare,
   Bell,
   XCircle,
@@ -39,6 +38,7 @@ import { STATUS_GESAMT_EXCLUDED, STATUS_IN_BEARBEITUNG } from "@shared/dashboard
 import { useToast } from "@/hooks/use-toast";
 import { DashboardWidget } from "@/components/dashboard/DashboardWidget";
 import { AufgabenWidget } from "@/components/dashboard/AufgabenWidget";
+import { UeberfaelligeRechnungenWidget } from "@/components/dashboard/UeberfaelligeRechnungenWidget";
 import {
   normalizeDashboardPreferences,
   type DashboardPreferences,
@@ -280,9 +280,6 @@ export default function Dashboard() {
   const today = new Date(); today.setHours(0,0,0,0);
   const in7Days = new Date(today); in7Days.setDate(today.getDate() + 7);
 
-  const ueberfaelligeRechnungen = (rechnungen as any[]).filter((r: any) =>
-    !r.bezahlt_am && r.faellig_datum && new Date(r.faellig_datum) < today
-  );
   const baldFaelligeRechnungen = (rechnungen as any[]).filter((r: any) =>
     !r.bezahlt_am && r.faellig_datum &&
     new Date(r.faellig_datum) >= today && new Date(r.faellig_datum) <= in7Days
@@ -606,6 +603,11 @@ export default function Dashboard() {
       )}
       </DashboardWidget>
 
+      <UeberfaelligeRechnungenWidget
+        visible={isWidgetVisible("ueberfaellige_rechnungen") && darf_finanzen}
+        style={widgetStyle("ueberfaellige_rechnungen")}
+      />
+
       <DashboardWidget
         id="umsatz_charts"
         visible={isWidgetVisible("umsatz_charts") && darf_finanzen}
@@ -716,19 +718,8 @@ export default function Dashboard() {
         className="lg:col-span-12"
         style={widgetStyle("faelligkeits_warnungen")}
       >
-      {(ueberfaelligeRechnungen.length > 0 || baldFaelligeRechnungen.length > 0 || ablaufendeOfferten.length > 0 || faelligeWiederkehrende.length > 0) && (
+      {(baldFaelligeRechnungen.length > 0 || ablaufendeOfferten.length > 0 || faelligeWiederkehrende.length > 0) && (
         <div className="space-y-2 mb-2">
-          {ueberfaelligeRechnungen.map((r: any) => (
-            <Link key={r.id} href="/rechnungen">
-              <a className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-red-50 border border-red-200 text-sm hover:bg-red-100 transition-colors dark:bg-red-950/30 dark:border-red-800">
-                <XCircle className="h-4 w-4 text-red-600 shrink-0" />
-                <span className="flex-1 text-red-800 dark:text-red-300">
-                  <span className="font-semibold">{r.nr}</span> — Rechnung überfällig seit {new Date(r.faellig_datum).toLocaleDateString("de-CH")}
-                </span>
-                <span className="font-bold tabular-nums text-red-700">CHF {Number(r.betrag).toLocaleString("de-CH")}</span>
-              </a>
-            </Link>
-          ))}
           {baldFaelligeRechnungen.map((r: any) => (
             <Link key={r.id} href="/rechnungen">
               <a className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-amber-50 border border-amber-200 text-sm hover:bg-amber-100 transition-colors dark:bg-amber-950/30 dark:border-amber-800">
