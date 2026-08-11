@@ -14,6 +14,15 @@ import { setLegacySessionCookie } from "./legacy-session";
 import { getAuthMode } from "./auth-context"; import { STATUS_GESAMT_EXCLUDED, STATUS_IN_BEARBEITUNG } from "../shared/dashboardStatus";
 import { createDownloadToken, validateAndConsumeDownloadToken } from "./download-tokens";
 import { isRoutePolicyAllowed, matchRoutePolicy } from "./route-policy";
+import {
+  isDashboardReminderSettingId,
+  isDashboardWidgetId,
+  normalizeDashboardPreferences,
+  type DashboardPreferences,
+  type DashboardReminderSettings,
+  type DashboardWidgetId,
+} from "../shared/dashboardWidgets";
+import { getDefaultTenantId } from "./tenant-context";
 
 // Robust logo path resolution: works in both ESM (dev) and CJS (production build)
 function getLogoPath(): string {
@@ -7391,6 +7400,151 @@ export async function registerRoutes(
       if (error) return res.status(500).json({ message: error.message });
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+  // ─── Dashboard-Präferenzen (pro User und Tenant) ────────────────────────────
+  type DashboardPreferenceIdentity = {
+    userId: string;
+    tenantId: string;
+    client: typeof supabase;
+  };
+
+  const dashboardPreferenceIdentity = (req: Request): DashboardPreferenceIdentity | null => {
+    if (req.auth?.userId && req.auth.tenantId) {
+      return {
+        userId: req.auth.userId,
+        tenantId: req.auth.tenantId,
+        client: supabase,
+      };
+    }
+
+    // Der Legacy-Login enthält die verifizierte app_benutzer-ID, aber noch
+    // keinen JWT für die neue RLS-Tabelle. Der Zugriff bleibt daher explizit
+    // auf diese User-ID und den zentralen Default-Tenant begrenzt.
+    if (req.legacyAuth?.userId) {
+      return {
+        userId: req.legacyAuth.userId,
+        tenantId: getDefaultTenantId(),
+        client: getServiceRoleClient(),
+      };
+    }
+
+    return null;
+  };
+
+  const parseDashboardPreferences = (body: unknown):
+    | { preferences: DashboardPreferences }
+    | { message: string } => {
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return { message: "Ungültiger Preferences-Body." };
+    }
+
+    const input = body as Record<string, unknown>;
+    const visibleWidgets = input.visible_widgets;
+    const widgetOrder = input.widget_order;
+    const reminderSettings = input.reminder_settings;
+
+    if (!Array.isArray(visibleWidgets)
+      || visibleWidgets.some((id) => !isDashboardWidgetId(id))
+      || new Set(visibleWidgets).size !== visibleWidgets.length) {
+      return { message: "visible_widgets darf nur eindeutige bekannte Widget-IDs enthalten." };
+    }
+
+    if (!Array.isArray(widgetOrder)
+      || widgetOrder.some((id) => !isDashboardWidgetId(id))
+      || new Set(widgetOrder).size !== widgetOrder.length) {
+      return { message: "widget_order darf nur eindeutige bekannte Widget-IDs enthalten." };
+    }
+
+    const normalized = normalizeDashboardPreferences({
+      visible_widgets: visibleWidgets as DashboardWidgetId[],
+      widget_order: widgetOrder as DashboardWidgetId[],
+    });
+
+    // Eine Reihenfolge ist nur eindeutig, wenn jede aktuell bekannte Kachel
+    // exakt einmal enthalten ist. Neue Widgets werden so nicht versehentlich
+    // aus der gespeicherten Konfiguration ausgeschlossen.
+    if (widgetOrder.length !== normalized.widget_order.length) {
+      return { message: "widget_order muss jede bekannte Widget-ID exakt einmal enthalten." };
+    }
+
+    if (!reminderSettings || typeof reminderSettings !== "object" || Array.isArray(reminderSettings)) {
+      return { message: "reminder_settings muss ein Objekt sein." };
+    }
+    const reminderInput = reminderSettings as Record<string, unknown>;
+    const reminderKeys = Object.keys(reminderInput);
+    if (reminderKeys.some((key) => !isDashboardReminderSettingId(key))
+      || reminderKeys.length !== Object.keys(normalized.reminder_settings).length
+      || reminderKeys.some((key) => typeof reminderInput[key] !== "boolean")) {
+      return { message: "reminder_settings darf nur alle bekannten Reminder-Schlüssel mit Boolean-Werten enthalten." };
+    }
+
+    return {
+      preferences: {
+        visible_widgets: [...visibleWidgets] as DashboardWidgetId[],
+        widget_order: [...widgetOrder] as DashboardWidgetId[],
+        reminder_settings: reminderInput as DashboardReminderSettings,
+      },
+    };
+  };
+
+  app.get("/api/dashboard/preferences", async (req, res) => {
+    try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) {
+        return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      }
+
+      const { data, error } = await identity.client
+        .from("dashboard_user_preferences")
+        .select("visible_widgets, widget_order, reminder_settings")
+        .eq("tenant_id", identity.tenantId)
+        .eq("user_id", identity.userId)
+        .maybeSingle();
+      if (error) throw error;
+
+      // Keine Zeile anzulegen ist absichtlich: Erst ein ausdrückliches
+      // Speichern des Users persistiert seine persönlichen Präferenzen.
+      return res.json({
+        ...normalizeDashboardPreferences(data as Partial<DashboardPreferences> | null),
+        is_default: !data,
+      });
+    } catch (e) {
+      return res.status(500).json({ message: asError(e) });
+    }
+  });
+
+  app.put("/api/dashboard/preferences", async (req, res) => {
+    try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) {
+        return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      }
+
+      const parsed = parseDashboardPreferences(req.body);
+      if ("message" in parsed) {
+        return res.status(400).json({ message: parsed.message });
+      }
+
+      const { data, error } = await identity.client
+        .from("dashboard_user_preferences")
+        .upsert({
+          tenant_id: identity.tenantId,
+          user_id: identity.userId,
+          ...parsed.preferences,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "tenant_id,user_id" })
+        .select("visible_widgets, widget_order, reminder_settings")
+        .single();
+      if (error) throw error;
+
+      return res.json({
+        ...normalizeDashboardPreferences(data as Partial<DashboardPreferences>),
+        is_default: false,
+      });
+    } catch (e) {
+      return res.status(500).json({ message: asError(e) });
+    }
   });
 
   return httpServer;

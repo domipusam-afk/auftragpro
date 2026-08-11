@@ -37,6 +37,12 @@ import { downloadWithAuth } from "@/lib/downloadFile";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { STATUS_GESAMT_EXCLUDED, STATUS_IN_BEARBEITUNG } from "@shared/dashboardStatus";
 import { useToast } from "@/hooks/use-toast";
+import { DashboardWidget } from "@/components/dashboard/DashboardWidget";
+import {
+  normalizeDashboardPreferences,
+  type DashboardPreferences,
+  type DashboardWidgetId,
+} from "@shared/dashboardWidgets";
 
 const DASHBOARD_QUERY_ERROR_MESSAGE = "Daten konnten nicht geladen werden. Bitte Seite neu laden.";
 
@@ -199,6 +205,16 @@ export default function Dashboard() {
   const { data: auftraege, isLoading: lA, isError: auftraegeError } = useQuery<Auftrag[]>({
     queryKey: ["/api/auftraege"],
   });
+  const { data: storedDashboardPreferences } = useQuery<DashboardPreferences>({
+    queryKey: ["/api/dashboard/preferences"],
+    queryFn: () => apiRequest("GET", "/api/dashboard/preferences").then((r) => r.json()),
+  });
+  const dashboardPreferences = normalizeDashboardPreferences(storedDashboardPreferences);
+  const visibleDashboardWidgets = new Set<DashboardWidgetId>(dashboardPreferences.visible_widgets);
+  const isWidgetVisible = (id: DashboardWidgetId) => visibleDashboardWidgets.has(id);
+  const widgetStyle = (id: DashboardWidgetId) => ({
+    order: dashboardPreferences.widget_order.indexOf(id),
+  });
 
   const { data: rechnungen = [], isError: rechnungenError } = useQuery<Rechnung[]>({
     queryKey: ["/api/rechnungen"],
@@ -348,7 +364,14 @@ export default function Dashboard() {
         </Link>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-8">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-x-4 md:gap-x-6 gap-y-0">
+      <DashboardWidget
+        id="kpi_auftraege"
+        visible={isWidgetVisible("kpi_auftraege")}
+        className="lg:col-span-12 mb-8"
+        style={widgetStyle("kpi_auftraege")}
+      >
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         {lStats ? (
           <>
             <Skeleton className="h-24" />
@@ -393,9 +416,16 @@ export default function Dashboard() {
           </>
         )}
       </div>
+      </DashboardWidget>
 
       {/* Offerten Übersicht */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6">
+      <DashboardWidget
+        id="kpi_offerten"
+        visible={isWidgetVisible("kpi_offerten")}
+        className="lg:col-span-12 mb-6"
+        style={widgetStyle("kpi_offerten")}
+      >
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <KpiCard
           label="Offene Offerten"
           value={offerten.filter((o: any) => o.status !== "angenommen" && o.status !== "abgelehnt" && !istAbgelaufeneOfferte(o, today)).length}
@@ -420,10 +450,17 @@ export default function Dashboard() {
           isError={offertenError}
         />
       </div>
+      </DashboardWidget>
 
       {/* Finanzen Übersicht — nur für Benutzer mit dashboard_finanzen Berechtigung */}
+      <DashboardWidget
+        id="kpi_finanzen"
+        visible={isWidgetVisible("kpi_finanzen") && darf_finanzen}
+        className="lg:col-span-12 mb-4"
+        style={widgetStyle("kpi_finanzen")}
+      >
       {darf_finanzen && (
-      <div className="mb-6">
+      <div>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-base font-semibold bg-background/80 backdrop-blur-sm rounded px-1 inline-block" style={{ fontFamily: "var(--font-display)" }}>
             Finanzen Übersicht
@@ -559,7 +596,18 @@ export default function Dashboard() {
             </a>
           </Link>
         </div>
+      </div>
+      )}
+      </DashboardWidget>
 
+      <DashboardWidget
+        id="umsatz_charts"
+        visible={isWidgetVisible("umsatz_charts") && darf_finanzen}
+        className="lg:col-span-12 mb-6"
+        style={widgetStyle("umsatz_charts")}
+      >
+      {darf_finanzen && (
+      <div>
         {/* Bar chart last 6 months */}
         <div className="bg-card rounded-lg border p-4 mb-4">
           <p className="text-xs text-muted-foreground font-medium mb-3 uppercase tracking-wide">Umsatz letzte 6 Monate</p>
@@ -653,10 +701,15 @@ export default function Dashboard() {
         </div>
       </div>
       )}
-
-
+      </DashboardWidget>
 
       {/* Fälligkeits-Warnungen */}
+      <DashboardWidget
+        id="faelligkeits_warnungen"
+        visible={isWidgetVisible("faelligkeits_warnungen")}
+        className="lg:col-span-12"
+        style={widgetStyle("faelligkeits_warnungen")}
+      >
       {(ueberfaelligeRechnungen.length > 0 || baldFaelligeRechnungen.length > 0 || ablaufendeOfferten.length > 0 || faelligeWiederkehrende.length > 0) && (
         <div className="space-y-2 mb-2">
           {ueberfaelligeRechnungen.map((r: any) => (
@@ -705,8 +758,14 @@ export default function Dashboard() {
           ))}
         </div>
       )}
+      </DashboardWidget>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
+      <DashboardWidget
+        id="neueste_auftraege"
+        visible={isWidgetVisible("neueste_auftraege")}
+        className="lg:col-span-8 mb-4 md:mb-6 lg:mb-0"
+        style={widgetStyle("neueste_auftraege")}
+      >
         <Card className="p-5 lg:col-span-2 bg-card">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-semibold bg-background/80 backdrop-blur-sm rounded px-1 inline-block" style={{ fontFamily: "var(--font-display)" }}>
@@ -754,7 +813,14 @@ export default function Dashboard() {
             </div>
           )}
         </Card>
+      </DashboardWidget>
 
+      <DashboardWidget
+        id="dringende_auftraege"
+        visible={isWidgetVisible("dringende_auftraege")}
+        className="lg:col-span-4"
+        style={widgetStyle("dringende_auftraege")}
+      >
         <Card className="p-5 bg-card">
           <div className="flex items-center gap-2 mb-4">
             <AlertTriangle className="h-4 w-4 text-destructive" />
@@ -795,7 +861,8 @@ export default function Dashboard() {
             </div>
           )}
         </Card>
-      </div>
+      </DashboardWidget>
+    </div>
     </div>
   );
 }

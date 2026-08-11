@@ -11,13 +11,22 @@ import {
   Upload, Download, Trash, FileText, CheckCircle2, AlertTriangle, Info,
   Lock, Eye, EyeOff, DollarSign, Clock, Save, Building2, Mail, Phone,
   Shield, ShieldCheck, Smartphone, Copy, Check, Server, Percent, Image,
-  GripVertical, Plus, Pencil, X, GitBranch,
+  GripVertical, Plus, Pencil, X, GitBranch, LayoutDashboard, Bell, ChevronUp, ChevronDown,
 } from "lucide-react";
 import { formatDate } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/lib/auth";
 import PdfVorlagenTab from "./PdfVorlagenTab";
+import {
+  createDefaultDashboardPreferences,
+  DASHBOARD_REMINDER_SETTINGS,
+  DASHBOARD_WIDGETS,
+  normalizeDashboardPreferences,
+  type DashboardPreferences,
+  type DashboardWidgetId,
+} from "@shared/dashboardWidgets";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1080,6 +1089,184 @@ function HintergrundTab({ settings }: { settings: EinstellungMap }) {
 
 // ─── Main Einstellungen Component ──────────────────────────────────────────────
 
+type DashboardPreferencesResponse = DashboardPreferences & { is_default?: boolean };
+
+function DashboardAnpassenTab() {
+  const { toast } = useToast();
+  const { data, isLoading } = useQuery<DashboardPreferencesResponse>({
+    queryKey: ["/api/dashboard/preferences"],
+    queryFn: () => apiRequest("GET", "/api/dashboard/preferences").then((response) => response.json()),
+  });
+  const [preferences, setPreferences] = useState<DashboardPreferences>(createDefaultDashboardPreferences);
+
+  useEffect(() => {
+    if (data) setPreferences(normalizeDashboardPreferences(data));
+  }, [data]);
+
+  const saveMutation = useMutation({
+    mutationFn: (payload: DashboardPreferences) =>
+      apiRequest("PUT", "/api/dashboard/preferences", payload).then((response) => response.json()),
+    onSuccess: (saved: DashboardPreferencesResponse) => {
+      setPreferences(normalizeDashboardPreferences(saved));
+      queryClient.setQueryData(["/api/dashboard/preferences"], saved);
+      toast({ title: "Dashboard-Einstellungen gespeichert" });
+    },
+    onError: () => toast({
+      title: "Dashboard-Einstellungen konnten nicht gespeichert werden",
+      variant: "destructive",
+    }),
+  });
+
+  const toggleWidget = (id: DashboardWidgetId, checked: boolean) => {
+    setPreferences((current) => ({
+      ...current,
+      visible_widgets: checked
+        ? [...current.visible_widgets, id]
+        : current.visible_widgets.filter((widgetId) => widgetId !== id),
+    }));
+  };
+
+  const moveWidget = (id: DashboardWidgetId, direction: -1 | 1) => {
+    setPreferences((current) => {
+      const index = current.widget_order.indexOf(id);
+      const targetIndex = index + direction;
+      if (index < 0 || targetIndex < 0 || targetIndex >= current.widget_order.length) return current;
+
+      const widget_order = [...current.widget_order];
+      [widget_order[index], widget_order[targetIndex]] = [widget_order[targetIndex], widget_order[index]];
+      return { ...current, widget_order };
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      <Card className="p-6 bg-card">
+        <div className="flex items-start gap-3 mb-5">
+          <LayoutDashboard className="h-5 w-5 mt-0.5 text-primary shrink-0" />
+          <div>
+            <h2 className="font-semibold" style={{ fontFamily: "var(--font-display)" }}>
+              Dashboard anpassen
+            </h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              Wähle die sichtbaren Bereiche und lege ihre Reihenfolge fest.
+            </p>
+          </div>
+        </div>
+
+        {isLoading ? (
+          <div className="space-y-2">
+            {[1, 2, 3, 4].map((index) => <Skeleton key={index} className="h-14" />)}
+          </div>
+        ) : (
+          <div className="divide-y rounded-lg border">
+            {preferences.widget_order.map((id, index) => {
+              const widget = DASHBOARD_WIDGETS.find((entry) => entry.id === id);
+              if (!widget) return null;
+              const visible = preferences.visible_widgets.includes(id);
+
+              return (
+                <div key={id} className="flex items-center gap-3 p-3">
+                  <Switch
+                    id={`dashboard-widget-${id}`}
+                    checked={visible}
+                    onCheckedChange={(checked) => toggleWidget(id, checked)}
+                    aria-label={`${widget.label} ${visible ? "ausblenden" : "einblenden"}`}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <Label htmlFor={`dashboard-widget-${id}`} className="font-medium cursor-pointer">
+                      {widget.label}
+                    </Label>
+                    <p className="text-xs text-muted-foreground mt-0.5">{widget.description}</p>
+                  </div>
+                  <div className="flex shrink-0">
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8"
+                      onClick={() => moveWidget(id, -1)}
+                      disabled={index === 0}
+                      aria-label={`${widget.label} nach oben`}
+                    >
+                      <ChevronUp className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8"
+                      onClick={() => moveWidget(id, 1)}
+                      disabled={index === preferences.widget_order.length - 1}
+                      aria-label={`${widget.label} nach unten`}
+                    >
+                      <ChevronDown className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+
+      <Card className="p-6 bg-card">
+        <div className="flex items-start gap-3 mb-5">
+          <Bell className="h-5 w-5 mt-0.5 text-primary shrink-0" />
+          <div>
+            <h2 className="font-semibold" style={{ fontFamily: "var(--font-display)" }}>
+              Smarte Erinnerungen
+            </h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              Diese Auswahl wird gespeichert und ist für kommende Erinnerungs-Kacheln vorbereitet.
+            </p>
+          </div>
+        </div>
+
+        <div className="divide-y rounded-lg border">
+          {DASHBOARD_REMINDER_SETTINGS.map((setting) => (
+            <div key={setting.id} className="flex items-center gap-3 p-3">
+              <Switch
+                id={`dashboard-reminder-${setting.id}`}
+                checked={preferences.reminder_settings[setting.id]}
+                onCheckedChange={(checked) => setPreferences((current) => ({
+                  ...current,
+                  reminder_settings: { ...current.reminder_settings, [setting.id]: checked },
+                }))}
+                aria-label={`${setting.label} ${preferences.reminder_settings[setting.id] ? "ausschalten" : "einschalten"}`}
+              />
+              <div className="min-w-0 flex-1">
+                <Label htmlFor={`dashboard-reminder-${setting.id}`} className="font-medium cursor-pointer">
+                  {setting.label}
+                </Label>
+                <p className="text-xs text-muted-foreground mt-0.5">{setting.description}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-5 pt-4 border-t flex items-center gap-3">
+          <Button
+            type="button"
+            onClick={() => saveMutation.mutate(preferences)}
+            disabled={isLoading || saveMutation.isPending}
+            className="text-white"
+            style={{ background: "#e8620a" }}
+            data-testid="button-save-dashboard-preferences"
+          >
+            <Save className="h-4 w-4 mr-2" />
+            {saveMutation.isPending ? "Speichert…" : "Dashboard-Einstellungen speichern"}
+          </Button>
+          {data?.is_default && (
+            <span className="text-xs text-muted-foreground">
+              Noch nicht gespeichert – aktuell gelten die Standardwerte.
+            </span>
+          )}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 // ─── Status-Pipeline Tab ─────────────────────────────────────────────────────
 interface PipelineStatus { id: string; label: string; reihenfolge: number; farbe: string; }
 
@@ -1330,6 +1517,10 @@ export default function Einstellungen() {
             <GitBranch className="h-4 w-4 shrink-0" />
             <span>Status-Pipeline</span>
           </TabsTrigger>
+          <TabsTrigger value="dashboard" className="flex flex-col sm:flex-row items-center gap-1 text-xs p-2 sm:px-3 sm:py-1.5 h-auto">
+            <LayoutDashboard className="h-4 w-4 shrink-0" />
+            <span>Dashboard</span>
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="allgemein">
@@ -1362,6 +1553,9 @@ export default function Einstellungen() {
         </TabsContent>
         <TabsContent value="status-pipeline">
           <StatusPipelineTab />
+        </TabsContent>
+        <TabsContent value="dashboard">
+          <DashboardAnpassenTab />
         </TabsContent>
       </Tabs>
     </div>
