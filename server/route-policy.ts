@@ -255,6 +255,7 @@ export const ROUTE_POLICIES = [
   { method: "PATCH", path: "/api/auftraege/:id/kunden-nachricht", line: 7395, access: "permissions", permissions: ["auftraege_anzeigen"], reason: "Aufträge, Status, Notizen, Positionen, Schritte und Kunden-Nachricht.", currentEnforcement: "unguarded" },
   { method: "GET", path: "/api/dashboard/preferences", line: 7491, access: "permissions", permissions: ["auftraege_anzeigen"], reason: "Persönliche Dashboard-Kachel- und Erinnerungspräferenzen.", currentEnforcement: "unguarded" },
   { method: "PUT", path: "/api/dashboard/preferences", line: 7517, access: "permissions", permissions: ["auftraege_anzeigen"], reason: "Persönliche Dashboard-Kachel- und Erinnerungspräferenzen.", currentEnforcement: "unguarded" },
+  { method: "GET", path: "/api/dashboard/aufgaben", line: 7555, access: "permissions", permissions: ["ressourcen_aufgaben"], reason: "Team-Ansicht offener Aufgaben im Dashboard.", currentEnforcement: "unguarded" },
 ] as const satisfies readonly RoutePolicy[];
 
 export const ROUTE_POLICY_BY_FINGERPRINT: Readonly<Record<string, RoutePolicy>> =

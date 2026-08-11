@@ -7547,5 +7547,63 @@ export async function registerRoutes(
     }
   });
 
+  // ─── Dashboard-Aufgaben (Team-Ansicht) ─────────────────────────────────────
+  // Liefert bewusst eine kleine Projektion statt der vollständigen Aufgabenliste.
+  // Die explizite tenant_id-Bedingung sichert auch den weiterhin unterstützten
+  // Legacy-Pfad mit Service-Role-Client ab; im Supabase-Auth-Pfad greift sie
+  // zusätzlich zur RLS-Policy der Tabelle.
+  app.get("/api/dashboard/aufgaben", async (req, res) => {
+    try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) {
+        return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      }
+
+      const { data: offeneAufgaben, error, count } = await identity.client
+        .from("aufgaben")
+        .select("id, titel, faellig_datum, auftrag_id, erstellt", { count: "exact" })
+        .eq("tenant_id", identity.tenantId)
+        .eq("status", "offen")
+        // Aufsteigend sortierte Fälligkeiten bringen überfällige Aufgaben
+        // automatisch vor heute und künftige Fälligkeiten; NULL bleibt zuletzt.
+        .order("faellig_datum", { ascending: true, nullsFirst: false })
+        .order("erstellt", { ascending: false })
+        .limit(10);
+      if (error) throw error;
+
+      const auftragIds = Array.from(new Set(
+        (offeneAufgaben || [])
+          .map((aufgabe: any) => aufgabe.auftrag_id)
+          .filter((id: unknown): id is string => typeof id === "string" && id.length > 0),
+      ));
+      const auftraegeById = new Map<string, { id: string; nr: string | null; titel: string | null; kunde: string | null }>();
+
+      if (auftragIds.length > 0) {
+        const { data: auftraege, error: auftraegeError } = await identity.client
+          .from("auftraege")
+          .select("id, nr, titel, kunde")
+          .eq("tenant_id", identity.tenantId)
+          .in("id", auftragIds);
+        if (auftraegeError) throw auftraegeError;
+
+        for (const auftrag of auftraege || []) {
+          auftraegeById.set(auftrag.id, auftrag);
+        }
+      }
+
+      return res.json({
+        total: count || 0,
+        aufgaben: (offeneAufgaben || []).map((aufgabe: any) => ({
+          id: aufgabe.id,
+          titel: aufgabe.titel,
+          faellig_datum: aufgabe.faellig_datum || null,
+          auftrag: aufgabe.auftrag_id ? auftraegeById.get(aufgabe.auftrag_id) || null : null,
+        })),
+      });
+    } catch (e) {
+      return res.status(500).json({ message: asError(e) });
+    }
+  });
+
   return httpServer;
 }

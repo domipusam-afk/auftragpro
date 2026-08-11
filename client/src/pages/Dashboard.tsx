@@ -38,6 +38,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { STATUS_GESAMT_EXCLUDED, STATUS_IN_BEARBEITUNG } from "@shared/dashboardStatus";
 import { useToast } from "@/hooks/use-toast";
 import { DashboardWidget } from "@/components/dashboard/DashboardWidget";
+import { AufgabenWidget } from "@/components/dashboard/AufgabenWidget";
 import {
   normalizeDashboardPreferences,
   type DashboardPreferences,
@@ -451,6 +452,11 @@ export default function Dashboard() {
         />
       </div>
       </DashboardWidget>
+
+      <AufgabenWidget
+        visible={isWidgetVisible("aufgaben")}
+        style={widgetStyle("aufgaben")}
+      />
 
       {/* Finanzen Übersicht — nur für Benutzer mit dashboard_finanzen Berechtigung */}
       <DashboardWidget

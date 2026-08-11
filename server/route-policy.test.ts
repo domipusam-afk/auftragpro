@@ -37,6 +37,7 @@ const SAMPLE_EXPECTATIONS: ReadonlyArray<{
   { fingerprint: "GET /api/auftraege", access: "permissions", permissions: ["auftraege_anzeigen", "auftraege_preise_sichtbar"] },
   { fingerprint: "GET /api/dashboard/preferences", access: "permissions", permissions: ["auftraege_anzeigen"] },
   { fingerprint: "PUT /api/dashboard/preferences", access: "permissions", permissions: ["auftraege_anzeigen"] },
+  { fingerprint: "GET /api/dashboard/aufgaben", access: "permissions", permissions: ["ressourcen_aufgaben"] },
   { fingerprint: "PATCH /api/auftraege/:id/status", access: "permissions", permissions: ["auftraege_anzeigen"] },
   { fingerprint: "POST /api/auftraege/:id/rechnungen", access: "permissions", permissions: ["rechnungen"] },
   { fingerprint: "GET /api/rechnungen", access: "permissions", permissions: ["rechnungen"] },
@@ -70,7 +71,7 @@ function run(): void {
 
   assert.equal(PERMISSIONS_CATALOG.length, 36, "Der gemeinsame Katalog muss exakt die 36 bestehenden Rechte enthalten.");
   assert.equal(new Set(PERMISSIONS_CATALOG.map((permission) => permission.key)).size, 36, "Rechte-Schlüssel müssen eindeutig sein.");
-  assert.equal(registered.length, 230, "Die bestätigte Anzahl der Express-Routen darf nicht unbemerkt abweichen.");
+  assert.equal(registered.length, 231, "Die bestätigte Anzahl der Express-Routen darf nicht unbemerkt abweichen.");
   assert.equal(ROUTE_POLICIES.length, registered.length, "Jede registrierte Route braucht genau eine Policy.");
   assert.deepEqual(matrixFingerprints, registeredFingerprints, "Matrix und server/routes.ts müssen denselben Routenbestand enthalten.");
 
@@ -104,7 +105,7 @@ function run(): void {
   assert.equal(matchRoutePolicy("GET", "/api/nicht-vorhanden"), undefined);
 
   const discrepancies = ROUTE_POLICIES.filter((policy) => policy.access !== "public" && policy.currentEnforcement === "unguarded");
-  assert.equal(discrepancies.length, 224, "Die erwarteten, noch nicht aktivierten Ziel-Gates müssen vollständig sichtbar bleiben.");
+  assert.equal(discrepancies.length, 225, "Die erwarteten, noch nicht aktivierten Ziel-Gates müssen vollständig sichtbar bleiben.");
 
   console.log(`Route policy checks passed: ${PERMISSIONS_CATALOG.length} permissions, ${ROUTE_POLICIES.length}/${registered.length} routes, ${SAMPLE_EXPECTATIONS.length} representative routes, ${discrepancies.length} documented inactive-gate discrepancies.`);
 }

@@ -20,6 +20,13 @@ export const DASHBOARD_WIDGETS = [
     default_order: 20,
   },
   {
+    id: "aufgaben",
+    label: "Offene Aufgaben",
+    description: "Die dringendsten offenen Aufgaben des Teams",
+    default_visible: true,
+    default_order: 25,
+  },
+  {
     id: "kpi_finanzen",
     label: "Finanzen Übersicht",
     description: "Umsatz, offene Posten, Reingewinn und Mahnungen",
@@ -138,8 +145,21 @@ function uniqueKnownWidgetIds(value: unknown, fallback: DashboardWidgetId[]): Da
  */
 export function normalizeDashboardPreferences(value: Partial<DashboardPreferences> | null | undefined): DashboardPreferences {
   const defaults = createDefaultDashboardPreferences();
-  const visible_widgets = uniqueKnownWidgetIds(value?.visible_widgets, defaults.visible_widgets);
+  const storedVisibleWidgets = uniqueKnownWidgetIds(value?.visible_widgets, defaults.visible_widgets);
   const storedOrder = uniqueKnownWidgetIds(value?.widget_order, defaults.widget_order);
+  // A widget introduced after a user saved preferences should follow its
+  // registry default. Existing widgets remain hidden when the user explicitly
+  // disabled them: they are still present in the stored order.
+  const visible_widgets = [
+    ...storedVisibleWidgets,
+    ...DASHBOARD_WIDGETS
+      .filter((widget) =>
+        widget.default_visible
+        && storedOrder.indexOf(widget.id) === -1
+        && storedVisibleWidgets.indexOf(widget.id) === -1,
+      )
+      .map((widget) => widget.id),
+  ];
   const widget_order = [
     ...storedOrder,
     ...DASHBOARD_WIDGET_IDS.filter((id) => storedOrder.indexOf(id) === -1),
