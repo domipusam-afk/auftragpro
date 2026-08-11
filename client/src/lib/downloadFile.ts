@@ -58,35 +58,20 @@ function startAnchorDownload(blob: Blob, filename: string): void {
   anchor.click();
   anchor.remove();
 
-  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 100);
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
 }
 
-function startIOSDownload(blob: Blob): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
+function startIOSDownload(blob: Blob, downloadWindow: Window | null): void {
+  const objectUrl = URL.createObjectURL(blob);
 
-    reader.onerror = () => reject(new Error(DOWNLOAD_START_ERROR));
-    reader.onabort = () => reject(new Error(DOWNLOAD_START_ERROR));
-    reader.onload = () => {
-      if (typeof reader.result !== "string") {
-        reject(new Error(DOWNLOAD_START_ERROR));
-        return;
-      }
+  if (downloadWindow) {
+    downloadWindow.location.href = objectUrl;
+  } else {
+    // If Safari blocks the popup, retain a usable fallback in the current tab.
+    window.location.href = objectUrl;
+  }
 
-      try {
-        window.location.href = reader.result;
-        resolve();
-      } catch {
-        reject(new Error(DOWNLOAD_START_ERROR));
-      }
-    };
-
-    try {
-      reader.readAsDataURL(blob);
-    } catch {
-      reject(new Error(DOWNLOAD_START_ERROR));
-    }
-  });
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
 }
 
 /**
@@ -94,50 +79,62 @@ function startIOSDownload(blob: Blob): Promise<void> {
  * The fallback token supports the legacy login flow, which persists the current
  * Supabase access token through the existing auth utility.
  *
- * iOS Safari handles a FileReader data URL more reliably than an object URL with
- * an anchor download attribute. Data URLs are suitable here for CSV exports up to
- * roughly 5 MB; larger exports should be downloaded from a desktop browser.
+ * On iOS, an empty tab is opened synchronously with the user's click. After the
+ * authenticated request completes, that tab navigates to the Blob URL so Safari
+ * can show its preview and sharing controls without losing the user gesture.
  */
 export async function downloadWithAuth(url: string, filename?: string): Promise<void> {
-  const { data } = await supabase.auth.getSession();
-  const accessToken = data.session?.access_token ?? getAccessToken();
+  const downloadOnIOS = isIOS();
+  let downloadWindow: Window | null = null;
 
-  if (!accessToken) {
-    throw new Error("Sie sind nicht angemeldet. Bitte melden Sie sich erneut an.");
+  if (downloadOnIOS) {
+    try {
+      downloadWindow = window.open("about:blank", "_blank");
+    } catch {
+      // The current-tab fallback below remains available if opening a tab fails.
+    }
   }
-
-  if (data.session?.access_token) setAccessToken(data.session.access_token);
-
-  const response = await fetch(resolveDownloadUrl(url), {
-    headers: { Authorization: `Bearer ${accessToken}` },
-    credentials: "omit",
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    throw new Error(await errorMessage(response));
-  }
-
-  const downloadName =
-    filename ??
-    filenameFromContentDisposition(response.headers.get("content-disposition")) ??
-    filenameFromUrl(url);
 
   try {
+    const { data } = await supabase.auth.getSession();
+    const accessToken = data.session?.access_token ?? getAccessToken();
+
+    if (!accessToken) {
+      throw new Error("Sie sind nicht angemeldet. Bitte melden Sie sich erneut an.");
+    }
+
+    if (data.session?.access_token) setAccessToken(data.session.access_token);
+
+    const response = await fetch(resolveDownloadUrl(url), {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      credentials: "omit",
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      throw new Error(await errorMessage(response));
+    }
+
+    const downloadName =
+      filename ??
+      filenameFromContentDisposition(response.headers.get("content-disposition")) ??
+      filenameFromUrl(url);
     const responseBlob = await response.blob();
     const blob = isCsvDownload(response.headers.get("content-type"), downloadName)
       ? new Blob([responseBlob], { type: "text/csv;charset=utf-8" })
       : responseBlob;
 
-    if (isIOS()) {
-      await startIOSDownload(blob);
+    if (downloadOnIOS) {
+      startIOSDownload(blob, downloadWindow);
     } else {
       startAnchorDownload(blob, downloadName);
     }
   } catch (error) {
-    if (error instanceof Error && error.message === DOWNLOAD_START_ERROR) {
-      throw error;
+    if (downloadWindow && !downloadWindow.closed) {
+      downloadWindow.close();
     }
+
+    if (error instanceof Error) throw error;
     throw new Error(DOWNLOAD_START_ERROR);
   }
 }
