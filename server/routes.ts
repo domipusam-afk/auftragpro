@@ -11,7 +11,7 @@ import QRCode from "qrcode";
 import { fileURLToPath } from "url";
 import { finanzenSummen, type FinanzenUebersichtZeile, berechneVorkalkulationsAngebotspreis, rechnungBruttoBetrag, MWST_SATZ_RECHNUNG } from "../shared/schema";
 import { setLegacySessionCookie } from "./legacy-session";
-import { getAuthMode } from "./auth-context";
+import { getAuthMode } from "./auth-context"; import { STATUS_GESAMT_EXCLUDED, STATUS_IN_BEARBEITUNG } from "../shared/dashboardStatus";
 
 // Robust logo path resolution: works in both ESM (dev) and CJS (production build)
 function getLogoPath(): string {
@@ -669,7 +669,10 @@ export async function registerRoutes(
         .select("status");
       if (error) throw error;
       const rows = data || [];
-      const gesamt = rows.length;
+      // Gesamt folgt derselben Definition wie das Dashboard-Dropdown.
+      const gesamt = rows.filter(
+        (r: any) => !STATUS_GESAMT_EXCLUDED.includes(r.status)
+      ).length;
       const abgeschlossen = rows.filter(
         (r: any) => r.status === "abgeschlossen"
       ).length;
@@ -680,10 +683,7 @@ export async function registerRoutes(
           r.status === "bestaetigt"
       ).length;
       const in_bearbeitung = rows.filter(
-        (r: any) =>
-          r.status === "in_arbeit" ||
-          r.status === "qualitaet" ||
-          r.status === "rechnung"
+        (r: any) => STATUS_IN_BEARBEITUNG.includes(r.status)
       ).length;
       res.json({ gesamt, offen, in_bearbeitung, abgeschlossen });
     } catch (e) {

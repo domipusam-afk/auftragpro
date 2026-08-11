@@ -33,6 +33,32 @@ import { STATUS_LABEL } from "@shared/schema";
 import { STATUS_BADGE, PRIO_BADGE, formatCHF, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { STATUS_GESAMT_EXCLUDED, STATUS_IN_BEARBEITUNG } from "@shared/dashboardStatus";
+
+const DASHBOARD_QUERY_ERROR_MESSAGE = "Daten konnten nicht geladen werden. Bitte Seite neu laden.";
+
+function DashboardQueryError() {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex text-orange-600" aria-label={DASHBOARD_QUERY_ERROR_MESSAGE}>
+          <AlertTriangle className="h-4 w-4" />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top">{DASHBOARD_QUERY_ERROR_MESSAGE}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function istAbgelaufeneOfferte(offerte: any, heute: Date) {
+  if (offerte.status === "angenommen" || offerte.status === "abgelehnt") return false;
+  if (!offerte.gueltigkeit || isNaN(Date.parse(offerte.gueltigkeit))) return false;
+
+  const gueltigBis = new Date(offerte.gueltigkeit);
+  gueltigBis.setHours(0, 0, 0, 0);
+  return gueltigBis < heute;
+}
 
 function KpiCard({
   label,
@@ -40,12 +66,14 @@ function KpiCard({
   icon: Icon,
   tone,
   auftraege,
+  isError = false,
 }: {
   label: string;
   value: number | string;
   icon: any;
   tone: "primary" | "amber" | "orange" | "green";
   auftraege?: Auftrag[];
+  isError?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -92,6 +120,7 @@ function KpiCard({
             </div>
           </div>
           <div className="flex flex-col items-end gap-1 ml-1">
+            {isError && <DashboardQueryError />}
             <div className={cn("h-8 w-8 md:h-10 md:w-10 rounded-md flex items-center justify-center shrink-0", tones[tone])}>
               <Icon className="h-4 w-4 md:h-5 md:w-5" />
             </div>
@@ -158,21 +187,22 @@ function KpiCard({
 export default function Dashboard() {
   const { hatZugriff } = useAuth();
   const darf_finanzen = hatZugriff("dashboard_finanzen");
+  const darfFibuExport = hatZugriff("finanzmanagement_mwst");
   const darfPreiseSehen = hatZugriff("auftraege_preise_sichtbar");
 
-  const { data: stats, isLoading: lStats } = useQuery<Stats>({
+  const { data: stats, isLoading: lStats, isError: statsError } = useQuery<Stats>({
     queryKey: ["/api/stats"],
   });
-  const { data: auftraege, isLoading: lA } = useQuery<Auftrag[]>({
+  const { data: auftraege, isLoading: lA, isError: auftraegeError } = useQuery<Auftrag[]>({
     queryKey: ["/api/auftraege"],
   });
 
-  const { data: rechnungen = [] } = useQuery<Rechnung[]>({
+  const { data: rechnungen = [], isError: rechnungenError } = useQuery<Rechnung[]>({
     queryKey: ["/api/rechnungen"],
   });
 
   // Mahnungen
-  const { data: mahnungen = [] } = useQuery<any[]>({
+  const { data: mahnungen = [], isError: mahnungenError } = useQuery<any[]>({
     queryKey: ["/api/mahnungen"],
     queryFn: () => apiRequest("GET", "/api/mahnungen").then((r) => r.json()),
   });
@@ -198,7 +228,7 @@ export default function Dashboard() {
     .reduce((s: number, r: any) => s + (Number(r.betrag) || 0), 0);
   const bezahltAnzahl = (rechnungen as any[]).filter((r: any) => !!r.bezahlt_am).length;
 
-  const { data: offerten = [] } = useQuery<any[]>({
+  const { data: offerten = [], isError: offertenError } = useQuery<any[]>({
     queryKey: ["/api/offerten"],
     queryFn: async () => {
       const r = await apiRequest("GET", "/api/offerten");
@@ -208,7 +238,7 @@ export default function Dashboard() {
 
   // Reingewinn: Summe der Finanzen-Übersicht (abgeschlossene, verrechnete Aufträge).
   // Formel: Rechnungsbetrag netto − NK-Ist-Kosten.
-  const { data: reingewinnData, isLoading: reingewinnLoading } = useQuery<{
+  const { data: reingewinnData, isLoading: reingewinnLoading, isError: reingewinnError } = useQuery<{
     reingewinn: number;
     umsatz: number;
     kosten: number;
@@ -330,7 +360,8 @@ export default function Dashboard() {
               value={stats?.gesamt ?? 0}
               icon={Briefcase}
               tone="primary"
-              auftraege={(auftraege || []).filter(a => a.status !== "storniert")}
+              auftraege={(auftraege || []).filter(a => !STATUS_GESAMT_EXCLUDED.includes(a.status))}
+              isError={statsError || auftraegeError}
             />
             <KpiCard
               label="Offen"
@@ -338,13 +369,15 @@ export default function Dashboard() {
               icon={Clock}
               tone="amber"
               auftraege={(auftraege || []).filter(a => a.status === "anfrage" || a.status === "angebot" || a.status === "bestaetigt")}
+              isError={statsError || auftraegeError}
             />
             <KpiCard
               label="In Bearbeitung"
               value={stats?.in_bearbeitung ?? 0}
               icon={Hammer}
               tone="orange"
-              auftraege={(auftraege || []).filter(a => a.status === "in_arbeit")}
+              auftraege={(auftraege || []).filter(a => STATUS_IN_BEARBEITUNG.includes(a.status))}
+              isError={statsError || auftraegeError}
             />
             <KpiCard
               label="Abgeschlossen"
@@ -352,6 +385,7 @@ export default function Dashboard() {
               icon={CheckCircle2}
               tone="green"
               auftraege={(auftraege || []).filter(a => a.status === "abgeschlossen")}
+              isError={statsError || auftraegeError}
             />
           </>
         )}
@@ -361,25 +395,26 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6">
         <KpiCard
           label="Offene Offerten"
-          value={offerten.filter((o: any) => o.status !== 'angenommen' && o.status !== 'abgelehnt').length}
+          value={offerten.filter((o: any) => o.status !== "angenommen" && o.status !== "abgelehnt" && !istAbgelaufeneOfferte(o, today)).length}
           icon={FileText}
           tone="amber"
+          isError={offertenError}
         />
         <KpiCard
           label="Angenommen"
           value={offerten.filter((o: any) => o.status === 'angenommen').length}
           icon={CheckSquare}
           tone="green"
+          isError={offertenError}
         />
         <KpiCard
           label="Abgelaufen"
           value={offerten.filter((o: any) => {
-            if (o.status === 'angenommen' || o.status === 'abgelehnt') return false;
-            const g = o.gueltigkeit; if (!g || isNaN(Date.parse(g))) return false;
-            return new Date(g) < today;
+            return istAbgelaufeneOfferte(o, today);
           }).length}
           icon={XCircle}
           tone="amber"
+          isError={offertenError}
         />
       </div>
 
@@ -390,16 +425,18 @@ export default function Dashboard() {
           <h2 className="text-base font-semibold bg-background/80 backdrop-blur-sm rounded px-1 inline-block" style={{ fontFamily: "var(--font-display)" }}>
             Finanzen Übersicht
           </h2>
-          <a
-            href="/api/export/fibu"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-card border border-border text-foreground font-medium shadow-sm hover:bg-muted transition-colors"
-            title="FIBU-Export als CSV (für Banana, Abacus, Excel)"
-          >
-            <Download className="h-3.5 w-3.5" />
-            FIBU-Export CSV
-          </a>
+          {darfFibuExport && (
+            <a
+              href="/api/export/fibu"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-card border border-border text-foreground font-medium shadow-sm hover:bg-muted transition-colors"
+              title="FIBU-Export als CSV (für Banana, Abacus, Excel)"
+            >
+              <Download className="h-3.5 w-3.5" />
+              FIBU-Export CSV
+            </a>
+          )}
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-4">
           <KpiCard
@@ -407,18 +444,21 @@ export default function Dashboard() {
             value={monatsumsatz > 0 ? formatCHF(monatsumsatz) : "CHF 0"}
             icon={TrendingUp}
             tone="green"
+            isError={rechnungenError}
           />
           <KpiCard
             label={`Offene Posten (${offeneRechnungenAnzahl})`}
             value={formatCHF(offenePosten)}
             icon={AlertTriangle}
             tone="amber"
+            isError={rechnungenError}
           />
           <KpiCard
             label={`Bezahlt (${bezahltAnzahl})`}
             value={formatCHF(bezahlt)}
             icon={CheckSquare}
             tone="green"
+            isError={rechnungenError}
           />
           {/* Reingewinn: abgeschlossen + Rechnung gestellt */}
           <div className="col-span-1">
@@ -454,6 +494,7 @@ export default function Dashboard() {
                     </>
                   )}
                 </div>
+                {reingewinnError && <DashboardQueryError />}
                 <div className={cn(
                   "h-8 w-8 md:h-10 md:w-10 rounded-md flex items-center justify-center shrink-0 ml-1",
                   reingewinn > 0 ? "bg-green-100 text-green-600" : reingewinn < 0 ? "bg-red-100 text-red-600" : "bg-muted text-muted-foreground"
@@ -493,12 +534,11 @@ export default function Dashboard() {
                     <div className="text-xl md:text-3xl font-bold mt-1" style={{ fontFamily: "var(--font-display)", color: offeneMahnungen.length > 0 ? "#e8620a" : undefined }}>
                       {offeneMahnungen.length}
                     </div>
-                    {offeneMahnungen.length > 0 && (
-                      <div className="text-xs text-orange-600 font-medium mt-0.5">
-                        ausstehend
-                      </div>
-                    )}
+                    <div className="text-xs text-orange-600 font-medium mt-0.5 tabular-nums">
+                      {formatCHF(offeneMahnungenBetrag)}
+                    </div>
                   </div>
+                  {mahnungenError && <DashboardQueryError />}
                   <div className={cn("h-8 w-8 md:h-10 md:w-10 rounded-md flex items-center justify-center shrink-0 ml-1", offeneMahnungen.length > 0 ? "bg-orange-100 text-orange-600" : "bg-muted text-muted-foreground")}>
                     <MailWarning className="h-4 w-4 md:h-5 md:w-5" />
                   </div>
