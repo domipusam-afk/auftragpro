@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import type { Server } from "node:http";
 import multer from "multer";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import supabase, { getServiceRoleClient, getSupabaseAuthClient } from "./supabase";
+import supabase, { getServiceRoleClient, getSupabaseAuthClient, runWithSupabaseClient } from "./supabase";
 import * as fs from "fs";
 import * as path from "path";
 import bcrypt from "bcryptjs";
@@ -12,6 +12,8 @@ import { fileURLToPath } from "url";
 import { finanzenSummen, type FinanzenUebersichtZeile, berechneVorkalkulationsAngebotspreis, rechnungBruttoBetrag, MWST_SATZ_RECHNUNG } from "../shared/schema";
 import { setLegacySessionCookie } from "./legacy-session";
 import { getAuthMode } from "./auth-context"; import { STATUS_GESAMT_EXCLUDED, STATUS_IN_BEARBEITUNG } from "../shared/dashboardStatus";
+import { createDownloadToken, validateAndConsumeDownloadToken } from "./download-tokens";
+import { isRoutePolicyAllowed, matchRoutePolicy } from "./route-policy";
 
 // Robust logo path resolution: works in both ESM (dev) and CJS (production build)
 function getLogoPath(): string {
@@ -225,6 +227,32 @@ function asError(e: unknown): string {
     return JSON.stringify(e);
   }
   return String(e);
+}
+
+type SignedDownloadRequest = Request & {
+  downloadTenantId?: string;
+};
+
+function signedDownloadTenantId(req: Request): string | undefined {
+  return (req as SignedDownloadRequest).downloadTenantId;
+}
+
+function allowedDownloadPath(value: unknown): URL | null {
+  if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//") || value.length > 2_048) {
+    return null;
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(value, "http://download.local");
+  } catch {
+    return null;
+  }
+
+  if (parsed.hash) return null;
+  const isFibuOrQ3 = parsed.pathname === "/api/export/fibu" || parsed.pathname === "/api/export/q3";
+  const isDocument = /^\/api\/auftraege\/[^/?#]+\/dokumente\/[^/?#]+\/download$/.test(parsed.pathname);
+  return isFibuOrQ3 || isDocument ? parsed : null;
 }
 
 // Helper: generate random backup codes
@@ -1075,22 +1103,28 @@ export async function registerRoutes(
     }
   );
 
-  app.get(
-    "/api/auftraege/:id/dokumente/:did/download",
-    async (req, res) => {
-      try {
-        const { did } = req.params;
-        const { data: doc, error } = await supabase
-          .from("dokumente")
-          .select("*")
-          .eq("id", did)
-          .single();
+  const handleDocumentDownload = async (req: Request, res: Response) => {
+    try {
+      const { id, did } = req.params;
+      const tenantId = signedDownloadTenantId(req);
+      const documentQuery = supabase
+        .from("dokumente")
+        .select("*")
+        .eq("id", did)
+        .eq("auftrag_id", id);
+      const { data: doc, error } = await (tenantId
+        ? documentQuery.eq("tenant_id", tenantId)
+        : documentQuery
+      ).single();
         if (error) throw error;
-        const { data: dd, error: e2 } = await supabase
-          .from("dokument_daten")
-          .select("data")
-          .eq("dokument_id", did)
-          .single();
+      const documentDataQuery = supabase
+        .from("dokument_daten")
+        .select("data")
+        .eq("dokument_id", did);
+      const { data: dd, error: e2 } = await (tenantId
+        ? documentDataQuery.eq("tenant_id", tenantId)
+        : documentDataQuery
+      ).single();
         if (e2) throw e2;
         const buf = Buffer.from(dd.data, "base64");
         const mime = doc.mime || "application/octet-stream";
@@ -1098,17 +1132,18 @@ export async function registerRoutes(
         // "attachment" fuehrt v.a. auf Mobile (iOS Safari) dazu, dass beim Klick scheinbar nichts passiert,
         // da die Datei im Hintergrund heruntergeladen wird statt sich zu oeffnen.
         const isViewable = mime === "application/pdf" || mime.startsWith("image/");
+        const disposition = tenantId ? "attachment" : isViewable ? "inline" : "attachment";
         res.setHeader("Content-Type", mime);
         res.setHeader(
           "Content-Disposition",
-          `${isViewable ? "inline" : "attachment"}; filename="${encodeURIComponent(doc.name)}"`
+          `${disposition}; filename="${encodeURIComponent(doc.name)}"`
         );
         res.send(buf);
-      } catch (e) {
-        res.status(500).json({ message: asError(e) });
-      }
+    } catch (e) {
+      res.status(500).json({ message: asError(e) });
     }
-  );
+  };
+  app.get("/api/auftraege/:id/dokumente/:did/download", handleDocumentDownload);
 
   app.delete("/api/auftraege/:id/dokumente/:did", async (req, res) => {
     try {
@@ -2432,9 +2467,10 @@ export async function registerRoutes(
 
   // ============= BANANA BUCHHALTUNG / Q3 EXPORT =============
   // Format: Banana Buchhaltung Schweiz (semicolon, Schweizer Dezimal mit Punkt)
-  app.get("/api/export/q3", async (req, res) => {
+  const handleQ3Export = async (req: Request, res: Response) => {
     try {
       const { von, bis, zeitraum } = req.query as Record<string, string>;
+      const tenantId = signedDownloadTenantId(req);
 
       const heute = new Date();
       let datumVon: string;
@@ -2456,19 +2492,27 @@ export async function registerRoutes(
       }
 
       // Rechnungen laden (mit Auftragsdaten)
-      const { data: rechnungen, error } = await supabase
+      const rechnungenQuery = supabase
         .from("rechnungen")
         .select("*")
         .gte("erstellt", datumVon)
         .lte("erstellt", datumBis + "T23:59:59")
         .order("erstellt", { ascending: true });
+      const { data: rechnungen, error } = await (tenantId
+        ? rechnungenQuery.eq("tenant_id", tenantId)
+        : rechnungenQuery
+      );
       if (error) throw error;
 
       // Auftraege für Kundennamen laden
       const auftragIds = [...new Set((rechnungen || []).map((r: any) => r.auftrag_id).filter(Boolean))];
       let auftraegeMap: Record<string, any> = {};
       if (auftragIds.length > 0) {
-        const { data: auftraege } = await supabase.from("auftraege").select("id,nr,titel,kunde").in("id", auftragIds);
+        const auftraegeQuery = supabase.from("auftraege").select("id,nr,titel,kunde").in("id", auftragIds);
+        const { data: auftraege } = await (tenantId
+          ? auftraegeQuery.eq("tenant_id", tenantId)
+          : auftraegeQuery
+        );
         for (const a of (auftraege || [])) auftraegeMap[a.id] = a;
       }
 
@@ -2530,12 +2574,16 @@ export async function registerRoutes(
       csvLines.push([`Total Ausgangsrechnungen`, "", "", "", "", totalNettoAusgang.toFixed(2), "", totalMwstAusgang.toFixed(2), totalBruttoAusgang.toFixed(2), "CHF"].join(sep));
 
       // === EINGANGSRECHNUNGEN ===
-      const { data: eingang } = await supabase
+      const eingangQuery = supabase
         .from("eingangsrechnungen")
         .select("*")
         .gte("erstellt", datumVon)
         .lte("erstellt", datumBis + "T23:59:59")
         .order("erstellt", { ascending: true });
+      const { data: eingang } = await (tenantId
+        ? eingangQuery.eq("tenant_id", tenantId)
+        : eingangQuery
+      );
 
       if (eingang && eingang.length > 0) {
         csvLines.push(``);
@@ -2578,12 +2626,13 @@ export async function registerRoutes(
       const filename = `Banana-Export_${datumVon}_${datumBis}.csv`;
 
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
-      res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
+      res.setHeader("Content-Disposition", `${tenantId ? "attachment" : "inline"}; filename="${filename}"`);
       res.send("\uFEFF" + csvContent); // BOM für Excel-Kompatibilität
     } catch (e) {
       res.status(500).json({ message: asError(e) });
     }
-  });
+  };
+  app.get("/api/export/q3", handleQ3Export);
 
   // ============= VORLAGEN =============
   app.get("/api/vorlagen", async (_req, res) => {
@@ -6641,9 +6690,10 @@ export async function registerRoutes(
   });
 
   // ─── FIBU-EXPORT ──────────────────────────────────────────────────────────────
-  app.get("/api/export/fibu", async (req, res) => {
+  const handleFibuExport = async (req: Request, res: Response) => {
     try {
       const { von, bis, typ } = req.query as any;
+      const tenantId = signedDownloadTenantId(req);
       let lines: string[] = [];
 
       if (!typ || typ === "ausgangsrechnungen") {
@@ -6655,6 +6705,7 @@ export async function registerRoutes(
           .order("erstellt");
         if (von) q = q.gte("erstellt", von);
         if (bis) q = q.lte("erstellt", bis);
+        if (tenantId) q = q.eq("tenant_id", tenantId);
         const { data: rechnungen, error: rErr } = await q;
         if (rErr) console.error("[FIBU] Ausgangsrechnungen Fehler:", rErr.message);
         // rechnungen.betrag ist in der DB NETTO (Positionssumme exkl. MWST) —
@@ -6674,7 +6725,11 @@ export async function registerRoutes(
 
       if (!typ || typ === "eingangsrechnungen") {
         // Eingangsrechnungen — Spalte ebenfalls "erstellt" pruefen
-        const eirResult = await supabase.from("eingangsrechnungen").select("*").order("erstellt");
+        const eingangsrechnungenQuery = supabase.from("eingangsrechnungen").select("*").order("erstellt");
+        const eirResult = await (tenantId
+          ? eingangsrechnungenQuery.eq("tenant_id", tenantId)
+          : eingangsrechnungenQuery
+        );
         const { data: eingang, error: eErr } = eirResult;
         if (eErr) console.error("[FIBU] Eingangsrechnungen Fehler:", eErr.message);
         if (!typ) lines.push(""); // Leerzeile Trennung
@@ -6695,6 +6750,74 @@ export async function registerRoutes(
       res.setHeader("Content-Disposition", `attachment; filename="FIBU-Export-${new Date().toISOString().slice(0,10)}.csv"`);
       res.send("\uFEFF" + lines.join("\r\n")); // BOM for Excel
     } catch (e) { res.status(500).json({ message: asError(e) }); }
+  };
+  app.get("/api/export/fibu", handleFibuExport);
+
+  // A Bearer-authenticated request mints a one-time URL. The subsequent native
+  // browser GET intentionally has no Bearer header; its HMAC token is its auth.
+  app.post("/api/downloads/sign", async (req: Request, res: Response) => {
+    const parsedPath = allowedDownloadPath(req.body?.path);
+    if (!parsedPath) {
+      return res.status(400).json({ message: "Der angeforderte Download-Pfad ist nicht erlaubt." });
+    }
+    if (!req.auth?.userId || !req.auth.tenantId) {
+      return res.status(401).json({ message: "Authentifizierung erforderlich." });
+    }
+    const targetPolicy = matchRoutePolicy("GET", parsedPath.pathname);
+    if (!targetPolicy || targetPolicy.access === "public" || !isRoutePolicyAllowed(
+      targetPolicy,
+      req.auth.rolle,
+      req.auth.berechtigungen,
+    )) {
+      return res.status(403).json({ message: "Keine Berechtigung für diesen Download." });
+    }
+
+    const signedPath = `${parsedPath.pathname}${parsedPath.search}`;
+    const token = createDownloadToken({
+      userId: req.auth.userId,
+      tenantId: req.auth.tenantId,
+      path: signedPath,
+    });
+    return res.json({ downloadUrl: `/api/downloads/fetch?token=${encodeURIComponent(token)}` });
+  });
+
+  app.get("/api/downloads/fetch", async (req: Request, res: Response) => {
+    const validation = validateAndConsumeDownloadToken(req.query.token);
+    if (!validation.ok) {
+      return res.status(403).json({ message: validation.message });
+    }
+
+    const parsedPath = allowedDownloadPath(validation.claims.path);
+    if (!parsedPath) {
+      return res.status(403).json({ message: "Download-Token enthält keinen erlaubten Download-Pfad." });
+    }
+
+    const delegatedRequest = Object.create(req) as SignedDownloadRequest;
+    delegatedRequest.query = Object.fromEntries(parsedPath.searchParams.entries());
+    delegatedRequest.downloadTenantId = validation.claims.tenant;
+
+    try {
+      return await runWithSupabaseClient(getServiceRoleClient(), async () => {
+        if (parsedPath.pathname === "/api/export/fibu") {
+          return handleFibuExport(delegatedRequest, res);
+        }
+        if (parsedPath.pathname === "/api/export/q3") {
+          return handleQ3Export(delegatedRequest, res);
+        }
+
+        const matches = parsedPath.pathname.match(/^\/api\/auftraege\/([^/?#]+)\/dokumente\/([^/?#]+)\/download$/);
+        if (!matches) {
+          return res.status(403).json({ message: "Download-Token enthält keinen erlaubten Download-Pfad." });
+        }
+        delegatedRequest.params = {
+          id: decodeURIComponent(matches[1]),
+          did: decodeURIComponent(matches[2]),
+        };
+        return handleDocumentDownload(delegatedRequest, res);
+      });
+    } catch (e) {
+      return res.status(503).json({ message: `Download ist derzeit nicht verfügbar: ${asError(e)}` });
+    }
   });
 
 

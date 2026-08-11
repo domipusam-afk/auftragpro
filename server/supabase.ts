@@ -257,6 +257,11 @@ export function getSupabaseForRequest(req: Request): SupabaseClient {
   return accessToken ? tenantAwareClient(createBaseClient(accessToken)) : anonymousSupabase;
 }
 
+/** Runs an internal operation with an explicitly selected client. */
+export function runWithSupabaseClient<T>(client: SupabaseClient, callback: () => T): T {
+  return requestSupabaseContext.run(client, callback);
+}
+
 /** Bind the per-request client for existing route helpers that import default supabase. */
 export const supabaseRequestContext: RequestHandler = (req, _res, next) => {
   requestSupabaseContext.run(getSupabaseForRequest(req), () => next());

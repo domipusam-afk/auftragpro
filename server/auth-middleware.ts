@@ -199,7 +199,11 @@ export const supabaseRequestAuthContext: RequestHandler = (req, res, next) => {
   }
 
   const policy = matchRoutePolicy(req.method, req.path);
-  if (!policy || policy.access === "public") {
+  // The signing route is intentionally public in the static route matrix:
+  // authorization is evaluated against the requested target path in its
+  // handler. It still must establish the normal Bearer auth context first.
+  const isDownloadSignRoute = req.method === "POST" && req.path === "/api/downloads/sign";
+  if (!policy || (policy.access === "public" && !isDownloadSignRoute)) {
     next();
     return;
   }

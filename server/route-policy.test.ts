@@ -57,6 +57,8 @@ const SAMPLE_EXPECTATIONS: ReadonlyArray<{
   { fingerprint: "POST /api/auth/login", access: "public", permissions: [] },
   { fingerprint: "GET /api/ping", access: "public", permissions: [] },
   { fingerprint: "GET /api/public/auftrag/:token", access: "public", permissions: [] },
+  { fingerprint: "POST /api/downloads/sign", access: "public", permissions: [] },
+  { fingerprint: "GET /api/downloads/fetch", access: "public", permissions: [] },
 ];
 
 function run(): void {
@@ -66,7 +68,7 @@ function run(): void {
 
   assert.equal(PERMISSIONS_CATALOG.length, 36, "Der gemeinsame Katalog muss exakt die 36 bestehenden Rechte enthalten.");
   assert.equal(new Set(PERMISSIONS_CATALOG.map((permission) => permission.key)).size, 36, "Rechte-Schlüssel müssen eindeutig sein.");
-  assert.equal(registered.length, 226, "Die bestätigte Anzahl der Express-Routen darf nicht unbemerkt abweichen.");
+  assert.equal(registered.length, 228, "Die bestätigte Anzahl der Express-Routen darf nicht unbemerkt abweichen.");
   assert.equal(ROUTE_POLICIES.length, registered.length, "Jede registrierte Route braucht genau eine Policy.");
   assert.deepEqual(matrixFingerprints, registeredFingerprints, "Matrix und server/routes.ts müssen denselben Routenbestand enthalten.");
 

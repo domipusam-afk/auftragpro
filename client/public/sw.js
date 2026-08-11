@@ -1,5 +1,5 @@
-// AuftragsPro Service Worker v4 — network-first für alles
-const CACHE_NAME = 'auftragspro-v4';
+// AuftragsPro Service Worker v5 — network-first für alles
+const CACHE_NAME = 'auftragspro-v5';
 
 // Install: sofort aktivieren
 self.addEventListener('install', (event) => {
@@ -26,7 +26,7 @@ self.addEventListener('fetch', (event) => {
   // Fehler eines Service-Worker-fetches als "FetchEvent.respondWith received an
   // error" an die Anwendung weiterreichen; der Browser führt diese Bearer-GETs
   // deshalb direkt über das Netzwerk aus.
-  if (url.pathname.startsWith('/api/export/')) return;
+  if (url.pathname.startsWith('/api/export/') || url.pathname.startsWith('/api/downloads/')) return;
 
   // API + Einstellungen: immer live
   if (url.pathname.startsWith('/api/')) {
