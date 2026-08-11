@@ -139,17 +139,17 @@ export default function Rechnungen() {
   const handleQ3Export = async () => {
     setExportLoading(true);
     try {
-      const r = await apiRequest("GET", `/api/export/q3?zeitraum=${exportZeitraum}`);
-      const blob = await r.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `Banana-Export_${exportZeitraum}_${new Date().getFullYear()}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
+      await downloadWithAuth(
+        `/api/export/q3?zeitraum=${encodeURIComponent(exportZeitraum)}`,
+        `Banana-Export_${exportZeitraum}_${new Date().getFullYear()}.csv`,
+      );
       toast({ title: "Export erfolgreich", description: "CSV-Datei wurde heruntergeladen. In Banana: Datei → Zeilen importieren." });
-    } catch {
-      toast({ title: "Fehler", description: "Export fehlgeschlagen.", variant: "destructive" });
+    } catch (error) {
+      toast({
+        title: "Fehler",
+        description: error instanceof Error ? error.message : "Export fehlgeschlagen.",
+        variant: "destructive",
+      });
     } finally {
       setExportLoading(false);
     }

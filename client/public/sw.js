@@ -22,6 +22,12 @@ self.addEventListener('fetch', (event) => {
   // Nur GET-Requests behandeln
   if (event.request.method !== 'GET') return;
 
+  // Export-Downloads bewusst nicht mit respondWith behandeln. iOS Safari kann
+  // Fehler eines Service-Worker-fetches als "FetchEvent.respondWith received an
+  // error" an die Anwendung weiterreichen; der Browser führt diese Bearer-GETs
+  // deshalb direkt über das Netzwerk aus.
+  if (url.pathname.startsWith('/api/export/')) return;
+
   // API + Einstellungen: immer live
   if (url.pathname.startsWith('/api/')) {
     event.respondWith(fetch(event.request));
