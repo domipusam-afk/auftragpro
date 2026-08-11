@@ -33,8 +33,10 @@ import { STATUS_LABEL } from "@shared/schema";
 import { STATUS_BADGE, PRIO_BADGE, formatCHF, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
+import { downloadWithAuth } from "@/lib/downloadFile";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { STATUS_GESAMT_EXCLUDED, STATUS_IN_BEARBEITUNG } from "@shared/dashboardStatus";
+import { useToast } from "@/hooks/use-toast";
 
 const DASHBOARD_QUERY_ERROR_MESSAGE = "Daten konnten nicht geladen werden. Bitte Seite neu laden.";
 
@@ -186,6 +188,7 @@ function KpiCard({
 
 export default function Dashboard() {
   const { hatZugriff } = useAuth();
+  const { toast } = useToast();
   const darf_finanzen = hatZugriff("dashboard_finanzen");
   const darfFibuExport = hatZugriff("finanzmanagement_mwst");
   const darfPreiseSehen = hatZugriff("auftraege_preise_sichtbar");
@@ -426,16 +429,25 @@ export default function Dashboard() {
             Finanzen Übersicht
           </h2>
           {darfFibuExport && (
-            <a
-              href="/api/export/fibu"
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await downloadWithAuth("/api/export/fibu", "fibu-export.csv");
+                } catch (error) {
+                  toast({
+                    title: "Export fehlgeschlagen",
+                    description: error instanceof Error ? error.message : "Der FIBU-Export konnte nicht heruntergeladen werden.",
+                    variant: "destructive",
+                  });
+                }
+              }}
               className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-card border border-border text-foreground font-medium shadow-sm hover:bg-muted transition-colors"
               title="FIBU-Export als CSV (für Banana, Abacus, Excel)"
             >
               <Download className="h-3.5 w-3.5" />
               FIBU-Export CSV
-            </a>
+            </button>
           )}
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-4">

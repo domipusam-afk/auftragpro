@@ -19,8 +19,7 @@ import { Download, FileSpreadsheet, FileText, AlertCircle, CheckCircle2, Clock, 
 import { useToast } from "@/hooks/use-toast";
 import { useConfirm } from "@/hooks/use-confirm";
 import { downloadPdf } from "@/lib/pdf";
-
-const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
+import { downloadWithAuth } from "@/lib/downloadFile";
 
 function statusBadge(r: Rechnung) {
   // Wenn bezahlt_am gesetzt → immer grünes "Bezahlt" Badge mit Datum
@@ -274,15 +273,33 @@ export default function Rechnungen() {
           </div>
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" style={{ borderColor: "#1a3a6b", color: "#1a3a6b" }}
-              onClick={() => { window.open(`${API_BASE}/api/export/fibu?typ=ausgangsrechnungen`, "_blank"); }}>
+              onClick={async () => {
+                try {
+                  await downloadWithAuth("/api/export/fibu?typ=ausgangsrechnungen", "fibu-ausgangsrechnungen.csv");
+                } catch (error) {
+                  toast({ title: "Export fehlgeschlagen", description: error instanceof Error ? error.message : "Der Export konnte nicht heruntergeladen werden.", variant: "destructive" });
+                }
+              }}>
               <Download className="w-3.5 h-3.5" /> Ausgangsrechnungen CSV
             </Button>
             <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" style={{ borderColor: "#6b4c2a", color: "#6b4c2a" }}
-              onClick={() => { window.open(`${API_BASE}/api/export/fibu?typ=eingangsrechnungen`, "_blank"); }}>
+              onClick={async () => {
+                try {
+                  await downloadWithAuth("/api/export/fibu?typ=eingangsrechnungen", "fibu-eingangsrechnungen.csv");
+                } catch (error) {
+                  toast({ title: "Export fehlgeschlagen", description: error instanceof Error ? error.message : "Der Export konnte nicht heruntergeladen werden.", variant: "destructive" });
+                }
+              }}>
               <Download className="w-3.5 h-3.5" /> Eingangsrechnungen CSV
             </Button>
             <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" style={{ borderColor: "#e8620a", color: "#e8620a" }}
-              onClick={() => { window.open(`${API_BASE}/api/export/fibu`, "_blank"); }}>
+              onClick={async () => {
+                try {
+                  await downloadWithAuth("/api/export/fibu", "fibu-export.csv");
+                } catch (error) {
+                  toast({ title: "Export fehlgeschlagen", description: error instanceof Error ? error.message : "Der Export konnte nicht heruntergeladen werden.", variant: "destructive" });
+                }
+              }}>
               <Download className="w-3.5 h-3.5" /> Alles exportieren
             </Button>
           </div>

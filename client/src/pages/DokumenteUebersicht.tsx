@@ -7,6 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { FolderOpen, FileText, Image, File, Download, Search, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/format";
+import { downloadWithAuth } from "@/lib/downloadFile";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirm } from "@/hooks/use-confirm";
 import type { Auftrag, Dokument } from "@shared/schema";
@@ -33,8 +34,6 @@ const getIcon = (mime: string) => {
   }
   return File;
 };
-
-const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
 
 type DateiEintrag = {
   id: string;
@@ -249,9 +248,6 @@ export default function DokumenteUebersicht() {
                 {sorted.map((f) => {
                   const Icon = getIcon(f.mime);
                   const isImage = f.mime.startsWith("image/");
-                  const downloadUrl = f.typ === "Dokument"
-                    ? `${API_BASE}/api/auftraege/${f.auftrag_id}/dokumente/${f.id}/download`
-                    : undefined;
                   return (
                     <div key={f.id} className="flex items-center gap-3 p-3 hover:bg-muted/50 transition-colors">
                       {isImage && f.previewData ? (
@@ -268,18 +264,27 @@ export default function DokumenteUebersicht() {
                         </p>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
-                        {downloadUrl ? (
-                          <a
-                            href={downloadUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                        {f.typ === "Dokument" ? (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                await downloadWithAuth(`/api/auftraege/${f.auftrag_id}/dokumente/${f.id}/download`, f.name);
+                              } catch (error) {
+                                toast({
+                                  title: "Download fehlgeschlagen",
+                                  description: error instanceof Error ? error.message : "Das Dokument konnte nicht heruntergeladen werden.",
+                                  variant: "destructive",
+                                });
+                              }
+                            }}
                             className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
                             title="Herunterladen"
                             aria-label={`${f.name} herunterladen`}
                             data-testid={`button-download-dokument-${f.id}`}
                           >
                             <Download className="h-4 w-4" />
-                          </a>
+                          </button>
                         ) : (
                           <button
                             onClick={() => f.previewData && downloadFile(f.previewData, f.name)}

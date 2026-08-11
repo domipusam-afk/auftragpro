@@ -88,6 +88,7 @@ import { STATUS_LABEL, STATUS_ORDER } from "@shared/schema";
 import { STATUS_BADGE, PRIO_BADGE, formatCHF, formatDate, formatDateTime, parseZahl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { downloadPdf as triggerPdfDownload } from "@/lib/pdf";
+import { downloadWithAuth } from "@/lib/downloadFile";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirm } from "@/hooks/use-confirm";
 import { useAuth } from "@/lib/auth";
@@ -311,7 +312,6 @@ function DokumenteTab({ id, dokumente }: { id: string; dokumente: Dokument[] }) 
     },
   });
 
-  const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
   const handleDelete = async (dokument: Dokument) => {
     const confirmed = await confirmDelete({
       title: "Dokument löschen?",
@@ -393,15 +393,24 @@ function DokumenteTab({ id, dokumente }: { id: string; dokumente: Dokument[] }) 
                 </div>
               </div>
               <div className="flex gap-1">
-                <a
-                  href={`${API_BASE}/api/auftraege/${id}/dokumente/${d.id}/download`}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  data-testid={`button-download-${d.id}`}
+                  onClick={async () => {
+                    try {
+                      await downloadWithAuth(`/api/auftraege/${id}/dokumente/${d.id}/download`, d.name);
+                    } catch (error) {
+                      toast({
+                        title: "Download fehlgeschlagen",
+                        description: error instanceof Error ? error.message : "Das Dokument konnte nicht heruntergeladen werden.",
+                        variant: "destructive",
+                      });
+                    }
+                  }}
                 >
-                  <Button size="icon" variant="ghost" data-testid={`button-download-${d.id}`}>
                     <Download className="h-4 w-4" />
-                  </Button>
-                </a>
+                </Button>
                 <Button
                   size="icon"
                   variant="ghost"
