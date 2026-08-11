@@ -41,6 +41,13 @@ export const DASHBOARD_WIDGETS = [
     default_order: 35,
   },
   {
+    id: "top_kunden",
+    label: "Top-Kunden (YTD)",
+    description: "Top 5 Kunden nach fakturiertem Netto-Umsatz seit Jahresbeginn",
+    default_visible: true,
+    default_order: 36,
+  },
+  {
     id: "umsatz_charts",
     label: "Umsatzdiagramme",
     description: "Umsatz der letzten sechs Monate und Jahresvergleich",

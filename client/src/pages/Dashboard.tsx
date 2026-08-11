@@ -39,6 +39,7 @@ import { useToast } from "@/hooks/use-toast";
 import { DashboardWidget } from "@/components/dashboard/DashboardWidget";
 import { AufgabenWidget } from "@/components/dashboard/AufgabenWidget";
 import { UeberfaelligeRechnungenWidget } from "@/components/dashboard/UeberfaelligeRechnungenWidget";
+import { TopKundenWidget } from "@/components/dashboard/TopKundenWidget";
 import {
   normalizeDashboardPreferences,
   type DashboardPreferences,
@@ -606,6 +607,11 @@ export default function Dashboard() {
       <UeberfaelligeRechnungenWidget
         visible={isWidgetVisible("ueberfaellige_rechnungen") && darf_finanzen}
         style={widgetStyle("ueberfaellige_rechnungen")}
+      />
+
+      <TopKundenWidget
+        visible={isWidgetVisible("top_kunden") && darf_finanzen}
+        style={widgetStyle("top_kunden")}
       />
 
       <DashboardWidget

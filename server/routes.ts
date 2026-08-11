@@ -7700,5 +7700,95 @@ export async function registerRoutes(
     }
   });
 
+  // ─── Top-Kunden (Dashboard) ────────────────────────────────────────────────
+  // Rechnungen besitzen im aktuellen Schema keinen stabilen Kunden-FK. Die
+  // fachlich massgebliche Beziehung ist daher Rechnung -> Auftrag -> kunde
+  // (Text-Snapshot). Namen bleiben bewusst case-sensitive und unverändert:
+  // nur NULL/Leerwerte werden ausgeschlossen. Ein kunde_id-Refactoring bleibt
+  // ein späterer, separater Datenqualitätsausbau.
+  //
+  // rechnungen hat derzeit weder status noch storniert_am. Sobald ein expliziter
+  // Storno-Zustand existiert, muss hier ein gemeinsamer Ausschluss ergänzt werden.
+  app.get("/api/dashboard/top-kunden", async (req, res) => {
+    try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) {
+        return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      }
+
+      // Der Kalenderjahreswechsel richtet sich explizit nach Europe/Zurich
+      // (CET/CEST), unabhängig von der Host-Zeitzone des Servers. Der
+      // Jahresanfang selbst liegt immer in CET (+01:00).
+      const zurichDate = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Europe/Zurich",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).formatToParts(new Date()).reduce<Record<string, string>>((parts, part) => {
+        if (part.type !== "literal") parts[part.type] = part.value;
+        return parts;
+      }, {});
+      const year = Number(zurichDate.year);
+      const yearStart = new Date(`${year}-01-01T00:00:00+01:00`).toISOString();
+      const nextYearStart = new Date(`${year + 1}-01-01T00:00:00+01:00`).toISOString();
+
+      const { data: invoices, error } = await identity.client
+        .from("rechnungen")
+        .select("id, auftrag_id, betrag")
+        .eq("tenant_id", identity.tenantId)
+        .gte("erstellt", yearStart)
+        .lt("erstellt", nextYearStart);
+      if (error) throw error;
+
+      const auftragIds = Array.from(new Set(
+        (invoices || [])
+          .map((rechnung: any) => rechnung.auftrag_id)
+          .filter((id: unknown): id is string => typeof id === "string" && id.length > 0),
+      ));
+      const kundenByAuftragId = new Map<string, string>();
+
+      if (auftragIds.length > 0) {
+        const { data: auftraege, error: auftraegeError } = await identity.client
+          .from("auftraege")
+          .select("id, kunde")
+          .eq("tenant_id", identity.tenantId)
+          .in("id", auftragIds);
+        if (auftraegeError) throw auftraegeError;
+
+        for (const auftrag of auftraege || []) {
+          if (typeof auftrag.kunde === "string" && auftrag.kunde.trim().length > 0) {
+            kundenByAuftragId.set(auftrag.id, auftrag.kunde);
+          }
+        }
+      }
+
+      const rankings = new Map<string, { umsatz_netto: number; anzahl_rechnungen: number }>();
+      for (const rechnung of invoices || []) {
+        const kunde = kundenByAuftragId.get(rechnung.auftrag_id);
+        if (!kunde) continue;
+
+        const current = rankings.get(kunde) || { umsatz_netto: 0, anzahl_rechnungen: 0 };
+        current.umsatz_netto += Number(rechnung.betrag) || 0;
+        current.anzahl_rechnungen += 1;
+        rankings.set(kunde, current);
+      }
+
+      const kunden = Array.from(rankings.entries())
+        .map(([kunde, ranking]) => ({
+          kunde,
+          umsatz_netto: Math.round(ranking.umsatz_netto * 100) / 100,
+          anzahl_rechnungen: ranking.anzahl_rechnungen,
+        }))
+        .sort((left, right) =>
+          right.umsatz_netto - left.umsatz_netto || left.kunde.localeCompare(right.kunde, "de-CH"),
+        )
+        .slice(0, 5);
+
+      return res.json({ year, kunden });
+    } catch (e) {
+      return res.status(500).json({ message: asError(e) });
+    }
+  });
+
   return httpServer;
 }

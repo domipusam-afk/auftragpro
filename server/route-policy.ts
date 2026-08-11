@@ -257,6 +257,7 @@ export const ROUTE_POLICIES = [
   { method: "PUT", path: "/api/dashboard/preferences", line: 7517, access: "permissions", permissions: ["auftraege_anzeigen"], reason: "Persönliche Dashboard-Kachel- und Erinnerungspräferenzen.", currentEnforcement: "unguarded" },
   { method: "GET", path: "/api/dashboard/aufgaben", line: 7555, access: "permissions", permissions: ["ressourcen_aufgaben"], reason: "Team-Ansicht offener Aufgaben im Dashboard.", currentEnforcement: "unguarded" },
   { method: "GET", path: "/api/dashboard/ueberfaellige-rechnungen", line: 7613, access: "permissions", permissions: ["dashboard_finanzen"], reason: "Überfällige Rechnungen und offene Bruttobeträge im Dashboard.", currentEnforcement: "unguarded" },
+  { method: "GET", path: "/api/dashboard/top-kunden", line: 7712, access: "permissions", permissions: ["dashboard_finanzen"], reason: "Top-Kunden nach fakturiertem Netto-Umsatz im Dashboard.", currentEnforcement: "unguarded" },
 ] as const satisfies readonly RoutePolicy[];
 
 export const ROUTE_POLICY_BY_FINGERPRINT: Readonly<Record<string, RoutePolicy>> =
