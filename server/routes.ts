@@ -229,12 +229,41 @@ function asError(e: unknown): string {
   return String(e);
 }
 
-type SignedDownloadRequest = Request & {
-  downloadTenantId?: string;
+type DownloadExportQuery = {
+  readonly von?: string;
+  readonly bis?: string;
+  readonly typ?: string;
+  readonly zeitraum?: string;
 };
 
-function signedDownloadTenantId(req: Request): string | undefined {
-  return (req as SignedDownloadRequest).downloadTenantId;
+type ExportDownloadInput = {
+  readonly query: DownloadExportQuery;
+  readonly tenantId?: string;
+};
+
+type DocumentDownloadInput = {
+  readonly auftragId: string;
+  readonly documentId: string;
+  readonly tenantId?: string;
+};
+
+function exportQueryFromRequest(req: Request): DownloadExportQuery {
+  const { von, bis, typ, zeitraum } = req.query;
+  return {
+    von: typeof von === "string" ? von : undefined,
+    bis: typeof bis === "string" ? bis : undefined,
+    typ: typeof typ === "string" ? typ : undefined,
+    zeitraum: typeof zeitraum === "string" ? zeitraum : undefined,
+  };
+}
+
+function exportQueryFromSearchParams(searchParams: URLSearchParams): DownloadExportQuery {
+  return {
+    von: searchParams.get("von") || undefined,
+    bis: searchParams.get("bis") || undefined,
+    typ: searchParams.get("typ") || undefined,
+    zeitraum: searchParams.get("zeitraum") || undefined,
+  };
 }
 
 function allowedDownloadPath(value: unknown): URL | null {
@@ -1103,15 +1132,16 @@ export async function registerRoutes(
     }
   );
 
-  const handleDocumentDownload = async (req: Request, res: Response) => {
+  const handleDocumentDownload = async (
+    res: Response,
+    { auftragId, documentId, tenantId }: DocumentDownloadInput,
+  ) => {
     try {
-      const { id, did } = req.params;
-      const tenantId = signedDownloadTenantId(req);
       const documentQuery = supabase
         .from("dokumente")
         .select("*")
-        .eq("id", did)
-        .eq("auftrag_id", id);
+        .eq("id", documentId)
+        .eq("auftrag_id", auftragId);
       const { data: doc, error } = await (tenantId
         ? documentQuery.eq("tenant_id", tenantId)
         : documentQuery
@@ -1120,7 +1150,7 @@ export async function registerRoutes(
       const documentDataQuery = supabase
         .from("dokument_daten")
         .select("data")
-        .eq("dokument_id", did);
+        .eq("dokument_id", documentId);
       const { data: dd, error: e2 } = await (tenantId
         ? documentDataQuery.eq("tenant_id", tenantId)
         : documentDataQuery
@@ -1143,7 +1173,12 @@ export async function registerRoutes(
       res.status(500).json({ message: asError(e) });
     }
   };
-  app.get("/api/auftraege/:id/dokumente/:did/download", handleDocumentDownload);
+  app.get("/api/auftraege/:id/dokumente/:did/download", (req, res) => {
+    return handleDocumentDownload(res, {
+      auftragId: req.params.id,
+      documentId: req.params.did,
+    });
+  });
 
   app.delete("/api/auftraege/:id/dokumente/:did", async (req, res) => {
     try {
@@ -2467,10 +2502,12 @@ export async function registerRoutes(
 
   // ============= BANANA BUCHHALTUNG / Q3 EXPORT =============
   // Format: Banana Buchhaltung Schweiz (semicolon, Schweizer Dezimal mit Punkt)
-  const handleQ3Export = async (req: Request, res: Response) => {
+  const handleQ3Export = async (
+    res: Response,
+    { query, tenantId }: ExportDownloadInput,
+  ) => {
     try {
-      const { von, bis, zeitraum } = req.query as Record<string, string>;
-      const tenantId = signedDownloadTenantId(req);
+      const { von, bis, zeitraum } = query;
 
       const heute = new Date();
       let datumVon: string;
@@ -2632,7 +2669,11 @@ export async function registerRoutes(
       res.status(500).json({ message: asError(e) });
     }
   };
-  app.get("/api/export/q3", handleQ3Export);
+  app.get("/api/export/q3", (req, res) => {
+    return handleQ3Export(res, {
+      query: exportQueryFromRequest(req),
+    });
+  });
 
   // ============= VORLAGEN =============
   app.get("/api/vorlagen", async (_req, res) => {
@@ -6690,10 +6731,12 @@ export async function registerRoutes(
   });
 
   // ─── FIBU-EXPORT ──────────────────────────────────────────────────────────────
-  const handleFibuExport = async (req: Request, res: Response) => {
+  const handleFibuExport = async (
+    res: Response,
+    { query, tenantId }: ExportDownloadInput,
+  ) => {
     try {
-      const { von, bis, typ } = req.query as any;
-      const tenantId = signedDownloadTenantId(req);
+      const { von, bis, typ } = query;
       let lines: string[] = [];
 
       if (!typ || typ === "ausgangsrechnungen") {
@@ -6747,11 +6790,15 @@ export async function registerRoutes(
       }
 
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
-      res.setHeader("Content-Disposition", `attachment; filename="FIBU-Export-${new Date().toISOString().slice(0,10)}.csv"`);
+      res.setHeader("Content-Disposition", "attachment; filename=\"fibu-export.csv\"");
       res.send("\uFEFF" + lines.join("\r\n")); // BOM for Excel
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   };
-  app.get("/api/export/fibu", handleFibuExport);
+  app.get("/api/export/fibu", (req, res) => {
+    return handleFibuExport(res, {
+      query: exportQueryFromRequest(req),
+    });
+  });
 
   // A Bearer-authenticated request mints a one-time URL. The subsequent native
   // browser GET intentionally has no Bearer header; its HMAC token is its auth.
@@ -6792,28 +6839,32 @@ export async function registerRoutes(
       return res.status(403).json({ message: "Download-Token enthält keinen erlaubten Download-Pfad." });
     }
 
-    const delegatedRequest = Object.create(req) as SignedDownloadRequest;
-    delegatedRequest.query = Object.fromEntries(parsedPath.searchParams.entries());
-    delegatedRequest.downloadTenantId = validation.claims.tenant;
+    const exportQuery = exportQueryFromSearchParams(parsedPath.searchParams);
 
     try {
       return await runWithSupabaseClient(getServiceRoleClient(), async () => {
         if (parsedPath.pathname === "/api/export/fibu") {
-          return handleFibuExport(delegatedRequest, res);
+          return handleFibuExport(res, {
+            query: exportQuery,
+            tenantId: validation.claims.tenant,
+          });
         }
         if (parsedPath.pathname === "/api/export/q3") {
-          return handleQ3Export(delegatedRequest, res);
+          return handleQ3Export(res, {
+            query: exportQuery,
+            tenantId: validation.claims.tenant,
+          });
         }
 
         const matches = parsedPath.pathname.match(/^\/api\/auftraege\/([^/?#]+)\/dokumente\/([^/?#]+)\/download$/);
         if (!matches) {
           return res.status(403).json({ message: "Download-Token enthält keinen erlaubten Download-Pfad." });
         }
-        delegatedRequest.params = {
-          id: decodeURIComponent(matches[1]),
-          did: decodeURIComponent(matches[2]),
-        };
-        return handleDocumentDownload(delegatedRequest, res);
+        return handleDocumentDownload(res, {
+          auftragId: decodeURIComponent(matches[1]),
+          documentId: decodeURIComponent(matches[2]),
+          tenantId: validation.claims.tenant,
+        });
       });
     } catch (e) {
       return res.status(503).json({ message: `Download ist derzeit nicht verfügbar: ${asError(e)}` });
