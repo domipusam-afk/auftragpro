@@ -7547,6 +7547,182 @@ export async function registerRoutes(
     }
   });
 
+  // ─── Smarte Erinnerungen (Dashboard) ───────────────────────────────────────
+  // Die aktuelle Vorkalkulationsoberfläche speichert ihre Kopfdaten in
+  // vorkalkulation_config. Diese Zeile ist damit der belastbare Marker dafür,
+  // dass für einen Auftrag eine Vorkalkulation angelegt wurde. Die gleichnamige
+  // Tabelle ohne Suffix wird von der aktiven Oberfläche nicht verwendet.
+  app.get("/api/dashboard/reminders", async (req, res) => {
+    try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) {
+        return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      }
+
+      const { data: storedPreferences, error: preferencesError } = await identity.client
+        .from("dashboard_user_preferences")
+        .select("reminder_settings")
+        .eq("tenant_id", identity.tenantId)
+        .eq("user_id", identity.userId)
+        .maybeSingle();
+      if (preferencesError) throw preferencesError;
+
+      const reminderSettings = normalizeDashboardPreferences(
+        storedPreferences as Partial<DashboardPreferences> | null,
+      ).reminder_settings;
+      const needsOrderReminders = reminderSettings.vorkalkulation_fehlt || reminderSettings.auftrag_ohne_termin;
+      const today = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Europe/Zurich",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).formatToParts(new Date()).reduce<Record<string, string>>((parts, part) => {
+        if (part.type !== "literal") parts[part.type] = part.value;
+        return parts;
+      }, {});
+      const todayIso = `${today.year}-${today.month}-${today.day}`;
+
+      const activeOrdersRequest = needsOrderReminders
+        ? identity.client
+          .from("auftraege")
+          .select("id, nr, kunde, angebots_betrag, rechnungs_betrag, erstellt, status")
+          .eq("tenant_id", identity.tenantId)
+          .neq("status", "abgeschlossen")
+          .neq("status", "storniert")
+          .order("erstellt", { ascending: false })
+        : Promise.resolve({ data: [], error: null });
+      const overdueInvoicesRequest = reminderSettings.rechnung_ueberfaellig
+        ? identity.client
+          .from("rechnungen")
+          .select("id, nr, auftrag_id, betrag, faellig_datum")
+          .eq("tenant_id", identity.tenantId)
+          .is("bezahlt_am", null)
+          .not("faellig_datum", "is", null)
+          .lt("faellig_datum", todayIso)
+          .order("faellig_datum", { ascending: true })
+        : Promise.resolve({ data: [], error: null });
+
+      const [activeOrdersResult, overdueInvoicesResult] = await Promise.all([
+        activeOrdersRequest,
+        overdueInvoicesRequest,
+      ]);
+      if (activeOrdersResult.error) throw activeOrdersResult.error;
+      if (overdueInvoicesResult.error) throw overdueInvoicesResult.error;
+
+      const activeOrders = (activeOrdersResult.data || []).filter((auftrag: any) =>
+        auftrag.status !== "abgeschlossen" && auftrag.status !== "storniert",
+      );
+      const activeOrderIds = activeOrders
+        .map((auftrag: any) => auftrag.id)
+        .filter((id: unknown): id is string => typeof id === "string" && id.length > 0);
+      const reminders: any[] = [];
+      const orderItem = (auftrag: any) => ({
+        id: auftrag.id,
+        auftragsnummer: auftrag.nr || null,
+        kunde: auftrag.kunde || null,
+        auftragswert: Math.round((Number(auftrag.angebots_betrag ?? auftrag.rechnungs_betrag) || 0) * 100) / 100,
+      });
+
+      if (activeOrderIds.length > 0 && reminderSettings.vorkalkulation_fehlt) {
+        const { data: configs, error } = await identity.client
+          .from("vorkalkulation_config")
+          .select("auftrag_id")
+          .eq("tenant_id", identity.tenantId)
+          .in("auftrag_id", activeOrderIds);
+        if (error) throw error;
+
+        const ordersWithVorkalkulation = new Set(
+          (configs || [])
+            .map((config: any) => config.auftrag_id)
+            .filter((id: unknown): id is string => typeof id === "string" && id.length > 0),
+        );
+        const missingVorkalkulation = activeOrders.filter((auftrag: any) => !ordersWithVorkalkulation.has(auftrag.id));
+        if (missingVorkalkulation.length > 0) {
+          reminders.push({
+            type: "vorkalkulation_fehlt",
+            count: missingVorkalkulation.length,
+            items: missingVorkalkulation.slice(0, 5).map(orderItem),
+          });
+        }
+      }
+
+      if (activeOrderIds.length > 0 && reminderSettings.auftrag_ohne_termin) {
+        const { data: termine, error } = await identity.client
+          .from("termine")
+          .select("auftrag_id, datum_von")
+          .eq("tenant_id", identity.tenantId)
+          .in("auftrag_id", activeOrderIds);
+        if (error) throw error;
+
+        const ordersWithTermin = new Set(
+          (termine || [])
+            .filter((termin: any) => typeof termin.datum_von === "string" && termin.datum_von.trim().length > 0)
+            .map((termin: any) => termin.auftrag_id)
+            .filter((id: unknown): id is string => typeof id === "string" && id.length > 0),
+        );
+        const missingTermin = activeOrders.filter((auftrag: any) => !ordersWithTermin.has(auftrag.id));
+        if (missingTermin.length > 0) {
+          reminders.push({
+            type: "auftrag_ohne_termin",
+            count: missingTermin.length,
+            items: missingTermin.slice(0, 5).map(orderItem),
+          });
+        }
+      }
+
+      if (reminderSettings.rechnung_ueberfaellig) {
+        // Identische fachliche Definition wie die D2.3-Kachel: unbezahlte,
+        // ISO-parsebare Rechnung vor dem heutigen Zürcher Kalendertag.
+        const overdueInvoices = (overdueInvoicesResult.data || []).filter((rechnung: any) => {
+          const dueDate = typeof rechnung.faellig_datum === "string" ? rechnung.faellig_datum.slice(0, 10) : "";
+          return /^\d{4}-\d{2}-\d{2}$/.test(dueDate) && dueDate < todayIso;
+        });
+        if (overdueInvoices.length > 0) {
+          const auftragIds = Array.from(new Set(
+            overdueInvoices
+              .map((rechnung: any) => rechnung.auftrag_id)
+              .filter((id: unknown): id is string => typeof id === "string" && id.length > 0),
+          ));
+          const kundenByAuftragId = new Map<string, string | null>();
+
+          if (auftragIds.length > 0) {
+            const { data: auftraege, error } = await identity.client
+              .from("auftraege")
+              .select("id, kunde")
+              .eq("tenant_id", identity.tenantId)
+              .in("id", auftragIds);
+            if (error) throw error;
+            for (const auftrag of auftraege || []) {
+              kundenByAuftragId.set(auftrag.id, auftrag.kunde || null);
+            }
+          }
+
+          const totalOffenBrutto = overdueInvoices.reduce(
+            (sum: number, rechnung: any) => sum + rechnungBruttoBetrag(rechnung.betrag),
+            0,
+          );
+          reminders.push({
+            type: "rechnung_ueberfaellig",
+            count: overdueInvoices.length,
+            total_offen_brutto: Math.round(totalOffenBrutto * 100) / 100,
+            items: overdueInvoices.slice(0, 5).map((rechnung: any) => ({
+              id: rechnung.id,
+              rechnungsnummer: rechnung.nr || null,
+              auftrag_id: rechnung.auftrag_id || null,
+              faellig_am: rechnung.faellig_datum.slice(0, 10),
+              kunde: rechnung.auftrag_id ? kundenByAuftragId.get(rechnung.auftrag_id) || null : null,
+              betrag_brutto: rechnungBruttoBetrag(rechnung.betrag),
+            })),
+          });
+        }
+      }
+
+      return res.json({ reminders });
+    } catch (e) {
+      return res.status(500).json({ message: asError(e) });
+    }
+  });
+
   // ─── Dashboard-Aufgaben (Team-Ansicht) ─────────────────────────────────────
   // Liefert bewusst eine kleine Projektion statt der vollständigen Aufgabenliste.
   // Die explizite tenant_id-Bedingung sichert auch den weiterhin unterstützten

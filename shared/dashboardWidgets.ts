@@ -48,6 +48,13 @@ export const DASHBOARD_WIDGETS = [
     default_order: 36,
   },
   {
+    id: "smarte_erinnerungen",
+    label: "Smarte Erinnerungen",
+    description: "Konkrete nächste Schritte für Aufträge und Rechnungen",
+    default_visible: true,
+    default_order: 37,
+  },
+  {
     id: "umsatz_charts",
     label: "Umsatzdiagramme",
     description: "Umsatz der letzten sechs Monate und Jahresvergleich",
@@ -84,23 +91,23 @@ export const DASHBOARD_WIDGET_IDS = DASHBOARD_WIDGETS.map((widget) => widget.id)
 export const DASHBOARD_REMINDER_SETTINGS = [
   {
     id: "vorkalkulation_fehlt",
-    label: "Auftrag ohne Vorkalkulation",
-    description: "Hinweis, wenn für einen laufenden Auftrag keine Vorkalkulation vorhanden ist.",
+    label: "Erinnerung: Aufträge ohne Vorkalkulation",
+    description: "Zeigt aktive Aufträge, für die noch keine Vorkalkulation angelegt wurde.",
   },
   {
     id: "auftrag_ohne_termin",
-    label: "Auftrag ohne Termin",
-    description: "Hinweis, wenn für einen laufenden Auftrag kein Termin geplant ist.",
+    label: "Erinnerung: Aufträge ohne Termin",
+    description: "Zeigt aktive Aufträge, denen noch kein Termin mit Startdatum zugeordnet ist.",
   },
   {
     id: "rechnung_ueberfaellig",
-    label: "Überfällige Rechnung",
-    description: "Hinweis, wenn eine unbezahlte Rechnung über ihrem Fälligkeitsdatum liegt.",
+    label: "Erinnerung: Rechnungen überfällig",
+    description: "Zeigt unbezahlte Rechnungen nach ihrem Fälligkeitsdatum, damit eine Mahnung versendet werden kann.",
   },
   {
     id: "angebot_ohne_antwort",
-    label: "Offerte ohne Antwort",
-    description: "Vorbereitung für die spätere Angebots-Erinnerung.",
+    label: "Erinnerung: Offerten ohne Antwort",
+    description: "Vorbereitung für die spätere Erinnerung an unbeantwortete Offerten.",
   },
 ] as const;
 

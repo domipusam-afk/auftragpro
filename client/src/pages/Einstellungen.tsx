@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/lib/auth";
+import { useSearch } from "wouter";
 import PdfVorlagenTab from "./PdfVorlagenTab";
 import {
   createDefaultDashboardPreferences,
@@ -1467,6 +1468,9 @@ function StatusPipelineTab() {
 
 export default function Einstellungen() {
   const { data: einstellungenList = [] } = useEinstellungen();
+  const search = useSearch();
+  const requestedTab = new URLSearchParams(search).get("tab");
+  const initialTab = requestedTab === "dashboard" ? "dashboard" : "allgemein";
 
   // Convert list to map for easy access
   const settings: EinstellungMap = {};
@@ -1483,7 +1487,7 @@ export default function Einstellungen() {
         <p className="text-sm text-muted-foreground mt-1">App-Konfiguration und Systemeinstellungen</p>
       </div>
 
-      <Tabs defaultValue="allgemein" className="space-y-4">
+      <Tabs defaultValue={initialTab} className="space-y-4">
         <TabsList className="grid grid-cols-4 sm:flex sm:flex-wrap gap-1 h-auto p-1 w-full">
           <TabsTrigger value="allgemein" className="flex flex-col sm:flex-row items-center gap-1 text-xs p-2 sm:px-3 sm:py-1.5 h-auto">
             <Building2 className="h-4 w-4 shrink-0" />
