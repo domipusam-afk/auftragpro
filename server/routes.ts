@@ -1010,6 +1010,10 @@ export async function registerRoutes(
       await supabase.from("kalkulationen").delete().eq("auftrag_id", id);
       await supabase.from("garantien").delete().eq("auftrag_id", id);
       await supabase.from("liefertermine").delete().eq("auftrag_id", id);
+      // Termine bleiben erhalten (koennen z.B. Urlaub/Intern ohne Bezug sein),
+      // werden aber vom geloeschten Auftrag entkoppelt statt als Karteileiche
+      // mit toter auftrag_id zu verwaisen.
+      await supabase.from("termine").update({ auftrag_id: null }).eq("auftrag_id", id);
       await supabase.from("foto_dokumentation").delete().eq("auftrag_id", id);
       await supabase.from("tagesrapporte").delete().eq("auftrag_id", id);
       await supabase.from("reklamationen").delete().eq("auftrag_id", id);
@@ -3382,6 +3386,33 @@ export async function registerRoutes(
   });
 
   // ─── Termine ─────────────────────────────────────────────────────────────────
+  const TERMIN_TYPEN = ["termin", "auftrag", "intern", "urlaub", "krank"];
+
+  function validateTerminBody(body: any, opts: { partial: boolean }) {
+    const b = body || {};
+    const has = (k: string) => Object.prototype.hasOwnProperty.call(b, k);
+    if ((!opts.partial || has("titel")) && (!b.titel || !String(b.titel).trim())) {
+      return "Titel ist erforderlich";
+    }
+    if ((!opts.partial || has("datum_von")) && (!b.datum_von || !String(b.datum_von).trim())) {
+      return "Startzeit ist erforderlich";
+    }
+    if ((!opts.partial || has("datum_bis")) && (!b.datum_bis || !String(b.datum_bis).trim())) {
+      return "Endzeit ist erforderlich";
+    }
+    if ((!opts.partial || has("typ")) && (!b.typ || !TERMIN_TYPEN.includes(b.typ))) {
+      return `Ungültiger Termin-Typ (erlaubt: ${TERMIN_TYPEN.join(", ")})`;
+    }
+    if (has("datum_von") && has("datum_bis") && b.datum_von && b.datum_bis) {
+      const von = new Date(b.datum_von).getTime();
+      const bis = new Date(b.datum_bis).getTime();
+      if (!Number.isNaN(von) && !Number.isNaN(bis) && bis < von) {
+        return "Endzeit darf nicht vor der Startzeit liegen";
+      }
+    }
+    return null;
+  }
+
   app.get("/api/termine", async (_req, res) => {
     try {
       const { data, error } = await supabase.from("termine").select("*").order("datum_von", { ascending: true });
@@ -3392,6 +3423,8 @@ export async function registerRoutes(
 
   app.post("/api/termine", async (req, res) => {
     try {
+      const validationError = validateTerminBody(req.body, { partial: false });
+      if (validationError) return res.status(400).json({ message: validationError });
       const t = { id: uid(), ...req.body };
       const { data, error } = await supabase.from("termine").insert(t).select().single();
       if (error) throw error;
@@ -3401,6 +3434,8 @@ export async function registerRoutes(
 
   app.patch("/api/termine/:id", async (req, res) => {
     try {
+      const validationError = validateTerminBody(req.body, { partial: true });
+      if (validationError) return res.status(400).json({ message: validationError });
       const { data, error } = await supabase.from("termine").update(req.body).eq("id", req.params.id).select().single();
       if (error) throw error;
       res.json(data);

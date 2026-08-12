@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { CalendarDays, Plus, Trash2, Pencil, Users, Briefcase } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/hooks/use-confirm";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Auftrag } from "@shared/schema";
@@ -60,6 +61,7 @@ const emptyForm = {
 
 export default function Termine() {
   const { toast } = useToast();
+  const { confirm, ConfirmDialog } = useConfirm();
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -108,6 +110,11 @@ export default function Termine() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/termine"] }),
   });
 
+  const handleDelete = async (t: Termin) => {
+    if (!(await confirm({ title: "Termin löschen?", description: `"${t.titel}" wird dauerhaft gelöscht.` }))) return;
+    delMutation.mutate(t.id);
+  };
+
   const openEdit = (t: Termin) => {
     setEditId(t.id);
     setForm({ ...t, auftrag_id: t.auftrag_id || "none" });
@@ -127,7 +134,9 @@ export default function Termine() {
   const filtered = filter === "alle"
     ? termine
     : filter === "heute"
-    ? termine.filter((t) => (t.datum_von ?? '').slice(0, 10) === today)
+    // Bereich statt exaktem Start-Datum: ein mehrtaegiger Termin (z.B. Urlaub)
+    // soll an jedem Tag zwischen datum_von und datum_bis unter "Heute" erscheinen.
+    ? termine.filter((t) => (t.datum_von ?? '').slice(0, 10) <= today && today <= (t.datum_bis ?? '').slice(0, 10))
     : termine.filter((t) => t.typ === filter);
 
   // Upcoming sorted
@@ -263,7 +272,10 @@ export default function Termine() {
         <div className="space-y-2">
           {sorted.map((t) => {
             const auftragTitel = getAuftragTitel(t.auftrag_id);
-            const isPast = t.datum_bis < new Date().toISOString();
+            // Date-Objekte statt String-Vergleich: datum_bis ist ohne Zeitzonen-Suffix
+            // gespeichert (lokale Zeit), new Date().toISOString() ist UTC — ein reiner
+            // String-Vergleich fuehrt je nach Sommerzeit zu falschen Ergebnissen.
+            const isPast = !!t.datum_bis && new Date(t.datum_bis).getTime() < Date.now();
             return (
               <Card key={t.id} className={cn("p-4", isPast && "opacity-60")}>
                 <div className="flex items-start gap-3">
@@ -298,7 +310,7 @@ export default function Termine() {
                     <button onClick={() => openEdit(t)} className="p-1.5 rounded hover:bg-muted text-muted-foreground">
                       <Pencil className="h-3.5 w-3.5" />
                     </button>
-                    <button onClick={() => delMutation.mutate(t.id)} className="p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600">
+                    <button onClick={() => handleDelete(t)} className="p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600">
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
@@ -308,6 +320,7 @@ export default function Termine() {
           })}
         </div>
       )}
+      <ConfirmDialog />
     </div>
   );
 }
