@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select";
 import { AlertTriangle, Plus, CheckCircle2, Clock, Trash2, AlertCircle, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/hooks/use-confirm";
 import { formatCHF, formatDate } from "@/lib/format";
 import { downloadPdf } from "@/lib/pdf";
 import { cn } from "@/lib/utils";
@@ -53,6 +54,7 @@ const OPEN_STATUSES = ["anfrage", "angebot", "bestaetigt", "in_arbeit", "qualita
 
 export default function Mahnwesen() {
   const { toast } = useToast();
+  const { confirm, ConfirmDialog } = useConfirm();
   const [selectedAuftrag, setSelectedAuftrag] = useState("");
   const [betrag, setBetrag] = useState("");
   const [faelligDatum, setFaelligDatum] = useState("");
@@ -271,7 +273,14 @@ export default function Mahnwesen() {
                     <FileText className="h-4 w-4" />
                   </button>
                   <button
-                    onClick={() => delMutation.mutate(m.id)}
+                    onClick={async () => {
+                      if (!(await confirm({
+                        title: "Mahnung löschen?",
+                        description: `${MAHNSTUFE_LABEL[m.mahnstufe] || "Mahnung"} über ${formatCHF(m.betrag, "CHF")} wird dauerhaft gelöscht.`,
+                        confirmLabel: "Löschen",
+                      }))) return;
+                      delMutation.mutate(m.id);
+                    }}
                     className="p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors"
                     title="Löschen"
                   >
@@ -283,6 +292,7 @@ export default function Mahnwesen() {
           </div>
         )}
       </Card>
+      <ConfirmDialog />
     </div>
   );
 }

@@ -245,10 +245,10 @@ export default function Dashboard() {
     .reduce((s: number, r: any) => s + (Number(r.betrag) || 0), 0);
   // Offene Posten: unbezahlte, nicht stornierte Rechnungen
   const offenePosten = (rechnungen as any[])
-    .filter((r: any) => !r.bezahlt_am && !r.storniert_am)
+    .filter((r: any) => !r.bezahlt_am)
     .reduce((s: number, r: any) => s + (Number(r.betrag) || 0), 0);
   // Anzahl offene Rechnungen für KPI-Tooltip
-  const offeneRechnungenAnzahl = (rechnungen as any[]).filter((r: any) => !r.bezahlt_am && !r.storniert_am).length;
+  const offeneRechnungenAnzahl = (rechnungen as any[]).filter((r: any) => !r.bezahlt_am).length;
   const bezahlt = (rechnungen as any[])
     .filter((r: any) => !!r.bezahlt_am)
     .reduce((s: number, r: any) => s + (Number(r.betrag) || 0), 0);

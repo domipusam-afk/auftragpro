@@ -1239,23 +1239,51 @@ export async function registerRoutes(
     try {
       const { id } = req.params;
       const body = req.body || {};
+
+      // Auftrag-Existenz + tenant_id laden
+      const { data: auftrag, error: aErr } = await supabase
+        .from("auftraege")
+        .select("id, nr, tenant_id")
+        .eq("id", id)
+        .maybeSingle();
+      if (aErr) throw aErr;
+      if (!auftrag) return res.status(404).json({ message: "Auftrag nicht gefunden" });
+
+      // Positionen validieren
       const positionen = Array.isArray(body.positionen) ? body.positionen : [];
+      if (positionen.length === 0) {
+        return res.status(400).json({ message: "Mindestens eine Position ist erforderlich" });
+      }
+      for (const p of positionen) {
+        if (!p || typeof p !== "object") {
+          return res.status(400).json({ message: "Ungültiges Positionsformat" });
+        }
+        const menge = Number(p.menge);
+        const einzelpreis = Number(p.einzelpreis);
+        if (!Number.isFinite(menge) || !Number.isFinite(einzelpreis)) {
+          return res.status(400).json({ message: "Position: menge und einzelpreis müssen Zahlen sein" });
+        }
+      }
       const betrag = positionen.reduce(
         (s: number, p: any) =>
           s + (Number(p.menge) || 0) * (Number(p.einzelpreis) || 0),
         0
       );
+      // Fällig-Datum validieren (optional, aber wenn gesetzt → ISO-Format)
+      if (body.faellig_datum && !/^\d{4}-\d{2}-\d{2}$/.test(body.faellig_datum)) {
+        return res.status(400).json({ message: "faellig_datum muss ISO-Format (YYYY-MM-DD) haben" });
+      }
+
       // Rechnungsnummer = R(AuftragNr), bei 2.+ Rechnung = R(AuftragNr)_2
       let nr = body.nr;
       if (!nr) {
-        const { data: auftragNrRow } = await supabase.from("auftraege").select("nr").eq("id", id).single();
-        const auftragsNr = (auftragNrRow?.nr || "").replace(/^A/, "");
+        const auftragsNr = (auftrag.nr || "").replace(/^A/, "");
         const baseNr = "R" + auftragsNr;
         const { data: existingR } = await supabase.from("rechnungen").select("nr").eq("auftrag_id", id);
         const countR = (existingR || []).length;
         nr = countR === 0 ? baseNr : baseNr + "_" + (countR + 1);
       }
-      const row = {
+      const row: any = {
         id: uid(),
         auftrag_id: id,
         nr,
@@ -1266,6 +1294,8 @@ export async function registerRoutes(
         faellig_datum: body.faellig_datum || null,
         erstellt: new Date().toISOString(),
       };
+      // tenant_id vom Auftrag übernehmen (Multi-Tenant-Sicherheit)
+      if (auftrag.tenant_id) row.tenant_id = auftrag.tenant_id;
       const { data, error } = await supabase
         .from("rechnungen")
         .insert(row)
@@ -2401,12 +2431,15 @@ export async function registerRoutes(
 
 
 
-  app.get("/api/rechnungen", async (_req, res) => {
+  app.get("/api/rechnungen", async (req, res) => {
     try {
-      const { data, error } = await supabase
+      const tenantId = (req as any).tenantId as string | undefined;
+      let query = supabase
         .from("rechnungen")
         .select("*")
         .order("erstellt", { ascending: false });
+      if (tenantId) query = query.eq("tenant_id", tenantId);
+      const { data, error } = await query;
       if (error) throw error;
       res.json(data || []);
     } catch (e) {
@@ -2419,9 +2452,27 @@ export async function registerRoutes(
     try {
       const { id } = req.params;
       const { bezahlt_am } = req.body;
+      // Existenz-Check
+      const { data: existing, error: existErr } = await supabase
+        .from("rechnungen")
+        .select("id")
+        .eq("id", id)
+        .maybeSingle();
+      if (existErr) throw existErr;
+      if (!existing) return res.status(404).json({ message: "Rechnung nicht gefunden" });
+
       const updates: any = {};
       if (bezahlt_am !== undefined) {
-        // bezahlt_am = ISO-Datum -> bezahlt; null -> offen zurücksetzen
+        // Validierung: null oder ISO-Datum (YYYY-MM-DD)
+        if (bezahlt_am !== null) {
+          if (typeof bezahlt_am !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(bezahlt_am)) {
+            return res.status(400).json({ message: "bezahlt_am muss ein ISO-Datum (YYYY-MM-DD) oder null sein" });
+          }
+          const d = new Date(bezahlt_am);
+          if (isNaN(d.getTime())) {
+            return res.status(400).json({ message: "bezahlt_am ist kein gültiges Datum" });
+          }
+        }
         updates.bezahlt_am = bezahlt_am;
       }
       const { data, error } = await supabase
@@ -4012,7 +4063,7 @@ export async function registerRoutes(
 
       // Rechnung erstellen mit allen relevanten Feldern aus Offerte
       // Offerte-ID in notiz speichern damit PDF die Offerte-Daten (Empfänger etc.) nachladen kann
-      const row = {
+      const row: any = {
         id: uid(),
         auftrag_id: offerte.auftrag_id,
         nr,
@@ -4025,6 +4076,8 @@ export async function registerRoutes(
         ansprechperson_extern: offerte.empfaenger_name || null,
         erstellt: new Date().toISOString(),
       };
+      // tenant_id von Offerte übernehmen (Multi-Tenant-Sicherheit)
+      if ((offerte as any).tenant_id) row.tenant_id = (offerte as any).tenant_id;
       const { data: rechnung, error: e2 } = await supabase
         .from("rechnungen").insert(row).select().single();
       if (e2) throw e2;

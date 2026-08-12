@@ -230,9 +230,10 @@ export default function Rechnungen() {
   };
 
   const filteredRechnungen = (rechnungen || []).filter((r) => {
+    // Hinweis: rechnungen hat aktuell weder status noch storniert_am
+    // in der DB — Status wird binaer aus bezahlt_am abgeleitet.
     if (filterStatus === "bezahlt") return !!(r as any).bezahlt_am;
-    if (filterStatus === "offen") return !(r as any).bezahlt_am && !(r as any).storniert_am;
-    if (filterStatus === "storniert") return !!(r as any).storniert_am;
+    if (filterStatus === "offen") return !(r as any).bezahlt_am;
     return true;
   });
   // Anzeige in dieser Liste ist konsequent Brutto (inkl. MWST) — das, was der Kunde
@@ -241,7 +242,6 @@ export default function Rechnungen() {
   const total = filteredRechnungen.reduce((s, r) => s + rechnungBruttoBetrag(r.betrag), 0);
   const ueberfaellig = (rechnungen || []).filter(r => {
     if ((r as any).bezahlt_am) return false; // bezahlte nicht als überfällig zählen
-    if ((r as any).storniert_am) return false;
     if (!r.faellig_datum) return false;
     return new Date(r.faellig_datum) < new Date();
   });
@@ -254,7 +254,7 @@ export default function Rechnungen() {
           Rechnungen
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          {filteredRechnungen.length} {filterStatus === "alle" ? "Rechnungen" : filterStatus === "bezahlt" ? "bezahlte Rechnungen" : filterStatus === "offen" ? "offene Rechnungen" : "stornierte Rechnungen"} · Gesamt {formatCHF(total, "CHF")}
+          {filteredRechnungen.length} {filterStatus === "alle" ? "Rechnungen" : filterStatus === "bezahlt" ? "bezahlte Rechnungen" : "offene Rechnungen"} · Gesamt {formatCHF(total, "CHF")}
           {ueberfaellig.length > 0 && (
             <span className="ml-2 text-red-600 font-medium">
               · {ueberfaellig.length} überfällig
@@ -500,7 +500,7 @@ Schneggenburger GmbH`,
 
       {/* Filter-Tabs (Mobile + Desktop) */}
       <div className="flex gap-2 flex-wrap">
-        {["alle", "offen", "bezahlt", "storniert"].map((s) => (
+        {["alle", "offen", "bezahlt"].map((s) => (
           <button
             key={s}
             onClick={() => setFilterStatus(s)}
