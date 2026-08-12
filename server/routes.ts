@@ -5438,11 +5438,31 @@ export async function registerRoutes(
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
-  // ─── Lieferanten ──────────────────────────────────────────────────────────────
-  app.get("/api/lieferanten", async (_req, res) => {
+  // ─── Lieferanten ─────────────────────────────────────────────────────────
+  // Whitelist: welche Felder darf der Client fuer einen Lieferanten setzen?
+  // Alles andere (id, tenant_id, erstellt) wird serverseitig gesetzt bzw. verworfen.
+  function pickLieferantFelder(input: any): Record<string, any> {
+    return {
+      firma: typeof input?.firma === "string" ? input.firma : null,
+      kontaktperson: typeof input?.kontaktperson === "string" ? input.kontaktperson : null,
+      email: typeof input?.email === "string" ? input.email : null,
+      telefon: typeof input?.telefon === "string" ? input.telefon : null,
+      adresse: typeof input?.adresse === "string" ? input.adresse : null,
+      plz: typeof input?.plz === "string" ? input.plz : null,
+      ort: typeof input?.ort === "string" ? input.ort : null,
+      konditionen: typeof input?.konditionen === "string" ? input.konditionen : null,
+      notiz: typeof input?.notiz === "string" ? input.notiz : null,
+    };
+  }
+
+  app.get("/api/lieferanten", async (req, res) => {
     try {
-      const { data, error } = await supabase
-        .from("lieferanten").select("*").order("firma", { ascending: true });
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { data, error } = await identity.client
+        .from("lieferanten").select("*")
+        .eq("tenant_id", identity.tenantId)
+        .order("firma", { ascending: true });
       if (error) throw error;
       res.json(data || []);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -5450,8 +5470,15 @@ export async function registerRoutes(
 
   app.post("/api/lieferanten", async (req, res) => {
     try {
-      const eintrag = { id: uid(), ...req.body, erstellt: new Date().toISOString() };
-      const { data, error } = await supabase.from("lieferanten").insert(eintrag).select().single();
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const eintrag = {
+        id: uid(),
+        ...pickLieferantFelder(req.body),
+        tenant_id: identity.tenantId,
+        erstellt: new Date().toISOString(),
+      };
+      const { data, error } = await identity.client.from("lieferanten").insert(eintrag).select().single();
       if (error) throw error;
       res.json(data);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -5459,8 +5486,17 @@ export async function registerRoutes(
 
   app.patch("/api/lieferanten/:id", async (req, res) => {
     try {
-      const { data, error } = await supabase
-        .from("lieferanten").update(req.body).eq("id", req.params.id).select().single();
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      // Existenz- + Tenant-Check
+      const { data: existing, error: exErr } = await identity.client
+        .from("lieferanten").select("id").eq("id", req.params.id).eq("tenant_id", identity.tenantId).maybeSingle();
+      if (exErr) throw exErr;
+      if (!existing) return res.status(404).json({ message: "Lieferant nicht gefunden." });
+      const { data, error } = await identity.client
+        .from("lieferanten").update(pickLieferantFelder(req.body))
+        .eq("id", req.params.id).eq("tenant_id", identity.tenantId)
+        .select().single();
       if (error) throw error;
       res.json(data);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -5468,16 +5504,61 @@ export async function registerRoutes(
 
   app.delete("/api/lieferanten/:id", async (req, res) => {
     try {
-      const { error } = await supabase.from("lieferanten").delete().eq("id", req.params.id);
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { data: existing, error: exErr } = await identity.client
+        .from("lieferanten").select("id").eq("id", req.params.id).eq("tenant_id", identity.tenantId).maybeSingle();
+      if (exErr) throw exErr;
+      if (!existing) return res.status(404).json({ message: "Lieferant nicht gefunden." });
+      const { error } = await identity.client
+        .from("lieferanten").delete().eq("id", req.params.id).eq("tenant_id", identity.tenantId);
       if (error) throw error;
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
-  // ─── Materialbestellungen ─────────────────────────────────────────────────────
+  // ─── Materialbestellungen ──────────────────────────────────────────────────
+  function pickMaterialbestellungFelder(input: any): Record<string, any> {
+    return {
+      lieferant_id: typeof input?.lieferant_id === "string" ? input.lieferant_id : null,
+      auftrag_id: typeof input?.auftrag_id === "string" ? input.auftrag_id : null,
+      artikel: typeof input?.artikel === "string" ? input.artikel : null,
+      menge: pickFiniteNumber(input?.menge),
+      einheit: typeof input?.einheit === "string" ? input.einheit : null,
+      preis: pickFiniteNumber(input?.preis),
+      status: typeof input?.status === "string" ? input.status : "offen",
+      bestellt_am: typeof input?.bestellt_am === "string" ? input.bestellt_am : null,
+      geliefert_am: typeof input?.geliefert_am === "string" ? input.geliefert_am : null,
+      notiz: typeof input?.notiz === "string" ? input.notiz : null,
+    };
+  }
+
+  // Prueft, dass eine (optionale) auftrag_id zum eingeloggten Mandanten gehoert.
+  async function auftragGehoertZuTenant(identity: DashboardPreferenceIdentity, auftragId: string | null | undefined): Promise<boolean> {
+    if (!auftragId) return true; // erlaubt: Bestellung/Termin ohne Auftragszuordnung
+    const { data, error } = await identity.client
+      .from("auftraege").select("id").eq("id", auftragId).eq("tenant_id", identity.tenantId).maybeSingle();
+    if (error) throw error;
+    return !!data;
+  }
+
+  // Prueft, dass eine (optionale) lieferant_id zum eingeloggten Mandanten gehoert.
+  async function lieferantGehoertZuTenant(identity: DashboardPreferenceIdentity, lieferantId: string | null | undefined): Promise<boolean> {
+    if (!lieferantId) return true;
+    const { data, error } = await identity.client
+      .from("lieferanten").select("id").eq("id", lieferantId).eq("tenant_id", identity.tenantId).maybeSingle();
+    if (error) throw error;
+    return !!data;
+  }
+
   app.get("/api/materialbestellungen", async (req, res) => {
     try {
-      let query = supabase.from("materialbestellungen").select("*").order("erstellt", { ascending: false });
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      let query = identity.client
+        .from("materialbestellungen").select("*")
+        .eq("tenant_id", identity.tenantId)
+        .order("erstellt", { ascending: false });
       if (req.query.auftrag_id) query = query.eq("auftrag_id", String(req.query.auftrag_id));
       const { data, error } = await query;
       if (error) throw error;
@@ -5487,8 +5568,22 @@ export async function registerRoutes(
 
   app.post("/api/materialbestellungen", async (req, res) => {
     try {
-      const eintrag = { id: uid(), ...req.body, erstellt: new Date().toISOString() };
-      const { data, error } = await supabase.from("materialbestellungen").insert(eintrag).select().single();
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const felder = pickMaterialbestellungFelder(req.body);
+      if (!(await auftragGehoertZuTenant(identity, felder.auftrag_id))) {
+        return res.status(404).json({ message: "Auftrag nicht gefunden." });
+      }
+      if (!(await lieferantGehoertZuTenant(identity, felder.lieferant_id))) {
+        return res.status(404).json({ message: "Lieferant nicht gefunden." });
+      }
+      const eintrag = {
+        id: uid(),
+        ...felder,
+        tenant_id: identity.tenantId,
+        erstellt: new Date().toISOString(),
+      };
+      const { data, error } = await identity.client.from("materialbestellungen").insert(eintrag).select().single();
       if (error) throw error;
       res.json(data);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -5496,8 +5591,23 @@ export async function registerRoutes(
 
   app.patch("/api/materialbestellungen/:id", async (req, res) => {
     try {
-      const { data, error } = await supabase
-        .from("materialbestellungen").update(req.body).eq("id", req.params.id).select().single();
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { data: existing, error: exErr } = await identity.client
+        .from("materialbestellungen").select("id").eq("id", req.params.id).eq("tenant_id", identity.tenantId).maybeSingle();
+      if (exErr) throw exErr;
+      if (!existing) return res.status(404).json({ message: "Bestellung nicht gefunden." });
+      const felder = pickMaterialbestellungFelder(req.body);
+      if (!(await auftragGehoertZuTenant(identity, felder.auftrag_id))) {
+        return res.status(404).json({ message: "Auftrag nicht gefunden." });
+      }
+      if (!(await lieferantGehoertZuTenant(identity, felder.lieferant_id))) {
+        return res.status(404).json({ message: "Lieferant nicht gefunden." });
+      }
+      const { data, error } = await identity.client
+        .from("materialbestellungen").update(felder)
+        .eq("id", req.params.id).eq("tenant_id", identity.tenantId)
+        .select().single();
       if (error) throw error;
       res.json(data);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -5505,7 +5615,14 @@ export async function registerRoutes(
 
   app.delete("/api/materialbestellungen/:id", async (req, res) => {
     try {
-      const { error } = await supabase.from("materialbestellungen").delete().eq("id", req.params.id);
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { data: existing, error: exErr } = await identity.client
+        .from("materialbestellungen").select("id").eq("id", req.params.id).eq("tenant_id", identity.tenantId).maybeSingle();
+      if (exErr) throw exErr;
+      if (!existing) return res.status(404).json({ message: "Bestellung nicht gefunden." });
+      const { error } = await identity.client
+        .from("materialbestellungen").delete().eq("id", req.params.id).eq("tenant_id", identity.tenantId);
       if (error) throw error;
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -6728,9 +6845,29 @@ export async function registerRoutes(
   });
 
   // ─── LAGERVERWALTUNG ──────────────────────────────────────────────────────────
+  function pickLagerArtikelFelder(input: any): Record<string, any> {
+    return {
+      artikelnummer: typeof input?.artikelnummer === "string" ? input.artikelnummer : null,
+      bezeichnung: typeof input?.bezeichnung === "string" ? input.bezeichnung : null,
+      kategorie: typeof input?.kategorie === "string" ? input.kategorie : null,
+      einheit: typeof input?.einheit === "string" ? input.einheit : null,
+      bestand: pickFiniteNumber(input?.bestand) ?? 0,
+      mindestbestand: pickFiniteNumber(input?.mindestbestand) ?? 0,
+      lagerort: typeof input?.lagerort === "string" ? input.lagerort : null,
+      lieferant: typeof input?.lieferant === "string" ? input.lieferant : null,
+      preis_pro_einheit: pickFiniteNumber(input?.preis_pro_einheit),
+      notiz: typeof input?.notiz === "string" ? input.notiz : null,
+    };
+  }
+
   app.get("/api/lager", async (req, res) => {
     try {
-      const { data, error } = await supabase.from("lager_artikel").select("*").order("bezeichnung");
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { data, error } = await identity.client
+        .from("lager_artikel").select("*")
+        .eq("tenant_id", identity.tenantId)
+        .order("bezeichnung");
       if (error) return res.status(500).json({ message: error.message });
       res.json(data || []);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -6738,7 +6875,15 @@ export async function registerRoutes(
 
   app.post("/api/lager", async (req, res) => {
     try {
-      const { data, error } = await supabase.from("lager_artikel").insert({ ...req.body, id: uid() }).select().single();
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const eintrag = {
+        id: uid(),
+        ...pickLagerArtikelFelder(req.body),
+        tenant_id: identity.tenantId,
+        created_at: new Date().toISOString(),
+      };
+      const { data, error } = await identity.client.from("lager_artikel").insert(eintrag).select().single();
       if (error) return res.status(500).json({ message: error.message });
       res.json(data);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -6746,7 +6891,16 @@ export async function registerRoutes(
 
   app.put("/api/lager/:id", async (req, res) => {
     try {
-      const { data, error } = await supabase.from("lager_artikel").update(req.body).eq("id", req.params.id).select().single();
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { data: existing, error: exErr } = await identity.client
+        .from("lager_artikel").select("id").eq("id", req.params.id).eq("tenant_id", identity.tenantId).maybeSingle();
+      if (exErr) return res.status(500).json({ message: exErr.message });
+      if (!existing) return res.status(404).json({ message: "Artikel nicht gefunden." });
+      const { data, error } = await identity.client
+        .from("lager_artikel").update(pickLagerArtikelFelder(req.body))
+        .eq("id", req.params.id).eq("tenant_id", identity.tenantId)
+        .select().single();
       if (error) return res.status(500).json({ message: error.message });
       res.json(data);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -6754,7 +6908,15 @@ export async function registerRoutes(
 
   app.delete("/api/lager/:id", async (req, res) => {
     try {
-      const { error } = await supabase.from("lager_artikel").delete().eq("id", req.params.id);
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { data: existing, error: exErr } = await identity.client
+        .from("lager_artikel").select("id").eq("id", req.params.id).eq("tenant_id", identity.tenantId).maybeSingle();
+      if (exErr) return res.status(500).json({ message: exErr.message });
+      if (!existing) return res.status(404).json({ message: "Artikel nicht gefunden." });
+      const { error } = await identity.client
+        .from("lager_artikel").delete()
+        .eq("id", req.params.id).eq("tenant_id", identity.tenantId);
       if (error) return res.status(500).json({ message: error.message });
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -6762,25 +6924,78 @@ export async function registerRoutes(
 
   app.post("/api/lager/:id/buchung", async (req, res) => {
     try {
-      const { typ, menge } = req.body;
-      const { data: art } = await supabase.from("lager_artikel").select("bestand").eq("id", req.params.id).single();
-      if (!art) return res.status(404).json({ message: "Artikel nicht gefunden" });
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+
+      // Typ validieren (nur eingang/ausgang zulassen)
+      const typ = req.body?.typ === "eingang" ? "eingang" : req.body?.typ === "ausgang" ? "ausgang" : null;
+      if (!typ) return res.status(400).json({ message: "Ungueltiger Buchungstyp." });
+
+      // Menge validieren: positiver, endlicher Wert
+      const menge = pickFiniteNumber(req.body?.menge);
+      if (menge === null || menge <= 0) {
+        return res.status(400).json({ message: "Menge muss eine positive Zahl sein." });
+      }
+
+      const notiz = typeof req.body?.notiz === "string" ? req.body.notiz : null;
+
+      // Artikel mit Tenant-Check laden
+      const { data: art, error: artErr } = await identity.client
+        .from("lager_artikel").select("bestand")
+        .eq("id", req.params.id).eq("tenant_id", identity.tenantId)
+        .maybeSingle();
+      if (artErr) return res.status(500).json({ message: artErr.message });
+      if (!art) return res.status(404).json({ message: "Artikel nicht gefunden." });
+
+      const alterBestand = Number(art.bestand) || 0;
       const neuerBestand = typ === "eingang"
-        ? Number(art.bestand) + Number(menge)
-        : Math.max(0, Number(art.bestand) - Number(menge));
-      const { data, error } = await supabase.from("lager_artikel").update({ bestand: neuerBestand }).eq("id", req.params.id).select().single();
+        ? alterBestand + menge
+        : Math.max(0, alterBestand - menge);
+
+      // Bestand aktualisieren (mit Tenant-Guard in WHERE)
+      const { data, error } = await identity.client
+        .from("lager_artikel").update({ bestand: neuerBestand })
+        .eq("id", req.params.id).eq("tenant_id", identity.tenantId)
+        .select().single();
       if (error) return res.status(500).json({ message: error.message });
-      // Log buchung
-      await supabase.from("lager_buchungen").insert({ id: uid(), artikel_id: req.params.id, typ, menge: Number(menge), notiz: req.body.notiz || null, bestand_nach: neuerBestand });
+
+      // Buchung mit tenant_id protokollieren
+      await identity.client.from("lager_buchungen").insert({
+        id: uid(),
+        artikel_id: req.params.id,
+        typ,
+        menge,
+        notiz,
+        bestand_nach: neuerBestand,
+        tenant_id: identity.tenantId,
+        created_at: new Date().toISOString(),
+      });
       res.json(data);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
   // ─── LIEFERTERMINE ────────────────────────────────────────────────────────────
+  function pickLiefertermineFelder(input: any): Record<string, any> {
+    return {
+      auftrag_id: typeof input?.auftrag_id === "string" ? input.auftrag_id : null,
+      bezeichnung: typeof input?.bezeichnung === "string" ? input.bezeichnung : null,
+      lieferant: typeof input?.lieferant === "string" ? input.lieferant : null,
+      erwartet_am: typeof input?.erwartet_am === "string" ? input.erwartet_am : null,
+      geliefert_am: typeof input?.geliefert_am === "string" ? input.geliefert_am : null,
+      status: typeof input?.status === "string" ? input.status : "offen",
+      notiz: typeof input?.notiz === "string" ? input.notiz : null,
+    };
+  }
+
   app.get("/api/liefertermine", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       const auftrag_id = req.query.auftrag_id as string | undefined;
-      let q = supabase.from("liefertermine").select("*").order("erwartet_am");
+      let q = identity.client
+        .from("liefertermine").select("*")
+        .eq("tenant_id", identity.tenantId)
+        .order("erwartet_am");
       if (auftrag_id) q = q.eq("auftrag_id", auftrag_id);
       const { data, error } = await q;
       if (error) return res.status(500).json({ message: error.message });
@@ -6790,7 +7005,19 @@ export async function registerRoutes(
 
   app.post("/api/liefertermine", async (req, res) => {
     try {
-      const { data, error } = await supabase.from("liefertermine").insert({ ...req.body, id: uid() }).select().single();
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const felder = pickLiefertermineFelder(req.body);
+      if (!(await auftragGehoertZuTenant(identity, felder.auftrag_id))) {
+        return res.status(404).json({ message: "Auftrag nicht gefunden." });
+      }
+      const eintrag = {
+        id: uid(),
+        ...felder,
+        tenant_id: identity.tenantId,
+        created_at: new Date().toISOString(),
+      };
+      const { data, error } = await identity.client.from("liefertermine").insert(eintrag).select().single();
       if (error) return res.status(500).json({ message: error.message });
       res.json(data);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -6798,7 +7025,20 @@ export async function registerRoutes(
 
   app.put("/api/liefertermine/:id", async (req, res) => {
     try {
-      const { data, error } = await supabase.from("liefertermine").update(req.body).eq("id", req.params.id).select().single();
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { data: existing, error: exErr } = await identity.client
+        .from("liefertermine").select("id").eq("id", req.params.id).eq("tenant_id", identity.tenantId).maybeSingle();
+      if (exErr) return res.status(500).json({ message: exErr.message });
+      if (!existing) return res.status(404).json({ message: "Liefertermin nicht gefunden." });
+      const felder = pickLiefertermineFelder(req.body);
+      if (!(await auftragGehoertZuTenant(identity, felder.auftrag_id))) {
+        return res.status(404).json({ message: "Auftrag nicht gefunden." });
+      }
+      const { data, error } = await identity.client
+        .from("liefertermine").update(felder)
+        .eq("id", req.params.id).eq("tenant_id", identity.tenantId)
+        .select().single();
       if (error) return res.status(500).json({ message: error.message });
       res.json(data);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -6806,7 +7046,15 @@ export async function registerRoutes(
 
   app.delete("/api/liefertermine/:id", async (req, res) => {
     try {
-      const { error } = await supabase.from("liefertermine").delete().eq("id", req.params.id);
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { data: existing, error: exErr } = await identity.client
+        .from("liefertermine").select("id").eq("id", req.params.id).eq("tenant_id", identity.tenantId).maybeSingle();
+      if (exErr) return res.status(500).json({ message: exErr.message });
+      if (!existing) return res.status(404).json({ message: "Liefertermin nicht gefunden." });
+      const { error } = await identity.client
+        .from("liefertermine").delete()
+        .eq("id", req.params.id).eq("tenant_id", identity.tenantId);
       if (error) return res.status(500).json({ message: error.message });
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
