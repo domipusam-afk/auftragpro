@@ -700,6 +700,14 @@ export async function registerRoutes(
 
   // ============= AUFTRAEGE =============
 
+  // Aktuellen MWST-Satz aus den Einstellungen lesen (Default 8.1%, falls nicht gesetzt).
+  // Zentrale Stelle, damit der Satz nirgends mehr hardcodiert ist.
+  const ladeMwstSatz = async (): Promise<number> => {
+    const { data: settingsArr } = await supabase.from("einstellungen").select("schluessel,wert").eq("schluessel", "mwst_satz");
+    const wert = settingsArr?.[0]?.wert;
+    return parseFloat(wert || "8.1");
+  };
+
   // Rechnungsbetrag und Zahlungsstatus je Auftrag direkt aus der Tabelle "rechnungen"
   // ableiten. Jede Ansicht, die einen Auftrag ausliefert, muss das hierüber tun — sonst
   // zeigt sie das gespiegelte auftraege.rechnungs_betrag, das veraltet sein kann.
@@ -726,11 +734,11 @@ export async function registerRoutes(
   // Die abgeleiteten Werte an einen Auftragsdatensatz anhängen. Ohne Rechnung bleibt der
   // gespeicherte Betrag stehen: er ist bei Altdaten der einzige Hinweis auf eine
   // Fakturierung; anzahl_rechnungen = 0 macht das in der UI kenntlich.
-  const mitRechnungsStatus = (auftrag: any, map: Map<string, any>) => {
+  const mitRechnungsStatus = (auftrag: any, map: Map<string, any>, mwstSatz: number) => {
     const e = map.get(auftrag.id);
     return {
       ...auftrag,
-      rechnungs_betrag: e ? Math.round(e.netto * 1.081 * 100) / 100 : auftrag.rechnungs_betrag,
+      rechnungs_betrag: e ? Math.round(e.netto * (1 + mwstSatz / 100) * 100) / 100 : auftrag.rechnungs_betrag,
       anzahl_rechnungen: e?.anzahl || 0,
       rechnung_bezahlt: !!e && e.bezahlt === e.anzahl,
       rechnung_bezahlt_am: e?.letztes || null,
@@ -739,12 +747,13 @@ export async function registerRoutes(
 
   app.get("/api/auftraege", async (_req, res) => {
     try {
-      const [{ data, error }, rechnungsStatus] = await Promise.all([
+      const [{ data, error }, rechnungsStatus, mwstSatz] = await Promise.all([
         supabase.from("auftraege").select("*").order("erstellt", { ascending: false }),
         rechnungsStatusJeAuftrag(),
+        ladeMwstSatz(),
       ]);
       if (error) throw error;
-      res.json((data || []).map((a: any) => mitRechnungsStatus(a, rechnungsStatus)));
+      res.json((data || []).map((a: any) => mitRechnungsStatus(a, rechnungsStatus, mwstSatz)));
     } catch (e) {
       res.status(500).json({ message: asError(e) });
     }
@@ -753,6 +762,12 @@ export async function registerRoutes(
   app.post("/api/auftraege", async (req, res) => {
     try {
       const body = req.body || {};
+      if (!body.titel || !String(body.titel).trim()) {
+        return res.status(400).json({ message: "Titel ist erforderlich" });
+      }
+      if (!body.kunde || !String(body.kunde).trim()) {
+        return res.status(400).json({ message: "Kunde ist erforderlich" });
+      }
       // gen nr
       const { data: allRows } = await supabase
         .from("auftraege")
@@ -763,8 +778,8 @@ export async function registerRoutes(
       const row = {
         id,
         nr,
-        titel: body.titel || "(Ohne Titel)",
-        kunde: body.kunde || "",
+        titel: body.titel,
+        kunde: body.kunde,
         kunde_adresse: body.kunde_adresse || null,
         kunde_email: body.kunde_email || null,
         kunde_telefon: body.kunde_telefon || null,
@@ -835,7 +850,7 @@ export async function registerRoutes(
         .eq("auftrag_id", id)
         .order("datum", { ascending: false });
       res.json({
-        ...mitRechnungsStatus(auftrag, await rechnungsStatusJeAuftrag([id])),
+        ...mitRechnungsStatus(auftrag, await rechnungsStatusJeAuftrag([id]), await ladeMwstSatz()),
         verlauf: verlauf || [],
         notizen: notizen || [],
         dokumente: dokumente || [],
@@ -957,6 +972,48 @@ export async function registerRoutes(
       await supabase.from("notizen").delete().eq("auftrag_id", id);
       await supabase.from("verlauf").delete().eq("auftrag_id", id);
       await supabase.from("rechnungen").delete().eq("auftrag_id", id);
+
+      // Schritt-Fotos: zuerst Storage-Dateien löschen, dann DB-Zeilen
+      const { data: fotosZuLoeschen } = await supabase
+        .from("auftrag_schritt_fotos")
+        .select("url")
+        .eq("auftrag_id", id);
+      const storagePfade = (fotosZuLoeschen || [])
+        .map((f: any) => f.url?.split("/schritt-fotos/")[1])
+        .filter(Boolean);
+      if (storagePfade.length > 0) {
+        await supabase.storage.from("schritt-fotos").remove(storagePfade);
+      }
+      await supabase.from("auftrag_schritt_fotos").delete().eq("auftrag_id", id);
+      await supabase.from("auftrag_schritte").delete().eq("auftrag_id", id);
+
+      // Positionen, Zeiterfassung, Kommentare
+      await supabase.from("auftrag_positionen").delete().eq("auftrag_id", id);
+      await supabase.from("zeiteintraege").delete().eq("auftrag_id", id);
+      await supabase.from("auftrag_kommentare").delete().eq("auftrag_id", id);
+      await supabase.from("aufgaben").delete().eq("auftrag_id", id);
+
+      // Vor-/Nachkalkulation
+      await supabase.from("vorkalkulation_material").delete().eq("auftrag_id", id);
+      await supabase.from("vorkalkulation_fremdleistungen").delete().eq("auftrag_id", id);
+      await supabase.from("vorkalkulation_stunden").delete().eq("auftrag_id", id);
+      await supabase.from("vorkalkulation_config").delete().eq("auftrag_id", id);
+      await supabase.from("vorkalkulation_soek").delete().eq("auftrag_id", id);
+      await supabase.from("vorkalkulation_hilfsmaterial").delete().eq("auftrag_id", id);
+      await supabase.from("vorkalkulation_hauptmaterial_flaeche").delete().eq("auftrag_id", id);
+      await supabase.from("nachkalkulation_material").delete().eq("auftrag_id", id);
+      await supabase.from("nachkalkulation_fremdleistungen").delete().eq("auftrag_id", id);
+      await supabase.from("nachkalkulation_stunden").delete().eq("auftrag_id", id);
+      await supabase.from("nachkalkulation_soek").delete().eq("auftrag_id", id);
+
+      // Sonstige Auftrags-verknüpfte Daten
+      await supabase.from("kalkulationen").delete().eq("auftrag_id", id);
+      await supabase.from("garantien").delete().eq("auftrag_id", id);
+      await supabase.from("liefertermine").delete().eq("auftrag_id", id);
+      await supabase.from("foto_dokumentation").delete().eq("auftrag_id", id);
+      await supabase.from("tagesrapporte").delete().eq("auftrag_id", id);
+      await supabase.from("reklamationen").delete().eq("auftrag_id", id);
+
       const { error } = await supabase.from("auftraege").delete().eq("id", id);
       if (error) throw error;
       res.json({ ok: true });
@@ -1151,7 +1208,7 @@ export async function registerRoutes(
     // von "Rechnung über 0.00" unterscheidbar und die Liste zeigt 0.00 statt "—".
     const bruttoSumme = (alleRechnungen || []).length === 0
       ? null
-      : Math.round(nettoSumme * 1.081 * 100) / 100;
+      : Math.round(nettoSumme * (1 + (await ladeMwstSatz()) / 100) * 100) / 100;
     const { error: schreibFehler } = await supabase
       .from("auftraege")
       .update({ rechnungs_betrag: bruttoSumme })
@@ -5515,7 +5572,8 @@ export async function registerRoutes(
 
   app.post("/api/auftraege/:id/kommentare", async (req, res) => {
     try {
-      const { autor, text } = req.body;
+      const { autor, text } = req.body || {};
+      if (!text || !String(text).trim()) return res.status(400).json({ message: "text required" });
       const eintrag = {
         id: uid(),
         auftrag_id: req.params.id,
@@ -5816,12 +5874,13 @@ export async function registerRoutes(
         nettoJeAuftrag.set(r.auftrag_id, (nettoJeAuftrag.get(r.auftrag_id) || 0) + (Number(r.betrag) || 0));
         anzahlJeAuftrag.set(r.auftrag_id, (anzahlJeAuftrag.get(r.auftrag_id) || 0) + 1);
       }
+      const mwstFaktor = 1 + (await ladeMwstSatz()) / 100;
 
       const korrigiert: any[] = [];
       const uebersprungen: any[] = [];
       for (const a of auftraege || []) {
         const anzahl = anzahlJeAuftrag.get(a.id) || 0;
-        const soll = anzahl === 0 ? null : Math.round((nettoJeAuftrag.get(a.id) || 0) * 1.081 * 100) / 100;
+        const soll = anzahl === 0 ? null : Math.round((nettoJeAuftrag.get(a.id) || 0) * mwstFaktor * 100) / 100;
         const ist = a.rechnungs_betrag == null ? null : Math.round(Number(a.rechnungs_betrag) * 100) / 100;
         if (soll === ist) continue;
 
@@ -7039,6 +7098,17 @@ export async function registerRoutes(
 
   app.delete("/api/auftraege/:id/schritte/:sid", async (req, res) => {
     try {
+      const { data: fotosZuLoeschen } = await supabase
+        .from("auftrag_schritt_fotos")
+        .select("url")
+        .eq("schritt_id", req.params.sid);
+      const storagePfade = (fotosZuLoeschen || [])
+        .map((f: any) => f.url?.split("/schritt-fotos/")[1])
+        .filter(Boolean);
+      if (storagePfade.length > 0) {
+        await supabase.storage.from("schritt-fotos").remove(storagePfade);
+      }
+      await supabase.from("auftrag_schritt_fotos").delete().eq("schritt_id", req.params.sid);
       await supabase.from("auftrag_schritte").delete().eq("id", req.params.sid);
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ message: asError(e) }); }

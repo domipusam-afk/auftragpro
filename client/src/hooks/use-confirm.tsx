@@ -13,6 +13,7 @@ import {
 interface ConfirmOptions {
   title?: string;
   description?: string;
+  confirmLabel?: string;
 }
 
 export function useConfirm() {
@@ -20,6 +21,7 @@ export function useConfirm() {
     resolve: (v: boolean) => void;
     title: string;
     description: string;
+    confirmLabel: string;
   } | null>(null);
 
   const confirm = useCallback((options: ConfirmOptions = {}): Promise<boolean> => {
@@ -28,6 +30,7 @@ export function useConfirm() {
         resolve,
         title: options.title ?? "Eintrag löschen?",
         description: options.description ?? "Diese Aktion kann nicht rückgängig gemacht werden.",
+        confirmLabel: options.confirmLabel ?? "Löschen",
       });
     });
   }, []);
@@ -49,7 +52,7 @@ export function useConfirm() {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => { pending.resolve(true); setPending(null); }}
             >
-              Löschen
+              {pending.confirmLabel}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

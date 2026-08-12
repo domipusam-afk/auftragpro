@@ -117,6 +117,7 @@ function StatusPipeline({
   disabled?: boolean;
 }) {
   const isCancelled = current === "storniert";
+  const { confirm: confirmStatus, ConfirmDialog: StatusConfirmDialog } = useConfirm();
 
   // Dynamische Pipeline aus DB laden
   const { data: pipeline = [] } = useQuery<{ id: string; label: string; reihenfolge: number; farbe: string }[]>({
@@ -145,12 +146,18 @@ function StatusPipeline({
               key={s.id}
               type="button"
               disabled={disabled}
-              onClick={() => {
+              onClick={async () => {
                 // Versuche passenden Status-Key zu finden, sonst label direkt
                 const matchKey = (Object.keys(STATUS_LABEL) as Status[]).find(
                   k => STATUS_LABEL[k].toLowerCase() === s.label.toLowerCase()
                 );
-                if (matchKey) onChange(matchKey);
+                if (!matchKey || matchKey === current) return;
+                const ok = await confirmStatus({
+                  title: "Status ändern?",
+                  description: `Auftragsstatus wird von "${STATUS_LABEL[current] ?? current}" auf "${s.label}" geändert.`,
+                  confirmLabel: "Status ändern",
+                });
+                if (ok) onChange(matchKey);
               }}
               className={cn(
                 "min-w-[calc(50%-0.2rem)] sm:min-w-0 sm:flex-1 basis-[calc(50%-0.2rem)] sm:basis-0 px-2 sm:px-3 py-2 text-xs font-medium rounded-md border transition-colors",
@@ -174,7 +181,15 @@ function StatusPipeline({
       <button
         type="button"
         disabled={disabled}
-        onClick={() => onChange("storniert")}
+        onClick={async () => {
+          if (isCancelled) return;
+          const ok = await confirmStatus({
+            title: "Auftrag stornieren?",
+            description: "Der Auftrag wird als storniert markiert. Diese Aktion kann später wieder geändert werden, ist aber nicht rückgängig zu machen ohne erneuten Statuswechsel.",
+            confirmLabel: "Stornieren",
+          });
+          if (ok) onChange("storniert");
+        }}
         className={cn(
           "self-start text-xs px-3 py-1.5 rounded-md border transition-colors",
           isCancelled
@@ -185,6 +200,7 @@ function StatusPipeline({
       >
         Storniert
       </button>
+      <StatusConfirmDialog />
     </div>
   );
 }
