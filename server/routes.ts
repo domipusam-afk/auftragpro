@@ -4788,148 +4788,10 @@ export async function registerRoutes(
   });
 
   // ============= NACHKALKULATION =============
-
-  // GET nachkalkulation material
-  app.get("/api/nachkalkulation/:id/material", async (req, res) => {
-    try {
-      const { id } = req.params;
-      const { data, error } = await supabase
-        .from("nachkalkulation_material")
-        .select("*")
-        .eq("auftrag_id", id)
-        .order("created_at", { ascending: true });
-      if (error) return res.status(500).json({ message: asError(error) });
-      res.json(data || []);
-    } catch (e) { res.status(500).json({ message: asError(e) }); }
-  });
-
-  // POST nachkalkulation material
-  app.post("/api/nachkalkulation/:id/material", async (req, res) => {
-    try {
-      const { id } = req.params;
-      const b = req.body;
-      const row = {
-        id: uid(),
-        auftrag_id: id,
-        bezeichnung: String(b.bezeichnung || ""),
-        lieferant: String(b.lieferant || ""),
-        betrag_chf: Number(b.betrag_chf) || 0,
-        datum: String(b.datum || new Date().toISOString().slice(0, 10)),
-        notiz: String(b.notiz || ""),
-      };
-      const { data, error } = await supabase
-        .from("nachkalkulation_material")
-        .insert(row)
-        .select()
-        .single();
-      if (error) return res.status(500).json({ message: asError(error) });
-      res.json(data);
-    } catch (e) { res.status(500).json({ message: asError(e) }); }
-  });
-
-  // DELETE nachkalkulation material/:mid
-  app.delete("/api/nachkalkulation/:id/material/:mid", async (req, res) => {
-    try {
-      const { mid } = req.params;
-      const { error } = await supabase
-        .from("nachkalkulation_material")
-        .delete()
-        .eq("id", mid);
-      if (error) return res.status(500).json({ message: asError(error) });
-      res.json({ ok: true });
-    } catch (e) { res.status(500).json({ message: asError(e) }); }
-  });
-
-  // GET nachkalkulation fremdleistungen
-  app.get("/api/nachkalkulation/:id/fremdleistungen", async (req, res) => {
-    try {
-      const { id } = req.params;
-      const { data, error } = await supabase
-        .from("nachkalkulation_fremdleistungen")
-        .select("*")
-        .eq("auftrag_id", id)
-        .order("created_at", { ascending: true });
-      if (error) return res.status(500).json({ message: asError(error) });
-      res.json(data || []);
-    } catch (e) { res.status(500).json({ message: asError(e) }); }
-  });
-
-  // POST nachkalkulation fremdleistungen
-  app.post("/api/nachkalkulation/:id/fremdleistungen", async (req, res) => {
-    try {
-      const { id } = req.params;
-      const b = req.body;
-      const row = {
-        id: uid(),
-        auftrag_id: id,
-        bezeichnung: String(b.bezeichnung || ""),
-        lieferant: String(b.lieferant || ""),
-        betrag_chf: Number(b.betrag_chf) || 0,
-        datum: String(b.datum || new Date().toISOString().slice(0, 10)),
-        notiz: String(b.notiz || ""),
-      };
-      const { data, error } = await supabase
-        .from("nachkalkulation_fremdleistungen")
-        .insert(row)
-        .select()
-        .single();
-      if (error) return res.status(500).json({ message: asError(error) });
-      res.json(data);
-    } catch (e) { res.status(500).json({ message: asError(e) }); }
-  });
-
-  // DELETE nachkalkulation fremdleistungen/:fid
-  app.delete("/api/nachkalkulation/:id/fremdleistungen/:fid", async (req, res) => {
-    try {
-      const { fid } = req.params;
-      const { error } = await supabase
-        .from("nachkalkulation_fremdleistungen")
-        .delete()
-        .eq("id", fid);
-      if (error) return res.status(500).json({ message: asError(error) });
-      res.json({ ok: true });
-    } catch (e) { res.status(500).json({ message: asError(e) }); }
-  });
-
-  // ── NK SOEK (Ist-Sondereinzelkosten) ─────────────────────────────────────────
-  app.get("/api/nachkalkulation/:id/soek", async (req, res) => {
-    try {
-      const { id } = req.params;
-      const { data, error } = await supabase
-        .from("nachkalkulation_soek")
-        .select("*")
-        .eq("auftrag_id", id)
-        .order("datum");
-      if (error) return res.status(500).json({ message: asError(error) });
-      res.json(data ?? []);
-    } catch (e) { res.status(500).json({ message: asError(e) }); }
-  });
-
-  app.post("/api/nachkalkulation/:id/soek", async (req, res) => {
-    try {
-      const { id } = req.params;
-      const body = { ...req.body, auftrag_id: id };
-      const { data, error } = await supabase
-        .from("nachkalkulation_soek")
-        .insert(body)
-        .select()
-        .single();
-      if (error) return res.status(500).json({ message: asError(error) });
-      res.json(data);
-    } catch (e) { res.status(500).json({ message: asError(e) }); }
-  });
-
-  app.delete("/api/nachkalkulation/:id/soek/:sid", async (req, res) => {
-    try {
-      const { sid } = req.params;
-      const { error } = await supabase
-        .from("nachkalkulation_soek")
-        .delete()
-        .eq("id", sid);
-      if (error) return res.status(500).json({ message: asError(error) });
-      res.json({ ok: true });
-    } catch (e) { res.status(500).json({ message: asError(e) }); }
-  });
+  // Der alte Namespace `/api/nachkalkulation/:id/{material,fremdleistungen,soek}`
+  // wurde entfernt (Bug 1, Bereich 7): dieselben Tabellen werden ausschliesslich
+  // über `/api/kalkulation/:auftragsId/nk-*` bedient (mit Tenant-Isolation).
+  // Nur `PATCH /api/nachkalkulation/:id/status` bleibt bestehen (siehe unten).
 
   // ============= KALKULATION PDF =============
 
@@ -5785,24 +5647,44 @@ export async function registerRoutes(
       res.json(combined);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
+  // Helper: Tenant-Auftrag-Guard — stellt sicher, dass :auftragsId dem eingeloggten Mandanten gehört.
+  async function requireNkAuftrag(req: Request, res: Response, auftragsId: string) {
+    const identity = dashboardPreferenceIdentity(req);
+    if (!identity) { res.status(401).json({ message: "Authentifizierung erforderlich." }); return null; }
+    const { data: auftrag, error: aErr } = await identity.client
+      .from("auftraege").select("id").eq("id", auftragsId).eq("tenant_id", identity.tenantId).maybeSingle();
+    if (aErr) { res.status(500).json({ error: aErr.message }); return null; }
+    if (!auftrag) { res.status(404).json({ message: "Auftrag nicht gefunden." }); return null; }
+    return identity;
+  }
+
+  // Helper: numerische Felder validieren.
+  function pickFiniteNumber(v: any): number | null {
+    const n = typeof v === "number" ? v : parseFloat(v);
+    return Number.isFinite(n) ? n : null;
+  }
+
   app.post("/api/kalkulation/:auftragsId/nk-stunden/sync-zeiterfassung", async (req, res) => {
     const { auftragsId } = req.params;
-    const { data: zeitDataRaw, error: zeitError } = await supabase.from("zeiteintraege").select("*").eq("auftrag_id", auftragsId);
+    const identity = await requireNkAuftrag(req, res, auftragsId);
+    if (!identity) return;
+    const { data: zeitDataRaw, error: zeitError } = await identity.client.from("zeiteintraege").select("*")
+      .eq("auftrag_id", auftragsId).eq("tenant_id", identity.tenantId);
     if (zeitError) return res.status(500).json({ error: zeitError.message });
     const zeitData = zeitDataRaw ?? [];
-    const { data: saetze = [] } = await supabase.from("stundensaetze").select("*");
+    const { data: saetze = [] } = await identity.client.from("stundensaetze").select("*").eq("tenant_id", identity.tenantId);
     let synced = 0;
     for (const ze of zeitData) {
-      const { data: existing } = await supabase.from("nachkalkulation_stunden").select("id").eq("zeiterfassung_id", ze.id).single();
+      const { data: existing } = await identity.client.from("nachkalkulation_stunden").select("id")
+        .eq("zeiterfassung_id", ze.id).eq("tenant_id", identity.tenantId).maybeSingle();
       if (existing) continue;
       const ortZe = ze.ort || "Montage";
       const satz = stundensatzFuer(saetze as any[], ze.ort, ze.maschinenpark);
       const stunden = (ze.dauer_minuten || 0) / 60;
-      // Bereich aus Ort ableiten
       const bereichMap: Record<string, string> = { "Avor": "Planung/AVOR", "Werkstatt": "Werkstatt", "Montage": "Montage" };
       const bereich = ze.bereich || bereichMap[ortZe] || ortZe;
-      await supabase.from("nachkalkulation_stunden").insert({
-        auftrag_id: auftragsId, bereich,
+      await identity.client.from("nachkalkulation_stunden").insert({
+        auftrag_id: auftragsId, tenant_id: identity.tenantId, bereich,
         mitarbeiter_name: ze.mitarbeiter || "", datum: ze.datum,
         ist_stunden: stunden, stundensatz: satz, total_chf: stunden * satz,
         quelle: "zeiterfassung", zeiterfassung_id: ze.id, bemerkung: ze.beschreibung || "",
@@ -5811,32 +5693,77 @@ export async function registerRoutes(
     }
     res.json({ synced });
   });
+
   app.post("/api/kalkulation/:auftragsId/nk-stunden", async (req, res) => {
     const { auftragsId } = req.params;
-    const row = { ...req.body, auftrag_id: auftragsId, quelle: "manuell" };
-    if (!row.total_chf) row.total_chf = (row.ist_stunden || 0) * (row.stundensatz || 0);
-    const { data, error } = await supabase.from("nachkalkulation_stunden").insert(row).select().single();
+    const identity = await requireNkAuftrag(req, res, auftragsId);
+    if (!identity) return;
+    const stunden = pickFiniteNumber(req.body?.ist_stunden) ?? 0;
+    const satz = pickFiniteNumber(req.body?.stundensatz) ?? 0;
+    if (stunden < 0 || satz < 0) return res.status(400).json({ message: "ist_stunden und stundensatz dürfen nicht negativ sein." });
+    const row: any = {
+      auftrag_id: auftragsId,
+      tenant_id: identity.tenantId,
+      quelle: "manuell",
+      bereich: typeof req.body?.bereich === "string" ? req.body.bereich : "Montage",
+      unterkategorie: typeof req.body?.unterkategorie === "string" ? req.body.unterkategorie : null,
+      mitarbeiter_name: typeof req.body?.mitarbeiter_name === "string" ? req.body.mitarbeiter_name : "",
+      datum: typeof req.body?.datum === "string" ? req.body.datum : new Date().toISOString().split("T")[0],
+      ist_stunden: stunden,
+      stundensatz: satz,
+      total_chf: stunden * satz,
+      bemerkung: typeof req.body?.bemerkung === "string" ? req.body.bemerkung : "",
+    };
+    const { data, error } = await identity.client.from("nachkalkulation_stunden").insert(row).select().single();
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
   });
+
   app.put("/api/kalkulation/nk-stunden/:id", async (req, res) => {
     const { id } = req.params;
-    const row = { ...req.body };
-    if (!row.total_chf) row.total_chf = (row.ist_stunden || 0) * (row.stundensatz || 0);
-    const { data, error } = await supabase.from("nachkalkulation_stunden").update(row).eq("id", id).select().single();
+    const identity = dashboardPreferenceIdentity(req);
+    if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+    const { data: existing, error: eErr } = await identity.client
+      .from("nachkalkulation_stunden").select("id, quelle").eq("id", id).eq("tenant_id", identity.tenantId).maybeSingle();
+    if (eErr) return res.status(500).json({ error: eErr.message });
+    if (!existing) return res.status(404).json({ message: "Zeile nicht gefunden." });
+    if (existing.quelle === "zeiterfassung") return res.status(400).json({ message: "Zeiterfassungs-Zeilen sind hier nicht editierbar." });
+    const stunden = pickFiniteNumber(req.body?.ist_stunden) ?? 0;
+    const satz = pickFiniteNumber(req.body?.stundensatz) ?? 0;
+    if (stunden < 0 || satz < 0) return res.status(400).json({ message: "ist_stunden und stundensatz dürfen nicht negativ sein." });
+    const patch: any = {
+      bereich: typeof req.body?.bereich === "string" ? req.body.bereich : undefined,
+      unterkategorie: typeof req.body?.unterkategorie === "string" ? req.body.unterkategorie : undefined,
+      mitarbeiter_name: typeof req.body?.mitarbeiter_name === "string" ? req.body.mitarbeiter_name : undefined,
+      datum: typeof req.body?.datum === "string" ? req.body.datum : undefined,
+      ist_stunden: stunden,
+      stundensatz: satz,
+      total_chf: stunden * satz,
+      bemerkung: typeof req.body?.bemerkung === "string" ? req.body.bemerkung : undefined,
+    };
+    Object.keys(patch).forEach((k) => patch[k] === undefined && delete patch[k]);
+    const { data, error } = await identity.client.from("nachkalkulation_stunden").update(patch)
+      .eq("id", id).eq("tenant_id", identity.tenantId).select().single();
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
   });
+
   app.delete("/api/kalkulation/nk-stunden/:id", async (req, res) => {
     const { id } = req.params;
-    // Prüfen ob es ein Zeiterfassung-Eintrag ist (quelle=zeiterfassung → löscht aus zeiteintraege)
-    const { data: row } = await supabase.from("nachkalkulation_stunden").select("quelle,zeiterfassung_id").eq("id", id).single();
-    if (row && row.quelle === "zeiterfassung" && row.zeiterfassung_id) {
-      const { error } = await supabase.from("zeiteintraege").delete().eq("id", row.zeiterfassung_id);
+    const identity = dashboardPreferenceIdentity(req);
+    if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+    const { data: row, error: rowErr } = await identity.client.from("nachkalkulation_stunden")
+      .select("quelle,zeiterfassung_id").eq("id", id).eq("tenant_id", identity.tenantId).maybeSingle();
+    if (rowErr) return res.status(500).json({ error: rowErr.message });
+    if (!row) return res.status(404).json({ message: "Zeile nicht gefunden." });
+    if (row.quelle === "zeiterfassung" && row.zeiterfassung_id) {
+      const { error } = await identity.client.from("zeiteintraege").delete()
+        .eq("id", row.zeiterfassung_id).eq("tenant_id", identity.tenantId);
       if (error) return res.status(500).json({ error: error.message });
       return res.json({ success: true, deleted_from: "zeiteintraege" });
     }
-    const { error } = await supabase.from("nachkalkulation_stunden").delete().eq("id", id);
+    const { error } = await identity.client.from("nachkalkulation_stunden").delete()
+      .eq("id", id).eq("tenant_id", identity.tenantId);
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true });
   });
@@ -5844,7 +5771,13 @@ export async function registerRoutes(
   // DELETE Zeiterfassung-Eintrag direkt (für NK IST-Stunden Live-View)
   app.delete("/api/kalkulation/nk-zeiterfassung/:zeitId", async (req, res) => {
     const { zeitId } = req.params;
-    const { error } = await supabase.from("zeiteintraege").delete().eq("id", zeitId);
+    const identity = dashboardPreferenceIdentity(req);
+    if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+    const { data: row, error: rowErr } = await identity.client.from("zeiteintraege")
+      .select("id").eq("id", zeitId).eq("tenant_id", identity.tenantId).maybeSingle();
+    if (rowErr) return res.status(500).json({ error: rowErr.message });
+    if (!row) return res.status(404).json({ message: "Zeiteintrag nicht gefunden." });
+    const { error } = await identity.client.from("zeiteintraege").delete().eq("id", zeitId).eq("tenant_id", identity.tenantId);
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true });
   });
@@ -5852,25 +5785,62 @@ export async function registerRoutes(
   // NK Material (IST)
   app.get("/api/kalkulation/:auftragsId/nk-material", async (req, res) => {
     const { auftragsId } = req.params;
-    const { data, error } = await supabase.from("nachkalkulation_material").select("*").eq("auftrag_id", auftragsId).order("datum");
+    const identity = await requireNkAuftrag(req, res, auftragsId);
+    if (!identity) return;
+    const { data, error } = await identity.client.from("nachkalkulation_material").select("*")
+      .eq("auftrag_id", auftragsId).eq("tenant_id", identity.tenantId).order("datum");
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
   });
   app.post("/api/kalkulation/:auftragsId/nk-material", async (req, res) => {
     const { auftragsId } = req.params;
-    const { data, error } = await supabase.from("nachkalkulation_material").insert({ ...req.body, auftrag_id: auftragsId }).select().single();
+    const identity = await requireNkAuftrag(req, res, auftragsId);
+    if (!identity) return;
+    const betrag = pickFiniteNumber(req.body?.betrag_chf);
+    if (betrag === null) return res.status(400).json({ message: "betrag_chf muss eine Zahl sein." });
+    const row: any = {
+      auftrag_id: auftragsId,
+      tenant_id: identity.tenantId,
+      bezeichnung: typeof req.body?.bezeichnung === "string" ? req.body.bezeichnung : "",
+      kategorie: typeof req.body?.kategorie === "string" ? req.body.kategorie : null,
+      lieferant: typeof req.body?.lieferant === "string" ? req.body.lieferant : "",
+      betrag_chf: betrag,
+      datum: typeof req.body?.datum === "string" ? req.body.datum : new Date().toISOString().split("T")[0],
+      rechnung_nr: typeof req.body?.rechnung_nr === "string" ? req.body.rechnung_nr : "",
+      bemerkung: typeof req.body?.bemerkung === "string" ? req.body.bemerkung : "",
+    };
+    const { data, error } = await identity.client.from("nachkalkulation_material").insert(row).select().single();
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
   });
   app.put("/api/kalkulation/nk-material/:id", async (req, res) => {
     const { id } = req.params;
-    const { data, error } = await supabase.from("nachkalkulation_material").update(req.body).eq("id", id).select().single();
+    const identity = dashboardPreferenceIdentity(req);
+    if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+    const patch: any = {};
+    if (typeof req.body?.bezeichnung === "string") patch.bezeichnung = req.body.bezeichnung;
+    if (typeof req.body?.kategorie === "string") patch.kategorie = req.body.kategorie;
+    if (typeof req.body?.lieferant === "string") patch.lieferant = req.body.lieferant;
+    if (req.body?.betrag_chf !== undefined) {
+      const b = pickFiniteNumber(req.body.betrag_chf);
+      if (b === null) return res.status(400).json({ message: "betrag_chf muss eine Zahl sein." });
+      patch.betrag_chf = b;
+    }
+    if (typeof req.body?.datum === "string") patch.datum = req.body.datum;
+    if (typeof req.body?.rechnung_nr === "string") patch.rechnung_nr = req.body.rechnung_nr;
+    if (typeof req.body?.bemerkung === "string") patch.bemerkung = req.body.bemerkung;
+    const { data, error } = await identity.client.from("nachkalkulation_material").update(patch)
+      .eq("id", id).eq("tenant_id", identity.tenantId).select().maybeSingle();
     if (error) return res.status(500).json({ error: error.message });
+    if (!data) return res.status(404).json({ message: "Zeile nicht gefunden." });
     res.json(data);
   });
   app.delete("/api/kalkulation/nk-material/:id", async (req, res) => {
     const { id } = req.params;
-    const { error } = await supabase.from("nachkalkulation_material").delete().eq("id", id);
+    const identity = dashboardPreferenceIdentity(req);
+    if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+    const { error } = await identity.client.from("nachkalkulation_material").delete()
+      .eq("id", id).eq("tenant_id", identity.tenantId);
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true });
   });
@@ -5878,25 +5848,60 @@ export async function registerRoutes(
   // NK Fremdleistungen (IST)
   app.get("/api/kalkulation/:auftragsId/nk-fremd", async (req, res) => {
     const { auftragsId } = req.params;
-    const { data, error } = await supabase.from("nachkalkulation_fremdleistungen").select("*").eq("auftrag_id", auftragsId).order("datum");
+    const identity = await requireNkAuftrag(req, res, auftragsId);
+    if (!identity) return;
+    const { data, error } = await identity.client.from("nachkalkulation_fremdleistungen").select("*")
+      .eq("auftrag_id", auftragsId).eq("tenant_id", identity.tenantId).order("datum");
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
   });
   app.post("/api/kalkulation/:auftragsId/nk-fremd", async (req, res) => {
     const { auftragsId } = req.params;
-    const { data, error } = await supabase.from("nachkalkulation_fremdleistungen").insert({ ...req.body, auftrag_id: auftragsId }).select().single();
+    const identity = await requireNkAuftrag(req, res, auftragsId);
+    if (!identity) return;
+    const betrag = pickFiniteNumber(req.body?.betrag_chf);
+    if (betrag === null) return res.status(400).json({ message: "betrag_chf muss eine Zahl sein." });
+    const row: any = {
+      auftrag_id: auftragsId,
+      tenant_id: identity.tenantId,
+      bezeichnung: typeof req.body?.bezeichnung === "string" ? req.body.bezeichnung : "",
+      lieferant: typeof req.body?.lieferant === "string" ? req.body.lieferant : "",
+      betrag_chf: betrag,
+      datum: typeof req.body?.datum === "string" ? req.body.datum : new Date().toISOString().split("T")[0],
+      rechnung_nr: typeof req.body?.rechnung_nr === "string" ? req.body.rechnung_nr : "",
+      bemerkung: typeof req.body?.bemerkung === "string" ? req.body.bemerkung : "",
+    };
+    const { data, error } = await identity.client.from("nachkalkulation_fremdleistungen").insert(row).select().single();
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
   });
   app.put("/api/kalkulation/nk-fremd/:id", async (req, res) => {
     const { id } = req.params;
-    const { data, error } = await supabase.from("nachkalkulation_fremdleistungen").update(req.body).eq("id", id).select().single();
+    const identity = dashboardPreferenceIdentity(req);
+    if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+    const patch: any = {};
+    if (typeof req.body?.bezeichnung === "string") patch.bezeichnung = req.body.bezeichnung;
+    if (typeof req.body?.lieferant === "string") patch.lieferant = req.body.lieferant;
+    if (req.body?.betrag_chf !== undefined) {
+      const b = pickFiniteNumber(req.body.betrag_chf);
+      if (b === null) return res.status(400).json({ message: "betrag_chf muss eine Zahl sein." });
+      patch.betrag_chf = b;
+    }
+    if (typeof req.body?.datum === "string") patch.datum = req.body.datum;
+    if (typeof req.body?.rechnung_nr === "string") patch.rechnung_nr = req.body.rechnung_nr;
+    if (typeof req.body?.bemerkung === "string") patch.bemerkung = req.body.bemerkung;
+    const { data, error } = await identity.client.from("nachkalkulation_fremdleistungen").update(patch)
+      .eq("id", id).eq("tenant_id", identity.tenantId).select().maybeSingle();
     if (error) return res.status(500).json({ error: error.message });
+    if (!data) return res.status(404).json({ message: "Zeile nicht gefunden." });
     res.json(data);
   });
   app.delete("/api/kalkulation/nk-fremd/:id", async (req, res) => {
     const { id } = req.params;
-    const { error } = await supabase.from("nachkalkulation_fremdleistungen").delete().eq("id", id);
+    const identity = dashboardPreferenceIdentity(req);
+    if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+    const { error } = await identity.client.from("nachkalkulation_fremdleistungen").delete()
+      .eq("id", id).eq("tenant_id", identity.tenantId);
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true });
   });
@@ -5904,25 +5909,75 @@ export async function registerRoutes(
   // NK SOEK (IST)
   app.get("/api/kalkulation/:auftragsId/nk-soek", async (req, res) => {
     const { auftragsId } = req.params;
-    const { data, error } = await supabase.from("nachkalkulation_soek").select("*").eq("auftrag_id", auftragsId).order("datum");
+    const identity = await requireNkAuftrag(req, res, auftragsId);
+    if (!identity) return;
+    const { data, error } = await identity.client.from("nachkalkulation_soek").select("*")
+      .eq("auftrag_id", auftragsId).eq("tenant_id", identity.tenantId).order("datum");
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
   });
   app.post("/api/kalkulation/:auftragsId/nk-soek", async (req, res) => {
     const { auftragsId } = req.params;
-    const { data, error } = await supabase.from("nachkalkulation_soek").insert({ ...req.body, auftrag_id: auftragsId }).select().single();
+    const identity = await requireNkAuftrag(req, res, auftragsId);
+    if (!identity) return;
+    const anzahl = pickFiniteNumber(req.body?.anzahl) ?? 0;
+    const preis = pickFiniteNumber(req.body?.preis_pro_einheit) ?? 0;
+    const totalReq = pickFiniteNumber(req.body?.total_chf);
+    const total = totalReq !== null ? totalReq : anzahl * preis;
+    if (anzahl < 0 || preis < 0) return res.status(400).json({ message: "anzahl und preis_pro_einheit dürfen nicht negativ sein." });
+    const row: any = {
+      auftrag_id: auftragsId,
+      tenant_id: identity.tenantId,
+      bezeichnung: typeof req.body?.bezeichnung === "string" ? req.body.bezeichnung : "",
+      anzahl,
+      einheit: typeof req.body?.einheit === "string" ? req.body.einheit : "Stk",
+      preis_pro_einheit: preis,
+      total_chf: total,
+      datum: typeof req.body?.datum === "string" ? req.body.datum : new Date().toISOString().split("T")[0],
+      bemerkung: typeof req.body?.bemerkung === "string" ? req.body.bemerkung : "",
+    };
+    const { data, error } = await identity.client.from("nachkalkulation_soek").insert(row).select().single();
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
   });
   app.put("/api/kalkulation/nk-soek/:id", async (req, res) => {
     const { id } = req.params;
-    const { data, error } = await supabase.from("nachkalkulation_soek").update(req.body).eq("id", id).select().single();
+    const identity = dashboardPreferenceIdentity(req);
+    if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+    const patch: any = {};
+    if (typeof req.body?.bezeichnung === "string") patch.bezeichnung = req.body.bezeichnung;
+    if (typeof req.body?.einheit === "string") patch.einheit = req.body.einheit;
+    if (req.body?.anzahl !== undefined) {
+      const a = pickFiniteNumber(req.body.anzahl);
+      if (a === null || a < 0) return res.status(400).json({ message: "anzahl muss eine nichtnegative Zahl sein." });
+      patch.anzahl = a;
+    }
+    if (req.body?.preis_pro_einheit !== undefined) {
+      const p = pickFiniteNumber(req.body.preis_pro_einheit);
+      if (p === null || p < 0) return res.status(400).json({ message: "preis_pro_einheit muss eine nichtnegative Zahl sein." });
+      patch.preis_pro_einheit = p;
+    }
+    if (req.body?.total_chf !== undefined) {
+      const t = pickFiniteNumber(req.body.total_chf);
+      if (t === null) return res.status(400).json({ message: "total_chf muss eine Zahl sein." });
+      patch.total_chf = t;
+    } else if (patch.anzahl !== undefined && patch.preis_pro_einheit !== undefined) {
+      patch.total_chf = patch.anzahl * patch.preis_pro_einheit;
+    }
+    if (typeof req.body?.datum === "string") patch.datum = req.body.datum;
+    if (typeof req.body?.bemerkung === "string") patch.bemerkung = req.body.bemerkung;
+    const { data, error } = await identity.client.from("nachkalkulation_soek").update(patch)
+      .eq("id", id).eq("tenant_id", identity.tenantId).select().maybeSingle();
     if (error) return res.status(500).json({ error: error.message });
+    if (!data) return res.status(404).json({ message: "Zeile nicht gefunden." });
     res.json(data);
   });
   app.delete("/api/kalkulation/nk-soek/:id", async (req, res) => {
     const { id } = req.params;
-    const { error } = await supabase.from("nachkalkulation_soek").delete().eq("id", id);
+    const identity = dashboardPreferenceIdentity(req);
+    if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+    const { error } = await identity.client.from("nachkalkulation_soek").delete()
+      .eq("id", id).eq("tenant_id", identity.tenantId);
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true });
   });
@@ -7517,7 +7572,7 @@ export async function registerRoutes(
     client: typeof supabase;
   };
 
-  const dashboardPreferenceIdentity = (req: Request): DashboardPreferenceIdentity | null => {
+  function dashboardPreferenceIdentity(req: Request): DashboardPreferenceIdentity | null {
     if (req.auth?.userId && req.auth.tenantId) {
       return {
         userId: req.auth.userId,
@@ -7538,7 +7593,7 @@ export async function registerRoutes(
     }
 
     return null;
-  };
+  }
 
   // ─── Nachkalkulations-Abschluss ─────────────────────────────────────────────
   // Die Statusspalte liegt bewusst beim Auftrag: Die aktive Nachkalkulation
