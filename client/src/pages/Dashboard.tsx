@@ -368,11 +368,11 @@ export default function Dashboard() {
         </Link>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-x-4 md:gap-x-6 gap-y-0">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-x-4 md:gap-x-6 gap-y-6">
       <DashboardWidget
         id="kpi_auftraege"
         visible={isWidgetVisible("kpi_auftraege")}
-        className="lg:col-span-12 mb-8"
+        className="lg:col-span-12"
         style={widgetStyle("kpi_auftraege")}
       >
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
@@ -426,7 +426,7 @@ export default function Dashboard() {
       <DashboardWidget
         id="kpi_offerten"
         visible={isWidgetVisible("kpi_offerten")}
-        className="lg:col-span-12 mb-6"
+        className="lg:col-span-12"
         style={widgetStyle("kpi_offerten")}
       >
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -465,7 +465,7 @@ export default function Dashboard() {
       <DashboardWidget
         id="kpi_finanzen"
         visible={isWidgetVisible("kpi_finanzen") && darf_finanzen}
-        className="lg:col-span-12 mb-4"
+        className="lg:col-span-12"
         style={widgetStyle("kpi_finanzen")}
       >
       {darf_finanzen && (
@@ -642,7 +642,7 @@ export default function Dashboard() {
       <DashboardWidget
         id="umsatz_charts"
         visible={isWidgetVisible("umsatz_charts") && darf_finanzen}
-        className="lg:col-span-12 mb-6"
+        className="lg:col-span-12"
         style={widgetStyle("umsatz_charts")}
       >
       {darf_finanzen && (
@@ -791,7 +791,7 @@ export default function Dashboard() {
       <DashboardWidget
         id="neueste_auftraege"
         visible={isWidgetVisible("neueste_auftraege")}
-        className="lg:col-span-8 mb-4 md:mb-6 lg:mb-0"
+        className="lg:col-span-8"
         style={widgetStyle("neueste_auftraege")}
       >
         <Card className="p-5 lg:col-span-2 bg-card">

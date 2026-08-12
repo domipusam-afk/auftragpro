@@ -82,7 +82,7 @@ export function AufgabenWidget({ visible, style }: AufgabenWidgetProps) {
     <DashboardWidget
       id="aufgaben"
       visible={visible}
-      className="lg:col-span-12 mb-6"
+      className="lg:col-span-12"
       style={style}
     >
       <Card className="p-5 bg-card">

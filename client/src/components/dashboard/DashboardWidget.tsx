@@ -1,4 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
+import { cn } from "@/lib/utils";
 
 interface DashboardWidgetProps {
   id: string;
@@ -16,7 +17,7 @@ export function DashboardWidget({ id, visible, className, style, children }: Das
   if (!visible) return null;
 
   return (
-    <section className={className} style={style} data-dashboard-widget={id}>
+    <section className={cn("empty:hidden", className)} style={style} data-dashboard-widget={id}>
       {children}
     </section>
   );

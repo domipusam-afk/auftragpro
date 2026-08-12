@@ -59,7 +59,7 @@ export function OffeneNachkalkulationWidget({ visible, style }: OffeneNachkalkul
     <DashboardWidget
       id="offene_nachkalkulation"
       visible={visible}
-      className="lg:col-span-12 mb-6"
+      className="lg:col-span-12"
       style={style}
     >
       <Card className="p-5">

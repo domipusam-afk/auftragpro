@@ -54,7 +54,7 @@ export function UeberfaelligeRechnungenWidget({ visible, style }: UeberfaelligeR
     <DashboardWidget
       id="ueberfaellige_rechnungen"
       visible={visible}
-      className="lg:col-span-12 mb-6"
+      className="lg:col-span-12"
       style={style}
     >
       <Card className="border-amber-200 bg-card p-5 dark:border-amber-900/70">

@@ -165,7 +165,7 @@ export function SmarteErinnerungenWidget({ visible, style }: SmarteErinnerungenW
     <DashboardWidget
       id="smarte_erinnerungen"
       visible={visible}
-      className="lg:col-span-12 mb-6"
+      className="lg:col-span-12"
       style={style}
     >
       <Card className="border-primary/20 bg-card p-5">

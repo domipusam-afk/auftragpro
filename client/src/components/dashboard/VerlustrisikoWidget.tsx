@@ -79,7 +79,7 @@ export function VerlustrisikoWidget({ visible, style }: VerlustrisikoWidgetProps
     <DashboardWidget
       id="verlustrisiko"
       visible={visible}
-      className="lg:col-span-12 mb-6"
+      className="lg:col-span-12"
       style={style}
     >
       <Card className="p-5">
