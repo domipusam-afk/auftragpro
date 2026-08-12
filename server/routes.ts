@@ -2843,8 +2843,16 @@ export async function registerRoutes(
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
+  const isValidKundenEmail = (email: unknown): boolean => {
+    if (!email || typeof email !== "string" || !email.trim()) return true; // E-Mail ist optional
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  };
+
   app.post("/api/kunden", async (req, res) => {
     try {
+      if (!isValidKundenEmail(req.body?.email)) {
+        return res.status(400).json({ message: "Ungültige E-Mail-Adresse" });
+      }
       // Nächste Kundennummer generieren: KYYNNN (z.B. K260001)
       const yy = String(new Date().getFullYear()).slice(-2);
       const { data: allNr } = await supabase.from("kunden").select("nr");
@@ -2866,6 +2874,9 @@ export async function registerRoutes(
 
   app.patch("/api/kunden/:id", async (req, res) => {
     try {
+      if (!isValidKundenEmail(req.body?.email)) {
+        return res.status(400).json({ message: "Ungültige E-Mail-Adresse" });
+      }
       const { data, error } = await supabase.from("kunden").update(req.body).eq("id", req.params.id).select().single();
       if (error) throw error;
       res.json(data);

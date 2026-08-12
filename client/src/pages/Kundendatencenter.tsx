@@ -13,6 +13,16 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Building2, Plus, Pencil, Trash2, Phone, Mail, MapPin,
   Briefcase, TrendingUp, Clock, ChevronRight, FileText,
 } from "lucide-react";
@@ -35,6 +45,12 @@ interface Kunde {
   plz: string;
   ort: string;
   notiz: string;
+}
+
+// Einfache, robuste E-Mail-Validierung (bewusst kein RFC-5322-Vollcheck)
+function isValidEmail(value: string): boolean {
+  if (!value.trim()) return true; // E-Mail ist optional
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
 const emptyForm = {
@@ -123,7 +139,7 @@ function KundeCard({
   k: Kunde;
   auftraege: Auftrag[];
   onEdit: (k: Kunde) => void;
-  onDelete: (id: string) => void;
+  onDelete: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const kundenAuftraege = matchAuftraege(k, auftraege);
@@ -156,7 +172,7 @@ function KundeCard({
             <Pencil className="h-3.5 w-3.5" />
           </button>
           <button
-            onClick={() => onDelete(k.id)}
+            onClick={onDelete}
             className="p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600"
           >
             <Trash2 className="h-3.5 w-3.5" />
@@ -230,6 +246,7 @@ export default function Kundendatencenter() {
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [search, setSearch] = useState("");
+  const [toDelete, setToDelete] = useState<Kunde | null>(null);
 
   // Nächste Kundennummer vom Backend laden
   const { data: nextNrData } = useQuery<{ nr: string }>({
@@ -270,7 +287,11 @@ export default function Kundendatencenter() {
 
   const delMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/kunden/${id}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/kunden"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/kunden"] });
+      setToDelete(null);
+      toast({ title: "Kunde gelöscht" });
+    },
   });
 
   const openEdit = (k: Kunde) => {
@@ -284,7 +305,8 @@ export default function Kundendatencenter() {
       k.vorname.toLowerCase().includes(q) ||
       k.firma.toLowerCase().includes(q) ||
       k.email.toLowerCase().includes(q) ||
-      k.ort.toLowerCase().includes(q)
+      k.ort.toLowerCase().includes(q) ||
+      (k.nr || "").toLowerCase().includes(q)
     );
   });
 
@@ -360,7 +382,15 @@ export default function Kundendatencenter() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label className="text-xs">E-Mail</Label>
-                  <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+                  <Input
+                    type="email"
+                    value={form.email}
+                    onChange={(e) => setForm({ ...form, email: e.target.value })}
+                    className={!isValidEmail(form.email) ? "border-destructive focus-visible:ring-destructive" : ""}
+                  />
+                  {!isValidEmail(form.email) && (
+                    <p className="text-[11px] text-destructive mt-1">Ungültige E-Mail-Adresse</p>
+                  )}
                 </div>
                 <div>
                   <Label className="text-xs">Telefon</Label>
@@ -387,7 +417,7 @@ export default function Kundendatencenter() {
               </div>
               <Button
                 onClick={() => saveMutation.mutate()}
-                disabled={!form.nachname || saveMutation.isPending}
+                disabled={!form.nachname || !isValidEmail(form.email) || saveMutation.isPending}
                 className="w-full text-white"
                 style={{ background: "hsl(var(--primary))" }}
               >
@@ -426,11 +456,33 @@ export default function Kundendatencenter() {
               k={k}
               auftraege={auftraege}
               onEdit={openEdit}
-              onDelete={(id) => delMutation.mutate(id)}
+              onDelete={() => setToDelete(k)}
             />
           ))}
         </div>
       )}
+
+      {/* Lösch-Bestätigung */}
+      <AlertDialog open={!!toDelete} onOpenChange={(o) => !o && setToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Kunde löschen?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {toDelete?.nr} — {getKundeName(toDelete || ({} as Kunde))}. Diese Aktion kann nicht rückgängig gemacht
+              werden.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => toDelete && delMutation.mutate(toDelete.id)}
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+            >
+              Löschen
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
