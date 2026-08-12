@@ -1,7 +1,7 @@
 import "dotenv/config";
 import express, { Response, NextFunction } from 'express';
 import type { Request } from 'express';
-import { registerRoutes } from "./routes";
+import { registerRoutes, markiereAbgelaufeneOfferten } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "node:http";
 import { initializeTenantContext, supabaseRequestContext } from "./supabase";
@@ -155,6 +155,20 @@ app.use((req, res, next) => {
 
         log(`Keep-alive ping aktiv → ${RENDER_URL}/api/ping (alle 9 Min)`);
       }
+
+      // ── Offerten-Ablauf-Check (täglich) ──────────────────────────────────
+      // Setzt offene Offerten mit überschrittener Gültigkeit automatisch auf
+      // "abgelaufen". Läuft einmal beim Start und danach alle 24h; zusätzlich
+      // wird bei jedem GET /api/offerten ein Check ausgelöst (siehe routes.ts).
+      const OFFERTEN_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24h
+      markiereAbgelaufeneOfferten()
+        .then(n => { if (n > 0) log(`${n} Offerte(n) automatisch auf "abgelaufen" gesetzt`, "offerten-check"); })
+        .catch(e => log(`Offerten-Ablauf-Check fehlgeschlagen: ${e.message}`, "offerten-check"));
+      setInterval(() => {
+        markiereAbgelaufeneOfferten()
+          .then(n => { if (n > 0) log(`${n} Offerte(n) automatisch auf "abgelaufen" gesetzt`, "offerten-check"); })
+          .catch(e => log(`Offerten-Ablauf-Check fehlgeschlagen: ${e.message}`, "offerten-check"));
+      }, OFFERTEN_CHECK_INTERVAL_MS);
     },
   );
 })();

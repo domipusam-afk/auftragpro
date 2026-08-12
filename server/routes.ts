@@ -187,6 +187,49 @@ function generateBackupCodes(): string[] {
   );
 }
 
+// Berechnet das Gültig-bis-Datum einer Offerte. "gueltigkeit" ist entweder ein
+// ISO-Datum oder ein Text wie "30 Tage" (relativ zum Offerten-Datum). Gleiche
+// Interpretation wie im PDF-Rendering (siehe /api/offerten/:id/pdf).
+function berechneGueltigBis(datum: string | null | undefined, gueltigkeit: string | null | undefined): Date | null {
+  const basis = datum ? new Date(datum) : new Date();
+  if (isNaN(basis.getTime())) return null;
+  const raw = String(gueltigkeit || "").trim();
+  if (!raw) return null;
+  const alsDatum = new Date(raw);
+  if (!isNaN(alsDatum.getTime()) && /^\d{4}-\d{2}-\d{2}/.test(raw)) return alsDatum;
+  const match = raw.match(/(\d+)\s*Tage?/i);
+  if (match) {
+    const tage = parseInt(match[1], 10);
+    const bis = new Date(basis);
+    bis.setDate(bis.getDate() + tage);
+    return bis;
+  }
+  return null;
+}
+
+// Setzt offene Offerten, deren Gültigkeit überschritten ist, automatisch auf
+// Status "abgelaufen". Wird beim Start und danach periodisch aufgerufen
+// (siehe server/index.ts) sowie einmalig bei jedem Aufruf von GET /api/offerten.
+export async function markiereAbgelaufeneOfferten(): Promise<number> {
+  const { data: offene, error } = await supabase
+    .from("offerten")
+    .select("id,datum,gueltigkeit")
+    .eq("status", "offen");
+  if (error || !offene || offene.length === 0) return 0;
+  const heute = new Date();
+  const abgelaufeneIds: string[] = [];
+  for (const o of offene) {
+    const gueltigBis = berechneGueltigBis(o.datum, o.gueltigkeit);
+    if (gueltigBis && gueltigBis.getTime() < heute.getTime()) {
+      abgelaufeneIds.push(o.id);
+    }
+  }
+  if (abgelaufeneIds.length === 0) return 0;
+  const { error: updErr } = await supabase.from("offerten").update({ status: "abgelaufen" }).in("id", abgelaufeneIds);
+  if (updErr) return 0;
+  return abgelaufeneIds.length;
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -3734,6 +3777,7 @@ export async function registerRoutes(
 
   app.get("/api/offerten", async (_req, res) => {
     try {
+      await markiereAbgelaufeneOfferten();
       const { data, error } = await supabase
         .from("offerten")
         .select("*")
@@ -3745,6 +3789,14 @@ export async function registerRoutes(
 
   app.post("/api/auftraege/:auftr_id/offerten", async (req, res) => {
     try {
+      const _pos = Array.isArray(req.body?.positionen) ? req.body.positionen : [];
+      const _hatGueltigePos = _pos.some((p: any) => String(p?.titel || "").trim() !== "" && Number(p?.einzelpreis) > 0);
+      if (!String(req.body?.empfaenger_name || "").trim()) {
+        return res.status(400).json({ message: "Empfänger-Name ist erforderlich." });
+      }
+      if (!_hatGueltigePos) {
+        return res.status(400).json({ message: "Mindestens eine Position mit Titel und Preis > 0 ist erforderlich." });
+      }
       const { data: allRows } = await supabase.from("offerten").select("nr");
       // Format: O + YY + 4-stellig laufend, z.B. O260001
       const yy = String(new Date().getFullYear()).slice(2);

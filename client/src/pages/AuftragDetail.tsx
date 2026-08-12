@@ -833,6 +833,19 @@ function OffertenTab({ id, auftrag, vorlage, onVorlageUebernommen, preiseSichtba
   const { confirm: confirmAction, ConfirmDialog: OfferteConfirmDialog } = useConfirm();
   const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
 
+  // MWST-Satz zentral aus den Einstellungen laden statt hardcoded — bei künftigen
+  // Satzänderungen (wie zuletzt 7.7% → 8.1%) reicht die Anpassung an einer Stelle.
+  const { data: einstellungenList = [] } = useQuery<{ schluessel: string; wert: string }[]>({
+    queryKey: ["/api/einstellungen"],
+    queryFn: () => apiRequest("GET", "/api/einstellungen").then(r => r.json()),
+    staleTime: 60_000,
+  });
+  const mwstSatz = (() => {
+    const raw = einstellungenList.find(e => e.schluessel === "mwst_satz")?.wert;
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : 8.1;
+  })();
+
   // Form state
   const [ansprechpartner, setAnsprechpartner] = useState(auftrag.verantwortlicher || "");
   const [telefon, setTelefon] = useState(auftrag.kunde_telefon || "");
@@ -891,7 +904,7 @@ function OffertenTab({ id, auftrag, vorlage, onVorlageUebernommen, preiseSichtba
       intro_text: introText,
       positionen: positionenFuerApi(),
       rabatt_prozent: rabatt,
-      mwst_prozent: 8.1,
+      mwst_prozent: mwstSatz,
       liefertermin, zahlungsbedingungen: zahlungsbed,
       gueltigkeit, schluss_text: schlussText, datum,
     }),
@@ -949,7 +962,7 @@ function OffertenTab({ id, auftrag, vorlage, onVorlageUebernommen, preiseSichtba
       intro_text: introText,
       positionen: positionenFuerApi(),
       rabatt_prozent: rabatt,
-      mwst_prozent: 8.1,
+      mwst_prozent: mwstSatz,
       liefertermin, zahlungsbedingungen: zahlungsbed,
       gueltigkeit, schluss_text: schlussText, datum,
     }),
@@ -1034,9 +1047,18 @@ function OffertenTab({ id, auftrag, vorlage, onVorlageUebernommen, preiseSichtba
   const zwischentotal = positionen.reduce((s, p) => s + Number(p.total || 0), 0);
   const rabattBetrag  = zwischentotal * (rabatt / 100);
   const totalExkl     = zwischentotal - rabattBetrag;
-  const mwstBetrag    = totalExkl * 0.081;
+  const mwstBetrag    = totalExkl * (mwstSatz / 100);
   const totalInkl     = totalExkl + mwstBetrag;
   const fmtCHF        = (v: number) => `CHF ${v.toFixed(2)}`;
+
+  // Verhindert das Speichern unbrauchbarer Offerten: Empfänger-Name muss gesetzt sein,
+  // und mindestens eine Position braucht einen Titel und einen Preis > 0.
+  const gueltigePositionen = positionen.filter(p => p.titel.trim() !== "" && parseZahl(p.einzelpreis) > 0);
+  const validierungsFehler = !empfaengerName.trim()
+    ? "Bitte einen Empfänger-Namen angeben."
+    : gueltigePositionen.length === 0
+    ? "Bitte mindestens eine Position mit Titel und Preis > 0 erfassen."
+    : null;
 
   const STATUS_COLORS: Record<string, string> = {
     offen:      "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
@@ -1239,15 +1261,18 @@ function OffertenTab({ id, auftrag, vorlage, onVorlageUebernommen, preiseSichtba
             </div>
           </div>
 
+          {validierungsFehler && (
+            <p className="text-xs text-red-600 dark:text-red-400 text-right">{validierungsFehler}</p>
+          )}
           <div className="flex gap-2 justify-end">
             <Button variant="outline" onClick={() => { setShowForm(false); setEditOfferte(null); }}>Abbrechen</Button>
             {editOfferte ? (
-              <Button onClick={() => updateMutation.mutate(editOfferte.id)} disabled={updateMutation.isPending}
+              <Button onClick={() => updateMutation.mutate(editOfferte.id)} disabled={updateMutation.isPending || !!validierungsFehler}
                 className="bg-[#6b4c2a] hover:bg-[#5a3e22] text-white">
                 {updateMutation.isPending ? "Speichern..." : "Änderungen speichern"}
               </Button>
             ) : (
-              <Button onClick={() => createMutation.mutate()} disabled={createMutation.isPending}
+              <Button onClick={() => createMutation.mutate()} disabled={createMutation.isPending || !!validierungsFehler}
                 className="bg-[#6b4c2a] hover:bg-[#5a3e22] text-white">
                 {createMutation.isPending ? "Speichern..." : "Offerte speichern"}
               </Button>
