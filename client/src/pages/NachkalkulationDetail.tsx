@@ -909,6 +909,24 @@ export default function NachkalkulationDetail() {
     queryFn: async () => { const r = await apiRequest("GET", `/api/auftraege/${id}`); return r.json(); },
   });
 
+  const nachkalkulationAbschliessen = useMutation({
+    mutationFn: async () => {
+      const r = await apiRequest("PATCH", `/api/nachkalkulation/${id}/status`, { status: "abgeschlossen" });
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auftraege", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/offene-nachkalkulation"] });
+      toast({ title: "Nachkalkulation abgeschlossen", description: "Der Auftrag gilt als vollständig nachkalkuliert." });
+    },
+    onError: async (error: any) => {
+      let description = "Die Nachkalkulation konnte nicht abgeschlossen werden.";
+      if (error?.message) description = error.message;
+      toast({ title: "Abschluss nicht möglich", description, variant: "destructive" });
+    },
+  });
+  const nachkalkulationStatus = auftrag?.nachkalkulation_status || "nicht_begonnen";
+
   if (!id) return <div className="p-6 text-muted-foreground">Kein Auftrag angegeben.</div>;
 
   return (
@@ -928,6 +946,20 @@ export default function NachkalkulationDetail() {
                 <Coins className="h-3 w-3" />Pauschalauftrag
               </Badge>
             )}
+            <Badge
+              variant="outline"
+              className={nachkalkulationStatus === "abgeschlossen"
+                ? "border-green-200 bg-green-50 text-green-800"
+                : nachkalkulationStatus === "in_bearbeitung"
+                  ? "border-amber-200 bg-amber-50 text-amber-800"
+                  : "border-slate-200 bg-slate-50 text-slate-700"}
+            >
+              {nachkalkulationStatus === "abgeschlossen"
+                ? "Nachkalkulation abgeschlossen"
+                : nachkalkulationStatus === "in_bearbeitung"
+                  ? "Nachkalkulation in Bearbeitung"
+                  : "Nachkalkulation nicht begonnen"}
+            </Badge>
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">IST-Werte erfassen und mit der Vorkalkulation vergleichen</p>
         </div>
@@ -938,6 +970,17 @@ export default function NachkalkulationDetail() {
           <FileDown className="h-4 w-4 mr-1" />
           {pdfLoading ? "PDF..." : "PDF herunterladen"}
         </Button>
+        {nachkalkulationStatus !== "abgeschlossen" && (
+          <Button
+            size="sm"
+            onClick={() => nachkalkulationAbschliessen.mutate()}
+            disabled={nachkalkulationAbschliessen.isPending}
+            className="bg-green-700 hover:bg-green-800"
+          >
+            <CheckCircle2 className="h-4 w-4 mr-1" />
+            {nachkalkulationAbschliessen.isPending ? "Wird abgeschlossen..." : "Nachkalkulation abschliessen"}
+          </Button>
+        )}
       </div>
 
       <Tabs defaultValue="vergleich" className="w-full">

@@ -55,11 +55,18 @@ export const DASHBOARD_WIDGETS = [
     default_order: 37,
   },
   {
+    id: "offene_nachkalkulation",
+    label: "Offene Nachkalkulation",
+    description: "Abgeschlossene Aufträge ohne explizit abgeschlossene Nachkalkulation",
+    default_visible: true,
+    default_order: 38,
+  },
+  {
     id: "smarte_erinnerungen",
     label: "Smarte Erinnerungen",
     description: "Konkrete nächste Schritte für Aufträge und Rechnungen",
     default_visible: true,
-    default_order: 38,
+    default_order: 39,
   },
   {
     id: "umsatz_charts",

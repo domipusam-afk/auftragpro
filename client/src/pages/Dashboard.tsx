@@ -41,6 +41,7 @@ import { AufgabenWidget } from "@/components/dashboard/AufgabenWidget";
 import { UeberfaelligeRechnungenWidget } from "@/components/dashboard/UeberfaelligeRechnungenWidget";
 import { TopKundenWidget } from "@/components/dashboard/TopKundenWidget";
 import { DeckungsbeitragWidget } from "@/components/dashboard/DeckungsbeitragWidget";
+import { OffeneNachkalkulationWidget } from "@/components/dashboard/OffeneNachkalkulationWidget";
 import { SmarteErinnerungenWidget } from "@/components/dashboard/SmarteErinnerungenWidget";
 import {
   normalizeDashboardPreferences,
@@ -200,6 +201,7 @@ export default function Dashboard() {
   const { hatZugriff } = useAuth();
   const { toast } = useToast();
   const darf_finanzen = hatZugriff("dashboard_finanzen");
+  const darfNachkalkulation = hatZugriff("kalkulation_nachkalkulation");
   const darfFibuExport = hatZugriff("finanzmanagement_mwst");
   const darfPreiseSehen = hatZugriff("auftraege_preise_sichtbar");
 
@@ -619,6 +621,11 @@ export default function Dashboard() {
       <DeckungsbeitragWidget
         visible={isWidgetVisible("deckungsbeitrag") && darf_finanzen}
         style={widgetStyle("deckungsbeitrag")}
+      />
+
+      <OffeneNachkalkulationWidget
+        visible={isWidgetVisible("offene_nachkalkulation") && darfNachkalkulation}
+        style={widgetStyle("offene_nachkalkulation")}
       />
 
       <SmarteErinnerungenWidget

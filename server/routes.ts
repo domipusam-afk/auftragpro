@@ -7318,6 +7318,65 @@ export async function registerRoutes(
     return null;
   };
 
+  // ─── Nachkalkulations-Abschluss ─────────────────────────────────────────────
+  // Die Statusspalte liegt bewusst beim Auftrag: Die aktive Nachkalkulation
+  // besteht aus mehreren Detailtabellen und hat keine eigene Kopfzeile. Ein
+  // Abschluss ist nur nach mindestens einer positiven IST-Position möglich.
+  app.patch("/api/nachkalkulation/:id/status", async (req, res) => {
+    try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) {
+        return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      }
+      if (req.body?.status !== "abgeschlossen") {
+        return res.status(400).json({ message: "Nur der Status 'abgeschlossen' kann hier gesetzt werden." });
+      }
+
+      const auftragId = req.params.id;
+      const { data: auftrag, error: auftragError } = await identity.client
+        .from("auftraege")
+        .select("id")
+        .eq("id", auftragId)
+        .eq("tenant_id", identity.tenantId)
+        .maybeSingle();
+      if (auftragError) throw auftragError;
+      if (!auftrag) return res.status(404).json({ message: "Auftrag nicht gefunden." });
+
+      const minDataChecks = await Promise.all([
+        identity.client.from("zeiteintraege").select("id").eq("tenant_id", identity.tenantId).eq("auftrag_id", auftragId).gt("dauer_minuten", 0).limit(1),
+        identity.client.from("nachkalkulation_stunden").select("id").eq("tenant_id", identity.tenantId).eq("auftrag_id", auftragId).eq("quelle", "manuell").or("ist_stunden.gt.0,total_chf.gt.0").limit(1),
+        identity.client.from("nachkalkulation_material").select("id").eq("tenant_id", identity.tenantId).eq("auftrag_id", auftragId).gt("betrag_chf", 0).limit(1),
+        identity.client.from("nachkalkulation_fremdleistungen").select("id").eq("tenant_id", identity.tenantId).eq("auftrag_id", auftragId).gt("betrag_chf", 0).limit(1),
+        identity.client.from("nachkalkulation_soek").select("id").eq("tenant_id", identity.tenantId).eq("auftrag_id", auftragId).gt("total_chf", 0).limit(1),
+      ]);
+      for (const check of minDataChecks) {
+        if (check.error) throw check.error;
+      }
+      if (!minDataChecks.some((check) => (check.data || []).length > 0)) {
+        return res.status(422).json({
+          message: "Für den Abschluss muss mindestens eine positive IST-Stunden-, Material-, Fremdleistungs- oder SOEK-Position erfasst sein.",
+        });
+      }
+
+      const now = new Date().toISOString();
+      const { data, error } = await identity.client
+        .from("auftraege")
+        .update({
+          nachkalkulation_status: "abgeschlossen",
+          nachkalkulation_abgeschlossen_am: now,
+          aktualisiert: now,
+        })
+        .eq("id", auftragId)
+        .eq("tenant_id", identity.tenantId)
+        .select("id, nachkalkulation_status, nachkalkulation_abgeschlossen_am")
+        .single();
+      if (error) throw error;
+      return res.json(data);
+    } catch (e) {
+      return res.status(500).json({ message: asError(e) });
+    }
+  });
+
   const parseDashboardPreferences = (body: unknown):
     | { preferences: DashboardPreferences }
     | { message: string } => {
@@ -7983,6 +8042,69 @@ export async function registerRoutes(
         db1,
         db1_quote: umsatz_netto > 0 ? Math.round((db1 / umsatz_netto) * 1000) / 10 : null,
         beitraege: [...staerkste, ...schwaechste],
+      });
+    } catch (e) {
+      return res.status(500).json({ message: asError(e) });
+    }
+  });
+
+  // ─── Offene Nachkalkulation (Dashboard) ─────────────────────────────────────
+  // Ausschliesslich der explizit bestätigte Status gilt als vollständig. Der
+  // Abschlusszeitpunkt des Auftrags nutzt end_datum; bei historischen Aufträgen
+  // ohne Enddatum fällt die Anzeige auf erstellt zurück.
+  app.get("/api/dashboard/offene-nachkalkulation", async (req, res) => {
+    try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) {
+        return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      }
+
+      const [offeneResult, gesamtResult] = await Promise.all([
+        identity.client
+          .from("auftraege")
+          .select("id, nr, kunde, end_datum, erstellt, nachkalkulation_status", { count: "exact" })
+          .eq("tenant_id", identity.tenantId)
+          .eq("status", "abgeschlossen")
+          .or("nachkalkulation_status.is.null,nachkalkulation_status.neq.abgeschlossen"),
+        identity.client
+          .from("auftraege")
+          .select("id", { count: "exact", head: true })
+          .eq("tenant_id", identity.tenantId)
+          .eq("status", "abgeschlossen"),
+      ]);
+      if (offeneResult.error) throw offeneResult.error;
+      if (gesamtResult.error) throw gesamtResult.error;
+
+      const now = Date.now();
+      const abschlusszeit = (auftrag: any): string | null => {
+        const endDatum = typeof auftrag.end_datum === "string" ? auftrag.end_datum.trim() : "";
+        return endDatum || (typeof auftrag.erstellt === "string" ? auftrag.erstellt : null);
+      };
+      const auftraege = (offeneResult.data || [])
+        .map((auftrag: any) => {
+          const abschlussdatum = abschlusszeit(auftrag);
+          const zeitpunkt = abschlussdatum ? new Date(abschlussdatum).getTime() : Number.POSITIVE_INFINITY;
+          const tage_seit_abschluss = Number.isFinite(zeitpunkt)
+            ? Math.max(0, Math.floor((now - zeitpunkt) / (24 * 60 * 60 * 1000)))
+            : null;
+          return {
+            id: auftrag.id,
+            nr: auftrag.nr || "—",
+            kunde: auftrag.kunde || null,
+            abschlussdatum,
+            tage_seit_abschluss,
+            nachkalkulation_status: auftrag.nachkalkulation_status || "nicht_begonnen",
+            sortierdatum: zeitpunkt,
+          };
+        })
+        .sort((links: any, rechts: any) => links.sortierdatum - rechts.sortierdatum || links.nr.localeCompare(rechts.nr, "de-CH"))
+        .slice(0, 10)
+        .map(({ sortierdatum: _sortierdatum, ...auftrag }: any) => auftrag);
+
+      return res.json({
+        count: offeneResult.count || 0,
+        total: gesamtResult.count || 0,
+        auftraege,
       });
     } catch (e) {
       return res.status(500).json({ message: asError(e) });
