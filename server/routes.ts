@@ -140,7 +140,7 @@ type ExportDownloadInput = {
 type DocumentDownloadInput = {
   readonly auftragId: string;
   readonly documentId: string;
-  readonly tenantId?: string;
+  readonly tenantId: string;
 };
 
 function exportQueryFromRequest(req: Request): DownloadExportQuery {
@@ -1083,10 +1083,16 @@ export async function registerRoutes(
   // ============= DOKUMENTE =============
   app.get("/api/auftraege/:id/dokumente", async (req, res) => {
     try {
-      const { data, error } = await supabase
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      if (!(await auftragGehoertZuTenant(identity, req.params.id))) {
+        return res.status(404).json({ message: "Auftrag nicht gefunden." });
+      }
+      const { data, error } = await identity.client
         .from("dokumente")
         .select("id, auftrag_id, name, mime, size_bytes, kat, beschreibung, storage_path, datum")
         .eq("auftrag_id", req.params.id)
+        .eq("tenant_id", identity.tenantId)
         .order("datum", { ascending: false });
       if (error) throw error;
       res.json(data || []);
@@ -1100,33 +1106,40 @@ export async function registerRoutes(
     upload.single("file"),
     async (req: Request, res: Response) => {
       try {
-        const { id } = req.params;
+        const identity = dashboardPreferenceIdentity(req);
+        if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+        const id = typeof req.params.id === "string" ? req.params.id : "";
+        if (!id || !(await auftragGehoertZuTenant(identity, id))) {
+          return res.status(404).json({ message: "Auftrag nicht gefunden." });
+        }
         const file = (req as any).file as Express.Multer.File | undefined;
         if (!file) return res.status(400).json({ message: "file required" });
         const did = uid();
+        const body = req.body || {};
         const row = {
           id: did,
           auftrag_id: id,
           name: file.originalname,
           mime: file.mimetype || "application/octet-stream",
           size_bytes: file.size,
-          kat: req.body?.kat || null,
-          beschreibung: req.body?.beschreibung || null,
+          kat: typeof body.kat === "string" ? body.kat : null,
+          beschreibung: typeof body.beschreibung === "string" ? body.beschreibung : null,
           storage_path: null,
           datum: new Date().toISOString(),
+          tenant_id: identity.tenantId,
         };
-        const { data, error } = await supabase
+        const { data, error } = await identity.client
           .from("dokumente")
           .insert(row)
           .select()
           .single();
         if (error) throw error;
         const b64 = file.buffer.toString("base64");
-        const { error: e2 } = await supabase
+        const { error: e2 } = await identity.client
           .from("dokument_daten")
-          .insert({ dokument_id: did, data: b64 });
+          .insert({ dokument_id: did, data: b64, tenant_id: identity.tenantId });
         if (e2) {
-          await supabase.from("dokumente").delete().eq("id", did);
+          await identity.client.from("dokumente").delete().eq("id", did).eq("tenant_id", identity.tenantId);
           throw e2;
         }
         res.json(data);
@@ -1141,54 +1154,78 @@ export async function registerRoutes(
     { auftragId, documentId, tenantId }: DocumentDownloadInput,
   ) => {
     try {
-      const documentQuery = supabase
+      const { data: doc, error } = await supabase
         .from("dokumente")
         .select("*")
         .eq("id", documentId)
-        .eq("auftrag_id", auftragId);
-      const { data: doc, error } = await (tenantId
-        ? documentQuery.eq("tenant_id", tenantId)
-        : documentQuery
-      ).single();
-        if (error) throw error;
-      const documentDataQuery = supabase
+        .eq("auftrag_id", auftragId)
+        .eq("tenant_id", tenantId)
+        .single();
+      if (error || !doc) {
+        return res.status(404).json({ message: "Dokument nicht gefunden" });
+      }
+      const { data: dd, error: e2 } = await supabase
         .from("dokument_daten")
         .select("data")
-        .eq("dokument_id", documentId);
-      const { data: dd, error: e2 } = await (tenantId
-        ? documentDataQuery.eq("tenant_id", tenantId)
-        : documentDataQuery
-      ).single();
-        if (e2) throw e2;
-        const buf = Buffer.from(dd.data, "base64");
-        const mime = doc.mime || "application/octet-stream";
-        // PDFs und Bilder direkt im Browser/Tab anzeigen (inline), alles andere als Download anbieten.
-        // "attachment" fuehrt v.a. auf Mobile (iOS Safari) dazu, dass beim Klick scheinbar nichts passiert,
-        // da die Datei im Hintergrund heruntergeladen wird statt sich zu oeffnen.
-        const isViewable = mime === "application/pdf" || mime.startsWith("image/");
-        const disposition = tenantId ? "attachment" : isViewable ? "inline" : "attachment";
-        res.setHeader("Content-Type", mime);
-        res.setHeader(
-          "Content-Disposition",
-          `${disposition}; filename="${encodeURIComponent(doc.name)}"`
-        );
-        res.send(buf);
+        .eq("dokument_id", documentId)
+        .eq("tenant_id", tenantId)
+        .single();
+      if (e2 || !dd) {
+        return res.status(404).json({ message: "Dokument-Daten nicht gefunden" });
+      }
+      const buf = Buffer.from(dd.data, "base64");
+      const mime = doc.mime || "application/octet-stream";
+      // PDFs und Bilder direkt im Browser/Tab anzeigen (inline), alles andere als Download anbieten.
+      // "attachment" fuehrt v.a. auf Mobile (iOS Safari) dazu, dass beim Klick scheinbar nichts passiert,
+      // da die Datei im Hintergrund heruntergeladen wird statt sich zu oeffnen.
+      const isViewable = mime === "application/pdf" || mime.startsWith("image/");
+      const disposition = isViewable ? "inline" : "attachment";
+      res.setHeader("Content-Type", mime);
+      res.setHeader(
+        "Content-Disposition",
+        `${disposition}; filename="${encodeURIComponent(doc.name)}"`
+      );
+      res.send(buf);
     } catch (e) {
       res.status(500).json({ message: asError(e) });
     }
   };
-  app.get("/api/auftraege/:id/dokumente/:did/download", (req, res) => {
+  app.get("/api/auftraege/:id/dokumente/:did/download", async (req, res) => {
+    const identity = dashboardPreferenceIdentity(req);
+    if (!identity) {
+      return res.status(401).json({ message: "Authentifizierung erforderlich." });
+    }
     return handleDocumentDownload(res, {
       auftragId: req.params.id,
       documentId: req.params.did,
+      tenantId: identity.tenantId,
     });
   });
 
   app.delete("/api/auftraege/:id/dokumente/:did", async (req, res) => {
     try {
-      const { did } = req.params;
-      await supabase.from("dokument_daten").delete().eq("dokument_id", did);
-      const { error } = await supabase.from("dokumente").delete().eq("id", did);
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { id, did } = req.params;
+      // Existenz + Tenant + Auftrag-Zugehörigkeit vor Delete pruefen
+      const { data: doc } = await identity.client
+        .from("dokumente")
+        .select("id")
+        .eq("id", did)
+        .eq("auftrag_id", id)
+        .eq("tenant_id", identity.tenantId)
+        .maybeSingle();
+      if (!doc) return res.status(404).json({ message: "Dokument nicht gefunden" });
+      await identity.client
+        .from("dokument_daten")
+        .delete()
+        .eq("dokument_id", did)
+        .eq("tenant_id", identity.tenantId);
+      const { error } = await identity.client
+        .from("dokumente")
+        .delete()
+        .eq("id", did)
+        .eq("tenant_id", identity.tenantId);
       if (error) throw error;
       res.json({ ok: true });
     } catch (e) {
@@ -2731,11 +2768,14 @@ export async function registerRoutes(
   });
 
   // ============= VORLAGEN =============
-  app.get("/api/vorlagen", async (_req, res) => {
+  app.get("/api/vorlagen", async (req, res) => {
     try {
-      const { data, error } = await supabase
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { data, error } = await identity.client
         .from("rechnungsvorlagen")
         .select("id, name, mime, size_bytes, aktiv, erstellt")
+        .eq("tenant_id", identity.tenantId)
         .order("erstellt", { ascending: false });
       if (error) throw error;
       res.json(data || []);
@@ -2749,13 +2789,15 @@ export async function registerRoutes(
     upload.single("file"),
     async (req: Request, res: Response) => {
       try {
+        const identity = dashboardPreferenceIdentity(req);
+        if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
         const file = (req as any).file as Express.Multer.File | undefined;
         if (!file) return res.status(400).json({ message: "file required" });
-        // deactivate previous
-        await supabase
+        // Nur Vorlagen des eigenen Mandanten deaktivieren.
+        await identity.client
           .from("rechnungsvorlagen")
           .update({ aktiv: false })
-          .neq("id", "");
+          .eq("tenant_id", identity.tenantId);
         const row = {
           id: uid(),
           name: file.originalname,
@@ -2764,8 +2806,9 @@ export async function registerRoutes(
           data: file.buffer.toString("base64"),
           aktiv: true,
           erstellt: new Date().toISOString(),
+          tenant_id: identity.tenantId,
         };
-        const { data, error } = await supabase
+        const { data, error } = await identity.client
           .from("rechnungsvorlagen")
           .insert(row)
           .select("id, name, mime, size_bytes, aktiv, erstellt")
@@ -2780,13 +2823,16 @@ export async function registerRoutes(
 
   app.get("/api/vorlagen/:vid/download", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       const { vid } = req.params;
-      const { data, error } = await supabase
+      const { data, error } = await identity.client
         .from("rechnungsvorlagen")
         .select("*")
         .eq("id", vid)
+        .eq("tenant_id", identity.tenantId)
         .single();
-      if (error) throw error;
+      if (error || !data) return res.status(404).json({ message: "Vorlage nicht gefunden" });
       const buf = Buffer.from(data.data, "base64");
       res.setHeader("Content-Type", data.mime || "application/octet-stream");
       res.setHeader(
@@ -2801,11 +2847,21 @@ export async function registerRoutes(
 
   app.delete("/api/vorlagen/:vid", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       const { vid } = req.params;
-      const { error } = await supabase
+      const { data: existing } = await identity.client
+        .from("rechnungsvorlagen")
+        .select("id")
+        .eq("id", vid)
+        .eq("tenant_id", identity.tenantId)
+        .maybeSingle();
+      if (!existing) return res.status(404).json({ message: "Vorlage nicht gefunden" });
+      const { error } = await identity.client
         .from("rechnungsvorlagen")
         .delete()
-        .eq("id", vid);
+        .eq("id", vid)
+        .eq("tenant_id", identity.tenantId);
       if (error) throw error;
       res.json({ ok: true });
     } catch (e) {
@@ -2879,9 +2935,22 @@ export async function registerRoutes(
   });
 
   // ─── Fotos / Bilddokumentation ────────────────────────────────────────────
+  // Obergrenze fuer Base64-Payloads pro Foto: ~20 MB Rohdatei => ~27 MB Base64.
+  const FOTO_MAX_BASE64_LEN = 27_000_000;
+
   app.get("/api/fotos/:auftragId", async (req, res) => {
     try {
-      const { data, error } = await supabase.from("foto_dokumentation").select("*").eq("auftrag_id", req.params.auftragId).order("erstellt", { ascending: false });
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      if (!(await auftragGehoertZuTenant(identity, req.params.auftragId))) {
+        return res.status(404).json({ message: "Auftrag nicht gefunden." });
+      }
+      const { data, error } = await identity.client
+        .from("foto_dokumentation")
+        .select("*")
+        .eq("auftrag_id", req.params.auftragId)
+        .eq("tenant_id", identity.tenantId)
+        .order("erstellt", { ascending: false });
       if (error) throw error;
       res.json(data || []);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -2889,8 +2958,33 @@ export async function registerRoutes(
 
   app.post("/api/fotos/:auftragId", async (req, res) => {
     try {
-      const f = { id: uid(), auftrag_id: req.params.auftragId, ...req.body };
-      const { data, error } = await supabase.from("foto_dokumentation").insert(f).select().single();
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      if (!(await auftragGehoertZuTenant(identity, req.params.auftragId))) {
+        return res.status(404).json({ message: "Auftrag nicht gefunden." });
+      }
+      const body = req.body || {};
+      const dateiData = typeof body.datei_data === "string" ? body.datei_data : "";
+      if (dateiData.length > FOTO_MAX_BASE64_LEN) {
+        return res.status(413).json({ message: "Foto übersteigt die maximale Grösse." });
+      }
+      const row = {
+        id: uid(),
+        auftrag_id: req.params.auftragId,
+        kategorie: typeof body.kategorie === "string" ? body.kategorie : null,
+        bezeichnung: typeof body.bezeichnung === "string" ? body.bezeichnung : null,
+        datei_name: typeof body.datei_name === "string" ? body.datei_name : null,
+        datei_data: dateiData || null,
+        datei_mime: typeof body.datei_mime === "string" ? body.datei_mime : null,
+        notiz: typeof body.notiz === "string" ? body.notiz : null,
+        erstellt: new Date().toISOString(),
+        tenant_id: identity.tenantId,
+      };
+      const { data, error } = await identity.client
+        .from("foto_dokumentation")
+        .insert(row)
+        .select()
+        .single();
       if (error) throw error;
       res.json(data);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -2898,16 +2992,51 @@ export async function registerRoutes(
 
   app.delete("/api/fotos/:id", async (req, res) => {
     try {
-      const { error } = await supabase.from("foto_dokumentation").delete().eq("id", req.params.id);
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { data: existing } = await identity.client
+        .from("foto_dokumentation")
+        .select("id")
+        .eq("id", req.params.id)
+        .eq("tenant_id", identity.tenantId)
+        .maybeSingle();
+      if (!existing) return res.status(404).json({ message: "Foto nicht gefunden" });
+      const { error } = await identity.client
+        .from("foto_dokumentation")
+        .delete()
+        .eq("id", req.params.id)
+        .eq("tenant_id", identity.tenantId);
       if (error) throw error;
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
   // ─── Formulare ───────────────────────────────────────────────────────────────
-  app.get("/api/formulare", async (_req, res) => {
+  // Whitelist für Formulare: id/erstellt/tenant_id werden server-verwaltet.
+  const pickFormularFelder = (body: any): Record<string, any> => {
+    const out: Record<string, any> = {};
+    if (body && typeof body === "object") {
+      if (typeof body.auftrag_id === "string") out.auftrag_id = body.auftrag_id;
+      if (typeof body.typ === "string") out.typ = body.typ;
+      if (typeof body.titel === "string") out.titel = body.titel;
+      if ("inhalt" in body) out.inhalt = body.inhalt;
+      if (typeof body.unterschrift_auftraggeber === "string") out.unterschrift_auftraggeber = body.unterschrift_auftraggeber;
+      if (typeof body.unterschrift_mitarbeiter === "string") out.unterschrift_mitarbeiter = body.unterschrift_mitarbeiter;
+      if (typeof body.status === "string") out.status = body.status;
+    }
+    return out;
+  };
+
+  app.get("/api/formulare", async (req, res) => {
     try {
-      const { data, error } = await supabase.from("formulare").select("*").order("erstellt", { ascending: false });
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      // Listen-Endpoint schliesst Base64-Unterschriften bewusst aus (potentiell gross).
+      const { data, error } = await identity.client
+        .from("formulare")
+        .select("id, auftrag_id, typ, titel, inhalt, status, erstellt")
+        .eq("tenant_id", identity.tenantId)
+        .order("erstellt", { ascending: false });
       if (error) throw error;
       res.json(data || []);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -2915,8 +3044,21 @@ export async function registerRoutes(
 
   app.post("/api/formulare", async (req, res) => {
     try {
-      const f = { id: uid(), ...req.body };
-      const { data, error } = await supabase.from("formulare").insert(f).select().single();
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const felder = pickFormularFelder(req.body);
+      if (felder.auftrag_id) {
+        if (!(await auftragGehoertZuTenant(identity, felder.auftrag_id))) {
+          return res.status(404).json({ message: "Auftrag nicht gefunden." });
+        }
+      }
+      const row = {
+        id: uid(),
+        ...felder,
+        erstellt: new Date().toISOString(),
+        tenant_id: identity.tenantId,
+      };
+      const { data, error } = await identity.client.from("formulare").insert(row).select().single();
       if (error) throw error;
       res.json(data);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -2924,7 +3066,31 @@ export async function registerRoutes(
 
   app.patch("/api/formulare/:id", async (req, res) => {
     try {
-      const { data, error } = await supabase.from("formulare").update(req.body).eq("id", req.params.id).select().single();
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { data: existing } = await identity.client
+        .from("formulare")
+        .select("id")
+        .eq("id", req.params.id)
+        .eq("tenant_id", identity.tenantId)
+        .maybeSingle();
+      if (!existing) return res.status(404).json({ message: "Formular nicht gefunden" });
+      const update = pickFormularFelder(req.body);
+      if (update.auftrag_id) {
+        if (!(await auftragGehoertZuTenant(identity, update.auftrag_id))) {
+          return res.status(404).json({ message: "Auftrag nicht gefunden." });
+        }
+      }
+      if (Object.keys(update).length === 0) {
+        return res.status(400).json({ message: "Keine änderbaren Felder übermittelt" });
+      }
+      const { data, error } = await identity.client
+        .from("formulare")
+        .update(update)
+        .eq("id", req.params.id)
+        .eq("tenant_id", identity.tenantId)
+        .select()
+        .single();
       if (error) throw error;
       res.json(data);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -2932,7 +3098,20 @@ export async function registerRoutes(
 
   app.delete("/api/formulare/:id", async (req, res) => {
     try {
-      const { error } = await supabase.from("formulare").delete().eq("id", req.params.id);
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { data: existing } = await identity.client
+        .from("formulare")
+        .select("id")
+        .eq("id", req.params.id)
+        .eq("tenant_id", identity.tenantId)
+        .maybeSingle();
+      if (!existing) return res.status(404).json({ message: "Formular nicht gefunden" });
+      const { error } = await identity.client
+        .from("formulare")
+        .delete()
+        .eq("id", req.params.id)
+        .eq("tenant_id", identity.tenantId);
       if (error) throw error;
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -2942,24 +3121,39 @@ export async function registerRoutes(
   // ─── Chat: Ungelesene Nachrichten (Timestamp-basiert, letzte 24h) ────────────
   app.get("/api/chat/ungelesen", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       const seit = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-      const { count } = await supabase
+      const { count } = await identity.client
         .from("chat_nachrichten")
         .select("*", { count: "exact", head: true })
+        .eq("tenant_id", identity.tenantId)
         .gte("erstellt", seit);
       res.json({ count: count || 0 });
     } catch (e) { res.json({ count: 0 }); }
   });
 
   // ─── Chat: Als gelesen markieren (Timestamp-basiert, Frontend trackt) ─────────
-  app.post("/api/chat/als-gelesen", async (_req, res) => {
+  app.post("/api/chat/als-gelesen", async (req, res) => {
+    const identity = dashboardPreferenceIdentity(req);
+    if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
     // Kein gelesen-Flag in DB – Frontend trackt letzteGelesenZeit im State
     res.json({ ok: true, zeitstempel: new Date().toISOString() });
   });
 
   app.get("/api/chat/:auftragId", async (req, res) => {
     try {
-      const { data, error } = await supabase.from("chat_nachrichten").select("*").eq("auftrag_id", req.params.auftragId).order("erstellt", { ascending: true });
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      if (!(await auftragGehoertZuTenant(identity, req.params.auftragId))) {
+        return res.status(404).json({ message: "Auftrag nicht gefunden." });
+      }
+      const { data, error } = await identity.client
+        .from("chat_nachrichten")
+        .select("*")
+        .eq("auftrag_id", req.params.auftragId)
+        .eq("tenant_id", identity.tenantId)
+        .order("erstellt", { ascending: true });
       if (error) throw error;
       res.json(data || []);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -2967,8 +3161,28 @@ export async function registerRoutes(
 
   app.post("/api/chat/:auftragId", async (req, res) => {
     try {
-      const n = { id: uid(), auftrag_id: req.params.auftragId, ...req.body };
-      const { data, error } = await supabase.from("chat_nachrichten").insert(n).select().single();
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      if (!(await auftragGehoertZuTenant(identity, req.params.auftragId))) {
+        return res.status(404).json({ message: "Auftrag nicht gefunden." });
+      }
+      const body = req.body || {};
+      const nachricht = typeof body.nachricht === "string" ? body.nachricht.trim() : "";
+      if (!nachricht) return res.status(400).json({ message: "Nachricht erforderlich" });
+      const row = {
+        id: uid(),
+        auftrag_id: req.params.auftragId,
+        absender: typeof body.absender === "string" ? body.absender : null,
+        nachricht,
+        typ: typeof body.typ === "string" ? body.typ : null,
+        erstellt: new Date().toISOString(),
+        tenant_id: identity.tenantId,
+      };
+      const { data, error } = await identity.client
+        .from("chat_nachrichten")
+        .insert(row)
+        .select()
+        .single();
       if (error) throw error;
       res.json(data);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -3510,14 +3724,17 @@ export async function registerRoutes(
   // einfache Alltags-To-Dos und kann einen Auftrag nur optional referenzieren.
   app.get("/api/aufgaben", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       const status = req.query.status;
       if (status !== undefined && status !== "offen" && status !== "abgeschlossen") {
         return res.status(400).json({ message: "Ungültiger Aufgabenstatus" });
       }
 
-      let query = supabase
+      let query = identity.client
         .from("aufgaben")
         .select("*")
+        .eq("tenant_id", identity.tenantId)
         .order("faellig_datum", { ascending: true, nullsFirst: false })
         .order("erstellt", { ascending: false });
       if (status) query = query.eq("status", status);
@@ -3530,9 +3747,24 @@ export async function registerRoutes(
 
   app.post("/api/aufgaben", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       const body = req.body || {};
       const titel = typeof body.titel === "string" ? body.titel.trim() : "";
       if (!titel) return res.status(400).json({ message: "Titel erforderlich" });
+
+      const auftragId = typeof body.auftrag_id === "string" && body.auftrag_id.length > 0
+        ? body.auftrag_id
+        : null;
+      const mitarbeiterId = typeof body.mitarbeiter_id === "string" && body.mitarbeiter_id.length > 0
+        ? body.mitarbeiter_id
+        : null;
+      if (auftragId && !(await auftragGehoertZuTenant(identity, auftragId))) {
+        return res.status(404).json({ message: "Auftrag nicht gefunden." });
+      }
+      if (mitarbeiterId && !(await mitarbeiterGehoertZuTenant(identity, mitarbeiterId))) {
+        return res.status(404).json({ message: "Mitarbeiter nicht gefunden." });
+      }
 
       const now = new Date().toISOString();
       const aufgabe = {
@@ -3541,15 +3773,18 @@ export async function registerRoutes(
         beschreibung: typeof body.beschreibung === "string" && body.beschreibung.trim()
           ? body.beschreibung.trim()
           : null,
-        auftrag_id: body.auftrag_id || null,
-        mitarbeiter_id: body.mitarbeiter_id || null,
-        faellig_datum: body.faellig_datum || null,
+        auftrag_id: auftragId,
+        mitarbeiter_id: mitarbeiterId,
+        faellig_datum: typeof body.faellig_datum === "string" && body.faellig_datum.length > 0
+          ? body.faellig_datum
+          : null,
         status: "offen",
         erstellt: now,
         erledigt_am: null,
         aktualisiert: now,
+        tenant_id: identity.tenantId,
       };
-      const { data, error } = await supabase.from("aufgaben").insert(aufgabe).select().single();
+      const { data, error } = await identity.client.from("aufgaben").insert(aufgabe).select().single();
       if (error) throw error;
       res.status(201).json(data);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -3557,6 +3792,16 @@ export async function registerRoutes(
 
   app.patch("/api/aufgaben/:id", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { data: existing } = await identity.client
+        .from("aufgaben")
+        .select("id")
+        .eq("id", req.params.id)
+        .eq("tenant_id", identity.tenantId)
+        .maybeSingle();
+      if (!existing) return res.status(404).json({ message: "Aufgabe nicht gefunden" });
+
       const body = req.body || {};
       const update: Record<string, any> = {};
 
@@ -3570,8 +3815,28 @@ export async function registerRoutes(
           ? body.beschreibung.trim()
           : null;
       }
-      for (const field of ["auftrag_id", "mitarbeiter_id", "faellig_datum"]) {
-        if (field in body) update[field] = body[field] || null;
+      if ("auftrag_id" in body) {
+        const auftragId = typeof body.auftrag_id === "string" && body.auftrag_id.length > 0
+          ? body.auftrag_id
+          : null;
+        if (auftragId && !(await auftragGehoertZuTenant(identity, auftragId))) {
+          return res.status(404).json({ message: "Auftrag nicht gefunden." });
+        }
+        update.auftrag_id = auftragId;
+      }
+      if ("mitarbeiter_id" in body) {
+        const mitarbeiterId = typeof body.mitarbeiter_id === "string" && body.mitarbeiter_id.length > 0
+          ? body.mitarbeiter_id
+          : null;
+        if (mitarbeiterId && !(await mitarbeiterGehoertZuTenant(identity, mitarbeiterId))) {
+          return res.status(404).json({ message: "Mitarbeiter nicht gefunden." });
+        }
+        update.mitarbeiter_id = mitarbeiterId;
+      }
+      if ("faellig_datum" in body) {
+        update.faellig_datum = typeof body.faellig_datum === "string" && body.faellig_datum.length > 0
+          ? body.faellig_datum
+          : null;
       }
       if ("status" in body) {
         if (body.status !== "offen" && body.status !== "abgeschlossen") {
@@ -3587,10 +3852,11 @@ export async function registerRoutes(
       }
       update.aktualisiert = new Date().toISOString();
 
-      const { data, error } = await supabase
+      const { data, error } = await identity.client
         .from("aufgaben")
         .update(update)
         .eq("id", req.params.id)
+        .eq("tenant_id", identity.tenantId)
         .select()
         .single();
       if (error) throw error;
@@ -3600,7 +3866,20 @@ export async function registerRoutes(
 
   app.delete("/api/aufgaben/:id", async (req, res) => {
     try {
-      const { error } = await supabase.from("aufgaben").delete().eq("id", req.params.id);
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { data: existing } = await identity.client
+        .from("aufgaben")
+        .select("id")
+        .eq("id", req.params.id)
+        .eq("tenant_id", identity.tenantId)
+        .maybeSingle();
+      if (!existing) return res.status(404).json({ message: "Aufgabe nicht gefunden" });
+      const { error } = await identity.client
+        .from("aufgaben")
+        .delete()
+        .eq("id", req.params.id)
+        .eq("tenant_id", identity.tenantId);
       if (error) throw error;
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -5547,6 +5826,15 @@ export async function registerRoutes(
     if (!lieferantId) return true;
     const { data, error } = await identity.client
       .from("lieferanten").select("id").eq("id", lieferantId).eq("tenant_id", identity.tenantId).maybeSingle();
+    if (error) throw error;
+    return !!data;
+  }
+
+  // Prueft, dass eine (optionale) mitarbeiter_id zum eingeloggten Mandanten gehoert.
+  async function mitarbeiterGehoertZuTenant(identity: DashboardPreferenceIdentity, mitarbeiterId: string | null | undefined): Promise<boolean> {
+    if (!mitarbeiterId) return true;
+    const { data, error } = await identity.client
+      .from("mitarbeiter").select("id").eq("id", mitarbeiterId).eq("tenant_id", identity.tenantId).maybeSingle();
     if (error) throw error;
     return !!data;
   }
@@ -7512,22 +7800,40 @@ export async function registerRoutes(
   });
 
   // ─── Schritt-Fotos ───────────────────────────────────────────────────────────
+  // Grenzt Base64-Payloads auf ~20 MB Rohdaten (≈27 MB Base64) ein.
+  const SCHRITT_FOTO_MAX_BASE64_LEN = 27_000_000;
+
   // Foto hochladen (base64 → Supabase Storage)
   app.post("/api/auftraege/:id/schritte/:sid/fotos", async (req, res) => {
     try {
-      const { base64, dateiname, mimeType } = req.body;
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      if (!(await auftragGehoertZuTenant(identity, req.params.id))) {
+        return res.status(404).json({ message: "Auftrag nicht gefunden." });
+      }
+      const body = req.body || {};
+      const base64 = typeof body.base64 === "string" ? body.base64 : "";
       if (!base64) return res.status(400).json({ message: "Kein Bild" });
-      const ext = (dateiname || "foto.jpg").split(".").pop() || "jpg";
-      const fname = `${req.params.sid}/${uid()}.${ext}`;
+      if (base64.length > SCHRITT_FOTO_MAX_BASE64_LEN) {
+        return res.status(413).json({ message: "Foto übersteigt die maximale Grösse." });
+      }
+      const dateinameRaw = typeof body.dateiname === "string" ? body.dateiname : "";
+      const mimeType = typeof body.mimeType === "string" ? body.mimeType : "image/jpeg";
+      const ext = (dateinameRaw || "foto.jpg").split(".").pop() || "jpg";
+      const fname = `${identity.tenantId}/${req.params.sid}/${uid()}.${ext}`;
       const buf = Buffer.from(base64.replace(/^data:[^;]+;base64,/, ""), "base64");
       const { error: upErr } = await supabase.storage.from("schritt-fotos").upload(fname, buf, {
-        contentType: mimeType || "image/jpeg", upsert: false
+        contentType: mimeType, upsert: false
       });
       if (upErr) return res.status(500).json({ message: upErr.message });
       const { data: { publicUrl } } = supabase.storage.from("schritt-fotos").getPublicUrl(fname);
-      const { data, error } = await supabase.from("auftrag_schritt_fotos").insert({
-        id: uid(), schritt_id: req.params.sid, auftrag_id: req.params.id,
-        url: publicUrl, dateiname: dateiname || fname
+      const { data, error } = await identity.client.from("auftrag_schritt_fotos").insert({
+        id: uid(),
+        schritt_id: req.params.sid,
+        auftrag_id: req.params.id,
+        url: publicUrl,
+        dateiname: dateinameRaw || fname,
+        tenant_id: identity.tenantId,
       }).select().single();
       if (error) return res.status(500).json({ message: error.message });
       res.json(data);
@@ -7537,8 +7843,17 @@ export async function registerRoutes(
   // Fotos eines Schritts abrufen
   app.get("/api/auftraege/:id/schritte/:sid/fotos", async (req, res) => {
     try {
-      const { data, error } = await supabase.from("auftrag_schritt_fotos")
-        .select("*").eq("schritt_id", req.params.sid).order("erstellt_am", { ascending: true });
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      if (!(await auftragGehoertZuTenant(identity, req.params.id))) {
+        return res.status(404).json({ message: "Auftrag nicht gefunden." });
+      }
+      const { data, error } = await identity.client
+        .from("auftrag_schritt_fotos")
+        .select("*")
+        .eq("schritt_id", req.params.sid)
+        .eq("tenant_id", identity.tenantId)
+        .order("erstellt_am", { ascending: true });
       if (error) return res.status(500).json({ message: error.message });
       res.json(data || []);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -7547,13 +7862,36 @@ export async function registerRoutes(
   // Foto löschen
   app.delete("/api/auftraege/:id/schritte/:sid/fotos/:fid", async (req, res) => {
     try {
-      const { data: foto } = await supabase.from("auftrag_schritt_fotos").select("url").eq("id", req.params.fid).single();
-      if (foto?.url) {
-        // Storage-Pfad aus URL extrahieren und löschen
-        const path = foto.url.split("/schritt-fotos/")[1];
-        if (path) await supabase.storage.from("schritt-fotos").remove([path]);
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      if (!(await auftragGehoertZuTenant(identity, req.params.id))) {
+        return res.status(404).json({ message: "Auftrag nicht gefunden." });
       }
-      await supabase.from("auftrag_schritt_fotos").delete().eq("id", req.params.fid);
+      const { data: foto } = await identity.client
+        .from("auftrag_schritt_fotos")
+        .select("id, url, schritt_id")
+        .eq("id", req.params.fid)
+        .eq("tenant_id", identity.tenantId)
+        .maybeSingle();
+      if (!foto) return res.status(404).json({ message: "Foto nicht gefunden" });
+      if (foto.schritt_id !== req.params.sid) {
+        return res.status(404).json({ message: "Foto nicht gefunden" });
+      }
+      if (foto.url) {
+        // Storage-Pfad aus URL extrahieren; nur akzeptieren wenn der Pfad
+        // mit dem eingeloggten Tenant beginnt (schuetzt vor manipulierten URLs).
+        const parts = foto.url.split("/schritt-fotos/");
+        const path = parts.length > 1 ? parts[1] : "";
+        if (path && path.startsWith(`${identity.tenantId}/`) && !path.includes("..")) {
+          await supabase.storage.from("schritt-fotos").remove([path]);
+        }
+      }
+      const { error } = await identity.client
+        .from("auftrag_schritt_fotos")
+        .delete()
+        .eq("id", req.params.fid)
+        .eq("tenant_id", identity.tenantId);
+      if (error) return res.status(500).json({ message: error.message });
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
