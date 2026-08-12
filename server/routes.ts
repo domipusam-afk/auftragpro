@@ -7571,6 +7571,13 @@ export async function registerRoutes(
         storedPreferences as Partial<DashboardPreferences> | null,
       ).reminder_settings;
       const needsOrderReminders = reminderSettings.vorkalkulation_fehlt || reminderSettings.auftrag_ohne_termin;
+      // Die einfache, bewusst feste D2.6-Definition misst ab dem technisch
+      // verlässlichen Erstellzeitpunkt der Offerte. Ein Versand-/Antwort-Tracking
+      // gibt es im aktuellen Datenmodell nicht.
+      const angebotsAntwortFristTage = 14;
+      const angebotsAntwortCutoff = new Date(
+        Date.now() - angebotsAntwortFristTage * 24 * 60 * 60 * 1000,
+      ).toISOString();
       const today = new Intl.DateTimeFormat("en-CA", {
         timeZone: "Europe/Zurich",
         year: "numeric",
@@ -7601,13 +7608,25 @@ export async function registerRoutes(
           .lt("faellig_datum", todayIso)
           .order("faellig_datum", { ascending: true })
         : Promise.resolve({ data: [], error: null });
+      const offersWithoutResponseRequest = reminderSettings.angebot_ohne_antwort
+        ? identity.client
+          .from("offerten")
+          .select("id, nr, auftrag_id, empfaenger_name, erstellt, positionen, rabatt_prozent, mwst_prozent")
+          .eq("tenant_id", identity.tenantId)
+          .eq("status", "offen")
+          .not("erstellt", "is", null)
+          .lte("erstellt", angebotsAntwortCutoff)
+          .order("erstellt", { ascending: true })
+        : Promise.resolve({ data: [], error: null });
 
-      const [activeOrdersResult, overdueInvoicesResult] = await Promise.all([
+      const [activeOrdersResult, overdueInvoicesResult, offersWithoutResponseResult] = await Promise.all([
         activeOrdersRequest,
         overdueInvoicesRequest,
+        offersWithoutResponseRequest,
       ]);
       if (activeOrdersResult.error) throw activeOrdersResult.error;
       if (overdueInvoicesResult.error) throw overdueInvoicesResult.error;
+      if (offersWithoutResponseResult.error) throw offersWithoutResponseResult.error;
 
       const activeOrders = (activeOrdersResult.data || []).filter((auftrag: any) =>
         auftrag.status !== "abgeschlossen" && auftrag.status !== "storniert",
@@ -7712,6 +7731,35 @@ export async function registerRoutes(
               faellig_am: rechnung.faellig_datum.slice(0, 10),
               kunde: rechnung.auftrag_id ? kundenByAuftragId.get(rechnung.auftrag_id) || null : null,
               betrag_brutto: rechnungBruttoBetrag(rechnung.betrag),
+            })),
+          });
+        }
+      }
+
+      if (reminderSettings.angebot_ohne_antwort) {
+        const now = Date.now();
+        const offersWithoutResponse = (offersWithoutResponseResult.data || [])
+          .map((offerte: any) => {
+            const erstelltAm = new Date(offerte.erstellt).getTime();
+            const tageOffen = Number.isNaN(erstelltAm)
+              ? -1
+              : Math.floor((now - erstelltAm) / (24 * 60 * 60 * 1000));
+            return { offerte, tageOffen };
+          })
+          .filter(({ tageOffen }: { tageOffen: number }) => tageOffen >= angebotsAntwortFristTage)
+          .sort((left: any, right: any) => right.tageOffen - left.tageOffen);
+
+        if (offersWithoutResponse.length > 0) {
+          reminders.push({
+            type: "angebot_ohne_antwort",
+            count: offersWithoutResponse.length,
+            items: offersWithoutResponse.slice(0, 5).map(({ offerte, tageOffen }: any) => ({
+              id: offerte.id,
+              angebotsnummer: offerte.nr || null,
+              auftrag_id: offerte.auftrag_id || null,
+              kunde: offerte.empfaenger_name || null,
+              tage_offen: tageOffen,
+              wert: offerteBrutto(offerte),
             })),
           });
         }

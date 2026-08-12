@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { AlertTriangle, ArrowRight, Calculator, CalendarX2, CheckCircle2, FileWarning, Settings2 } from "lucide-react";
+import { AlertTriangle, ArrowRight, Calculator, CalendarX2, CheckCircle2, FileWarning, Hourglass, Settings2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiRequest } from "@/lib/queryClient";
@@ -24,6 +24,15 @@ interface RechnungReminderItem {
   betrag_brutto: number;
 }
 
+interface AngebotReminderItem {
+  id: string;
+  angebotsnummer: string | null;
+  auftrag_id: string | null;
+  kunde: string | null;
+  tage_offen: number;
+  wert: number;
+}
+
 interface AuftragReminder {
   type: "vorkalkulation_fehlt" | "auftrag_ohne_termin";
   count: number;
@@ -37,8 +46,14 @@ interface RechnungReminder {
   items: RechnungReminderItem[];
 }
 
+interface AngebotReminder {
+  type: "angebot_ohne_antwort";
+  count: number;
+  items: AngebotReminderItem[];
+}
+
 interface SmarteErinnerungenResponse {
-  reminders: Array<AuftragReminder | RechnungReminder>;
+  reminders: Array<AuftragReminder | RechnungReminder | AngebotReminder>;
 }
 
 interface SmarteErinnerungenWidgetProps {
@@ -100,6 +115,35 @@ function RechnungReminderRows({ items }: { items: RechnungReminderItem[] }) {
   );
 }
 
+function AngebotReminderRows({ items }: { items: AngebotReminderItem[] }) {
+  return (
+    <ul className="divide-y rounded-md border bg-background/40">
+      {items.map((angebot) => {
+        const href = angebot.auftrag_id ? `/auftraege/${angebot.auftrag_id}?tab=offerte` : "/offerten";
+        return (
+          <li key={angebot.id}>
+            <Link href={href}>
+              <a className="flex items-center gap-3 px-3 py-2.5 transition-colors hover:bg-muted/70">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                      {angebot.angebotsnummer || "Angebot"}
+                    </span>
+                    <span className="truncate text-sm font-medium">{angebot.kunde || "Ohne Kundenbezeichnung"}</span>
+                  </div>
+                  <p className="mt-0.5 text-xs text-muted-foreground">Seit {angebot.tage_offen} Tagen offen</p>
+                </div>
+                <span className="shrink-0 text-sm font-semibold tabular-nums">{formatCHF(angebot.wert)}</span>
+                <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+              </a>
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 /** Compact, preference-aware action prompts. The broader D2.3 invoice KPI
  * remains intentionally separate: it measures business health, while this
  * widget tells the user which next step to take. */
@@ -115,6 +159,7 @@ export function SmarteErinnerungenWidget({ visible, style }: SmarteErinnerungenW
   const vorkalkulation = reminders.find((reminder): reminder is AuftragReminder => reminder.type === "vorkalkulation_fehlt");
   const termin = reminders.find((reminder): reminder is AuftragReminder => reminder.type === "auftrag_ohne_termin");
   const rechnung = reminders.find((reminder): reminder is RechnungReminder => reminder.type === "rechnung_ueberfaellig");
+  const angebot = reminders.find((reminder): reminder is AngebotReminder => reminder.type === "angebot_ohne_antwort");
 
   return (
     <DashboardWidget
@@ -201,6 +246,20 @@ export function SmarteErinnerungenWidget({ visible, style }: SmarteErinnerungenW
                     Jetzt Mahnung senden <ArrowRight className="h-3.5 w-3.5" />
                   </a>
                 </Link>
+              </section>
+            )}
+
+            {angebot && (
+              <section>
+                <div className="mb-2 flex items-center gap-2">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-200">
+                    <Hourglass className="h-4 w-4" />
+                  </div>
+                  <h3 className="text-sm font-semibold">
+                    {angebot.count} Angebot{angebot.count === 1 ? "" : "e"} ohne Antwort
+                  </h3>
+                </div>
+                <AngebotReminderRows items={angebot.items} />
               </section>
             )}
           </div>

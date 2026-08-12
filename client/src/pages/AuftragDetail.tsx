@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -2469,13 +2469,19 @@ function KundenportalTab({ id }: { id: string }) {
 
 export default function AuftragDetail({ id }: Props) {
   const [, setLocation] = useLocation();
+  const search = useSearch();
   const { toast } = useToast();
   const { hatZugriff } = useAuth();
   const darfPreiseSehen = hatZugriff("auftraege_preise_sichtbar");
   const { confirm: confirmAction, ConfirmDialog: ActionConfirmDialog } = useConfirm();
   const [delOpen, setDelOpen] = useState(false);
-  const [aktiverTab, setAktiverTab] = useState("verlauf");
+  const requestedTab = new URLSearchParams(search).get("tab");
+  const [aktiverTab, setAktiverTab] = useState(() => requestedTab === "offerte" ? "offerte" : "verlauf");
   const [offerteVorlage, setOfferteVorlage] = useState<OffertePosition[] | null>(null);
+
+  useEffect(() => {
+    if (requestedTab === "offerte") setAktiverTab("offerte");
+  }, [requestedTab]);
 
   const { data, isLoading, refetch } = useQuery<DetailData>({
     queryKey: ["/api/auftraege", id],

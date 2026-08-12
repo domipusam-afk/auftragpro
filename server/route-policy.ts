@@ -255,10 +255,10 @@ export const ROUTE_POLICIES = [
   { method: "PATCH", path: "/api/auftraege/:id/kunden-nachricht", line: 7395, access: "permissions", permissions: ["auftraege_anzeigen"], reason: "Aufträge, Status, Notizen, Positionen, Schritte und Kunden-Nachricht.", currentEnforcement: "unguarded" },
   { method: "GET", path: "/api/dashboard/preferences", line: 7491, access: "permissions", permissions: ["auftraege_anzeigen"], reason: "Persönliche Dashboard-Kachel- und Erinnerungspräferenzen.", currentEnforcement: "unguarded" },
   { method: "PUT", path: "/api/dashboard/preferences", line: 7517, access: "permissions", permissions: ["auftraege_anzeigen"], reason: "Persönliche Dashboard-Kachel- und Erinnerungspräferenzen.", currentEnforcement: "unguarded" },
-  { method: "GET", path: "/api/dashboard/reminders", line: 7555, access: "permissions", permissions: ["auftraege_anzeigen"], reason: "Persönlich konfigurierbare Handlungserinnerungen für Aufträge und Rechnungen.", currentEnforcement: "unguarded" },
-  { method: "GET", path: "/api/dashboard/aufgaben", line: 7731, access: "permissions", permissions: ["ressourcen_aufgaben"], reason: "Team-Ansicht offener Aufgaben im Dashboard.", currentEnforcement: "unguarded" },
-  { method: "GET", path: "/api/dashboard/ueberfaellige-rechnungen", line: 7789, access: "permissions", permissions: ["dashboard_finanzen"], reason: "Überfällige Rechnungen und offene Bruttobeträge im Dashboard.", currentEnforcement: "unguarded" },
-  { method: "GET", path: "/api/dashboard/top-kunden", line: 7888, access: "permissions", permissions: ["dashboard_finanzen"], reason: "Top-Kunden nach fakturiertem Netto-Umsatz im Dashboard.", currentEnforcement: "unguarded" },
+  { method: "GET", path: "/api/dashboard/reminders", line: 7555, access: "permissions", permissions: ["auftraege_anzeigen"], reason: "Persönlich konfigurierbare Handlungserinnerungen für Aufträge, Rechnungen und Offerten.", currentEnforcement: "unguarded" },
+  { method: "GET", path: "/api/dashboard/aufgaben", line: 7779, access: "permissions", permissions: ["ressourcen_aufgaben"], reason: "Team-Ansicht offener Aufgaben im Dashboard.", currentEnforcement: "unguarded" },
+  { method: "GET", path: "/api/dashboard/ueberfaellige-rechnungen", line: 7837, access: "permissions", permissions: ["dashboard_finanzen"], reason: "Überfällige Rechnungen und offene Bruttobeträge im Dashboard.", currentEnforcement: "unguarded" },
+  { method: "GET", path: "/api/dashboard/top-kunden", line: 7936, access: "permissions", permissions: ["dashboard_finanzen"], reason: "Top-Kunden nach fakturiertem Netto-Umsatz im Dashboard.", currentEnforcement: "unguarded" },
 ] as const satisfies readonly RoutePolicy[];
 
 export const ROUTE_POLICY_BY_FINGERPRINT: Readonly<Record<string, RoutePolicy>> =

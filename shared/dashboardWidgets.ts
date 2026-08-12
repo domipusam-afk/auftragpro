@@ -107,7 +107,7 @@ export const DASHBOARD_REMINDER_SETTINGS = [
   {
     id: "angebot_ohne_antwort",
     label: "Erinnerung: Offerten ohne Antwort",
-    description: "Vorbereitung für die spätere Erinnerung an unbeantwortete Offerten.",
+    description: "Zeigt Offerten mit Status «offen», die seit mindestens 14 Tagen erstellt sind.",
   },
 ] as const;
 
