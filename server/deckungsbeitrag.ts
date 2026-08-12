@@ -104,8 +104,10 @@ export async function berechneAuftragIstKosten(
 
 /**
  * Shared basis of the finance overview and the DB1 dashboard endpoint.
- * `tenantId` is optional only for the legacy finance routes; new dashboard
- * routes always pass the authenticated tenant explicitly.
+ * `tenantId` must be passed by every caller so that finance data is strictly
+ * scoped to the authenticated tenant. The parameter stays optional only for
+ * TypeScript ergonomics — passing `undefined` from a real request path is a
+ * multi-tenant leak.
  */
 export async function ladeFinanzenUebersichtZeilen(
   client: KostenClient,
@@ -122,11 +124,15 @@ export async function ladeFinanzenUebersichtZeilen(
   const ids = (auftraege || []).map((auftrag: any) => auftrag.id);
   if (ids.length === 0) return [];
 
-  let rechnungenQuery = client
+  // Der Mandantenschutz laeuft ueber die Auftrag-Vorselektion oben: Rechnungen werden
+  // strikt via auftrag_id IN (...) an den Mandanten gebunden. Ein zusaetzlicher
+  // .eq("tenant_id") auf rechnungen ist nicht noetig und waere sogar fragil — sollte
+  // rechnungen.tenant_id einmal NULL sein (kein DB-Trigger), wuerde die Rechnung
+  // faelschlich ausgefiltert und der Umsatz falsch ausgewiesen.
+  const rechnungenQuery = client
     .from("rechnungen")
     .select("auftrag_id, betrag, bezahlt_am")
     .in("auftrag_id", ids);
-  if (tenantId) rechnungenQuery = rechnungenQuery.eq("tenant_id", tenantId);
   const [{ data: rechnungen, error: rechnungenError }, kostenJeAuftrag] = await Promise.all([
     rechnungenQuery,
     berechneAuftragIstKosten(client, ids, tenantId),

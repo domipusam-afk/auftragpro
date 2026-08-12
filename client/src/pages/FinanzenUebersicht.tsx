@@ -203,7 +203,7 @@ export default function FinanzenUebersicht() {
               {/* Mobile: Karten-Layout */}
               <div className="md:hidden divide-y">
                 {gefiltert.map((z) => (
-                  <Link key={z.id} href={`/nachkalkulation/${z.id}`}>
+                  <Link key={z.id} href={`/auftraege/${z.id}`}>
                     <a className="block p-4 space-y-2 hover:bg-muted/30 transition-colors" data-testid={`finanzen-row-${z.id}`}>
                       <div>
                         <div className="font-mono text-xs text-muted-foreground">{z.nr}</div>

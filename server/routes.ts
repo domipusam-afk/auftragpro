@@ -691,9 +691,13 @@ export async function registerRoutes(
   // GET /api/dashboard/reingewinn
   // Aggregat der Finanzen-Übersicht — dieselben Zeilen und dieselbe Summierung wie
   // GET /api/finanzen/uebersicht, damit die Kachel und die Seite nie abweichen.
-  app.get("/api/dashboard/reingewinn", async (_req, res) => {
+  app.get("/api/dashboard/reingewinn", async (req, res) => {
     try {
-      const { anzahl, umsatz, kosten, reingewinn } = finanzenSummen(await ladeFinanzenUebersichtZeilen(supabase));
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { anzahl, umsatz, kosten, reingewinn } = finanzenSummen(
+        await ladeFinanzenUebersichtZeilen(identity.client, identity.tenantId),
+      );
       res.json({ reingewinn, umsatz, kosten, anzahl });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
@@ -5984,9 +5988,11 @@ export async function registerRoutes(
 
   // ═══ END KALKULATION V6 ═══════════════════════════════════════════
 
-  app.get("/api/finanzen/uebersicht", async (_req, res) => {
+  app.get("/api/finanzen/uebersicht", async (req, res) => {
     try {
-      res.json(await ladeFinanzenUebersichtZeilen(supabase));
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      res.json(await ladeFinanzenUebersichtZeilen(identity.client, identity.tenantId));
     } catch (e) {
       res.status(500).json({ message: asError(e) });
     }
