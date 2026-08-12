@@ -9,7 +9,7 @@ import bcrypt from "bcryptjs";
 import * as OTPAuth from "otpauth";
 import QRCode from "qrcode";
 import { fileURLToPath } from "url";
-import { finanzenSummen, type FinanzenUebersichtZeile, berechneVorkalkulationsAngebotspreis, rechnungBruttoBetrag, MWST_SATZ_RECHNUNG } from "../shared/schema";
+import { finanzenSummen, berechneVorkalkulationsAngebotspreis, rechnungBruttoBetrag, MWST_SATZ_RECHNUNG } from "../shared/schema";
 import { setLegacySessionCookie } from "./legacy-session";
 import { getAuthMode } from "./auth-context"; import { STATUS_GESAMT_EXCLUDED, STATUS_IN_BEARBEITUNG } from "../shared/dashboardStatus";
 import { createDownloadToken, validateAndConsumeDownloadToken } from "./download-tokens";
@@ -23,6 +23,7 @@ import {
   type DashboardWidgetId,
 } from "../shared/dashboardWidgets";
 import { getDefaultTenantId } from "./tenant-context";
+import { berechneAuftragIstKosten, ladeFinanzenUebersichtZeilen, stundensatzFuer, zurichKalenderjahr } from "./deckungsbeitrag";
 
 // Robust logo path resolution: works in both ESM (dev) and CJS (production build)
 function getLogoPath(): string {
@@ -104,121 +105,6 @@ function nextNr(prefix: string, list: { nr?: string }[]): string {
     }
   }
   return `${yearPrefix}${String(max + 1).padStart(4, "0")}`;
-}
-
-// Werkstatt-Sätze setzen sich aus Grundsatz + maschinenpark-spezifischem Zuschlag
-// zusammen, alle anderen Orte haben einen einzelnen Satz.
-function stundensatzFuer(saetze: any[], ort?: string | null, maschinenpark?: string | null): number {
-  const o = ort || "Montage";
-  if (o !== "Werkstatt") {
-    const match = saetze.find((s: any) => s.ort === o && !s.maschinenpark);
-    return match ? (match.satz || 0) : 0;
-  }
-  const spezifisch = maschinenpark
-    ? saetze.find((s: any) => s.ort === "Werkstatt" && s.maschinenpark === maschinenpark)
-    : undefined;
-  const basis = spezifisch || saetze.find((s: any) => s.ort === "Werkstatt" && !s.maschinenpark);
-  return basis ? ((basis.grundsatz || 0) + (basis.satz || 0)) : 0;
-}
-
-// ─── Finanzen-Übersicht: Umsatz & Reingewinn je abgeschlossenem Auftrag ─────────
-// Einzige Berechnung dieser Zahlen. GET /api/finanzen/uebersicht und die
-// Reingewinn-Kachel des Dashboards lesen beide von hier, damit die zwei Ansichten
-// nicht auseinanderlaufen können.
-// Der Umsatz kommt direkt aus der Tabelle "rechnungen" (rechnungen.betrag ist netto,
-// das PDF schlägt die MWST erst auf). Bewusst NICHT aus auftraege.rechnungs_betrag:
-// dieses Spiegelfeld kann veraltet sein, während die Rechnung die Wahrheit ist.
-async function finanzenUebersichtZeilen(): Promise<FinanzenUebersichtZeile[]> {
-  const { data: auftraege, error } = await supabase
-    .from("auftraege")
-    .select("id, nr, titel, kunde, waehrung, end_datum, erstellt")
-    .eq("status", "abgeschlossen");
-  if (error) throw error;
-
-  const ids = (auftraege || []).map((a: any) => a.id);
-  if (ids.length === 0) return [];
-
-  const antworten = await Promise.all([
-    supabase.from("stundensaetze").select("*"),
-    supabase.from("nachkalkulation_stunden").select("auftrag_id, total_chf").in("auftrag_id", ids).eq("quelle", "manuell"),
-    supabase.from("zeiteintraege").select("auftrag_id, dauer_minuten, ort, maschinenpark").in("auftrag_id", ids),
-    supabase.from("nachkalkulation_material").select("auftrag_id, betrag_chf").in("auftrag_id", ids),
-    supabase.from("nachkalkulation_fremdleistungen").select("auftrag_id, betrag_chf").in("auftrag_id", ids),
-    supabase.from("nachkalkulation_soek").select("auftrag_id, total_chf").in("auftrag_id", ids),
-    supabase.from("rechnungen").select("auftrag_id, betrag, bezahlt_am").in("auftrag_id", ids),
-  ]);
-  // Eine fehlgeschlagene Teilabfrage darf nicht als "diese Kosten gibt es nicht"
-  // durchrutschen — sonst meldet die Seite stillschweigend einen zu hohen Gewinn.
-  const fehler = antworten.find((a) => a.error);
-  if (fehler?.error) throw fehler.error;
-  const [saetze, nkStunden, zeiteintraege, nkMaterial, nkFremd, nkSoek, rechnungen] = antworten;
-
-  const summieren = (rows: any[] | null, feld: string) => {
-    const map = new Map<string, number>();
-    for (const r of rows || []) {
-      map.set(r.auftrag_id, (map.get(r.auftrag_id) || 0) + (Number(r[feld]) || 0));
-    }
-    return map;
-  };
-
-  const lohnManuell = summieren(nkStunden.data, "total_chf");
-  const material = summieren(nkMaterial.data, "betrag_chf");
-  const fremd = summieren(nkFremd.data, "betrag_chf");
-  const soek = summieren(nkSoek.data, "total_chf");
-
-  const lohnZeiterfassung = new Map<string, number>();
-  for (const ze of zeiteintraege.data || []) {
-    const satz = stundensatzFuer(saetze.data || [], ze.ort, ze.maschinenpark);
-    const betrag = ((ze.dauer_minuten || 0) / 60) * satz;
-    lohnZeiterfassung.set(ze.auftrag_id, (lohnZeiterfassung.get(ze.auftrag_id) || 0) + betrag);
-  }
-
-  // rechnungen.betrag ist bereits netto — keine MWST-Rueckrechnung noetig.
-  const rechnungenJeAuftrag = new Map<string, any[]>();
-  for (const r of rechnungen.data || []) {
-    const liste = rechnungenJeAuftrag.get(r.auftrag_id) || [];
-    liste.push(r);
-    rechnungenJeAuftrag.set(r.auftrag_id, liste);
-  }
-
-  const sortSchluessel = (a: any) => String(a.end_datum || a.erstellt || "");
-  return [...(auftraege || [])]
-    .sort((a: any, b: any) => sortSchluessel(b).localeCompare(sortSchluessel(a)))
-    .map((a: any) => {
-      const kosten =
-        (lohnManuell.get(a.id) || 0) +
-        (lohnZeiterfassung.get(a.id) || 0) +
-        (material.get(a.id) || 0) +
-        (fremd.get(a.id) || 0) +
-        (soek.get(a.id) || 0);
-      const rs = rechnungenJeAuftrag.get(a.id) || [];
-      const summe = (liste: any[]) => liste.reduce((s, r) => s + (Number(r.betrag) || 0), 0);
-      const bezahlteRechnungen = rs.filter((r) => r.bezahlt_am);
-      const umsatzNetto = summe(rs);
-      const bezahltNetto = summe(bezahlteRechnungen);
-      // Letztes Zahlungsdatum, damit die UI "Bezahlt am ..." anzeigen kann.
-      const bezahltAm = bezahlteRechnungen
-        .map((r) => String(r.bezahlt_am))
-        .sort()
-        .pop() || null;
-      return {
-        id: a.id,
-        nr: a.nr,
-        titel: a.titel,
-        kunde: a.kunde,
-        waehrung: a.waehrung || "CHF",
-        umsatz_netto: umsatzNetto,
-        bezahlt_netto: bezahltNetto,
-        offen_netto: umsatzNetto - bezahltNetto,
-        bezahlt_am: bezahltAm,
-        voll_bezahlt: rs.length > 0 && bezahlteRechnungen.length === rs.length,
-        anzahl_rechnungen: rs.length,
-        kosten,
-        reingewinn: umsatzNetto - kosten,
-        hat_rechnung: rs.length > 0,
-        hat_kosten: kosten > 0,
-      };
-    });
 }
 
 function asError(e: unknown): string {
@@ -763,7 +649,7 @@ export async function registerRoutes(
   // GET /api/finanzen/uebersicht, damit die Kachel und die Seite nie abweichen.
   app.get("/api/dashboard/reingewinn", async (_req, res) => {
     try {
-      const { anzahl, umsatz, kosten, reingewinn } = finanzenSummen(await finanzenUebersichtZeilen());
+      const { anzahl, umsatz, kosten, reingewinn } = finanzenSummen(await ladeFinanzenUebersichtZeilen(supabase));
       res.json({ reingewinn, umsatz, kosten, anzahl });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
@@ -5835,7 +5721,7 @@ export async function registerRoutes(
 
   app.get("/api/finanzen/uebersicht", async (_req, res) => {
     try {
-      res.json(await finanzenUebersichtZeilen());
+      res.json(await ladeFinanzenUebersichtZeilen(supabase));
     } catch (e) {
       res.status(500).json({ message: asError(e) });
     }
@@ -7940,21 +7826,7 @@ export async function registerRoutes(
         return res.status(401).json({ message: "Authentifizierung erforderlich." });
       }
 
-      // Der Kalenderjahreswechsel richtet sich explizit nach Europe/Zurich
-      // (CET/CEST), unabhängig von der Host-Zeitzone des Servers. Der
-      // Jahresanfang selbst liegt immer in CET (+01:00).
-      const zurichDate = new Intl.DateTimeFormat("en-CA", {
-        timeZone: "Europe/Zurich",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      }).formatToParts(new Date()).reduce<Record<string, string>>((parts, part) => {
-        if (part.type !== "literal") parts[part.type] = part.value;
-        return parts;
-      }, {});
-      const year = Number(zurichDate.year);
-      const yearStart = new Date(`${year}-01-01T00:00:00+01:00`).toISOString();
-      const nextYearStart = new Date(`${year + 1}-01-01T00:00:00+01:00`).toISOString();
+      const { year, yearStart, nextYearStart } = zurichKalenderjahr();
 
       const { data: invoices, error } = await identity.client
         .from("rechnungen")
@@ -8009,6 +7881,109 @@ export async function registerRoutes(
         .slice(0, 5);
 
       return res.json({ year, kunden });
+    } catch (e) {
+      return res.status(500).json({ message: asError(e) });
+    }
+  });
+
+  // ─── Deckungsbeitrag 1 (Dashboard) ─────────────────────────────────────────
+  // Rechnungserlöse werden im Zürcher Kalenderjahr nach Rechnungsdatum
+  // periodisiert. Die Kosten stammen aus derselben Ist-Kosten-Funktion wie die
+  // Finanzübersicht: Zeiterfassung, manuelle NK-Stunden, Material,
+  // Fremdleistungen und SOEK. Aufträge ohne jeden erfassten Kostenposten werden
+  // nicht in DB1 aufgenommen, weil ihre rechnerische 100%-Quote ohne
+  // Vollständigkeitsstatus fachlich irreführend wäre.
+  app.get("/api/dashboard/deckungsbeitrag", async (req, res) => {
+    try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) {
+        return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      }
+
+      const { year, yearStart, nextYearStart } = zurichKalenderjahr();
+      const { data: rechnungen, error: rechnungenError } = await identity.client
+        .from("rechnungen")
+        .select("auftrag_id, betrag")
+        .eq("tenant_id", identity.tenantId)
+        .gte("erstellt", yearStart)
+        .lt("erstellt", nextYearStart);
+      if (rechnungenError) throw rechnungenError;
+
+      const rechnungenJeAuftrag = new Map<string, number>();
+      for (const rechnung of rechnungen || []) {
+        if (typeof rechnung.auftrag_id !== "string" || !rechnung.auftrag_id) continue;
+        rechnungenJeAuftrag.set(
+          rechnung.auftrag_id,
+          (rechnungenJeAuftrag.get(rechnung.auftrag_id) || 0) + (Number(rechnung.betrag) || 0),
+        );
+      }
+      const auftragIds = Array.from(rechnungenJeAuftrag.keys());
+      if (auftragIds.length === 0) {
+        return res.json({
+          year,
+          anzahl_auftraege: 0,
+          anzahl_fakturierte_auftraege: 0,
+          ausgeschlossen_ohne_kosten: 0,
+          umsatz_netto: 0,
+          ist_kosten: 0,
+          db1: 0,
+          db1_quote: null,
+          beitraege: [],
+        });
+      }
+
+      const [{ data: auftraege, error: auftraegeError }, kostenJeAuftrag] = await Promise.all([
+        identity.client
+          .from("auftraege")
+          .select("id, nr, titel")
+          .eq("tenant_id", identity.tenantId)
+          .in("id", auftragIds),
+        berechneAuftragIstKosten(identity.client, auftragIds, identity.tenantId),
+      ]);
+      if (auftraegeError) throw auftraegeError;
+      const auftragNachId = new Map((auftraege || []).map((auftrag: any) => [auftrag.id, auftrag]));
+
+      const fakturierteAuftraege = auftragIds
+        .map((id) => {
+          const auftrag = auftragNachId.get(id);
+          const umsatz_netto = Math.round((rechnungenJeAuftrag.get(id) || 0) * 100) / 100;
+          const ist_kosten = kostenJeAuftrag.get(id)?.total || 0;
+          return {
+            id,
+            nr: auftrag?.nr || "—",
+            titel: auftrag?.titel || "Unbekannter Auftrag",
+            umsatz_netto,
+            ist_kosten,
+            db1: Math.round((umsatz_netto - ist_kosten) * 100) / 100,
+            db1_quote: umsatz_netto > 0
+              ? Math.round(((umsatz_netto - ist_kosten) / umsatz_netto) * 1000) / 10
+              : null,
+          };
+        });
+      const beruecksichtigt = fakturierteAuftraege.filter((auftrag) => auftrag.ist_kosten > 0);
+      const umsatz_netto = Math.round(beruecksichtigt.reduce((summe, auftrag) => summe + auftrag.umsatz_netto, 0) * 100) / 100;
+      const ist_kosten = Math.round(beruecksichtigt.reduce((summe, auftrag) => summe + auftrag.ist_kosten, 0) * 100) / 100;
+      const db1 = Math.round((umsatz_netto - ist_kosten) * 100) / 100;
+      const sortiert = [...beruecksichtigt].sort((links, rechts) => rechts.db1 - links.db1 || links.nr.localeCompare(rechts.nr));
+      const staerkste = sortiert.slice(0, 3).map((auftrag) => ({ ...auftrag, richtung: "staerkster" as const }));
+      const staerksteIds = new Set(staerkste.map((auftrag) => auftrag.id));
+      const schwaechste = [...sortiert]
+        .reverse()
+        .filter((auftrag) => !staerksteIds.has(auftrag.id))
+        .slice(0, 2)
+        .map((auftrag) => ({ ...auftrag, richtung: "schwaechster" as const }));
+
+      return res.json({
+        year,
+        anzahl_auftraege: beruecksichtigt.length,
+        anzahl_fakturierte_auftraege: fakturierteAuftraege.length,
+        ausgeschlossen_ohne_kosten: fakturierteAuftraege.length - beruecksichtigt.length,
+        umsatz_netto,
+        ist_kosten,
+        db1,
+        db1_quote: umsatz_netto > 0 ? Math.round((db1 / umsatz_netto) * 1000) / 10 : null,
+        beitraege: [...staerkste, ...schwaechste],
+      });
     } catch (e) {
       return res.status(500).json({ message: asError(e) });
     }

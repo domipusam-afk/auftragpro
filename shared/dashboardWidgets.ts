@@ -48,11 +48,18 @@ export const DASHBOARD_WIDGETS = [
     default_order: 36,
   },
   {
+    id: "deckungsbeitrag",
+    label: "Deckungsbeitrag (DB1) YTD",
+    description: "DB1 nach Rechnungsdatum: Netto-Umsatz minus erfasste direkte IST-Kosten",
+    default_visible: true,
+    default_order: 37,
+  },
+  {
     id: "smarte_erinnerungen",
     label: "Smarte Erinnerungen",
     description: "Konkrete nächste Schritte für Aufträge und Rechnungen",
     default_visible: true,
-    default_order: 37,
+    default_order: 38,
   },
   {
     id: "umsatz_charts",

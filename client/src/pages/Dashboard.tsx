@@ -40,6 +40,7 @@ import { DashboardWidget } from "@/components/dashboard/DashboardWidget";
 import { AufgabenWidget } from "@/components/dashboard/AufgabenWidget";
 import { UeberfaelligeRechnungenWidget } from "@/components/dashboard/UeberfaelligeRechnungenWidget";
 import { TopKundenWidget } from "@/components/dashboard/TopKundenWidget";
+import { DeckungsbeitragWidget } from "@/components/dashboard/DeckungsbeitragWidget";
 import { SmarteErinnerungenWidget } from "@/components/dashboard/SmarteErinnerungenWidget";
 import {
   normalizeDashboardPreferences,
@@ -613,6 +614,11 @@ export default function Dashboard() {
       <TopKundenWidget
         visible={isWidgetVisible("top_kunden") && darf_finanzen}
         style={widgetStyle("top_kunden")}
+      />
+
+      <DeckungsbeitragWidget
+        visible={isWidgetVisible("deckungsbeitrag") && darf_finanzen}
+        style={widgetStyle("deckungsbeitrag")}
       />
 
       <SmarteErinnerungenWidget
