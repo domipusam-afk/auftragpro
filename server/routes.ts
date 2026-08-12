@@ -24,6 +24,7 @@ import {
 } from "../shared/dashboardWidgets";
 import { getDefaultTenantId } from "./tenant-context";
 import { berechneAuftragIstKosten, ladeFinanzenUebersichtZeilen, stundensatzFuer, zurichKalenderjahr } from "./deckungsbeitrag";
+import { berechneAuftragVorkalkulation } from "./vorkalkulation";
 
 // Robust logo path resolution: works in both ESM (dev) and CJS (production build)
 function getLogoPath(): string {
@@ -8042,6 +8043,101 @@ export async function registerRoutes(
         db1,
         db1_quote: umsatz_netto > 0 ? Math.round((db1 / umsatz_netto) * 1000) / 10 : null,
         beitraege: [...staerkste, ...schwaechste],
+      });
+    } catch (e) {
+      return res.status(500).json({ message: asError(e) });
+    }
+  });
+
+  // ─── Verlustrisiko (Dashboard) ──────────────────────────────────────────────
+  // Die harte Warnung ist absichtlich keine Fortschrittsprognose: Sie erscheint
+  // nur, wenn die bereits erfassten IST-Kosten die detaillierten VK-Selbstkosten
+  // überschreiten UND die DB1-Quote unter 10 % liegt. Aktive Aufträge verwenden
+  // den berechneten Netto-Offertpreis als Umsatzbasis; abgeschlossene Aufträge
+  // den Rechnungsumsatz, sofern Rechnungen vorhanden sind.
+  app.get("/api/dashboard/verlustrisiko", async (req, res) => {
+    try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) {
+        return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      }
+
+      const { data: auftraege, error: auftraegeError } = await identity.client
+        .from("auftraege")
+        .select("id, nr, kunde, status")
+        .eq("tenant_id", identity.tenantId)
+        .neq("status", "storniert");
+      if (auftraegeError) throw auftraegeError;
+
+      const auftragIds = (auftraege || [])
+        .map((auftrag: any) => auftrag.id)
+        .filter((id: unknown): id is string => typeof id === "string" && id.length > 0);
+      if (auftragIds.length === 0) {
+        return res.json({ aktive_warnungen: [], abgeschlossene_verluste: [] });
+      }
+
+      const [vorkalkulationJeAuftrag, istKostenJeAuftrag, rechnungenResult] = await Promise.all([
+        berechneAuftragVorkalkulation(identity.client, auftragIds, identity.tenantId),
+        berechneAuftragIstKosten(identity.client, auftragIds, identity.tenantId),
+        identity.client
+          .from("rechnungen")
+          .select("auftrag_id, betrag")
+          .eq("tenant_id", identity.tenantId)
+          .in("auftrag_id", auftragIds),
+      ]);
+      if (rechnungenResult.error) throw rechnungenResult.error;
+
+      const rechnungsumsatzJeAuftrag = new Map<string, number>();
+      for (const rechnung of rechnungenResult.data || []) {
+        if (typeof rechnung.auftrag_id !== "string" || !rechnung.auftrag_id) continue;
+        rechnungsumsatzJeAuftrag.set(
+          rechnung.auftrag_id,
+          (rechnungsumsatzJeAuftrag.get(rechnung.auftrag_id) || 0) + (Number(rechnung.betrag) || 0),
+        );
+      }
+      const rundeGeld = (betrag: number) => Math.round(betrag * 100) / 100;
+      const rundeProzent = (wert: number) => Math.round(wert * 10) / 10;
+      const risiken = (auftraege || []).flatMap((auftrag: any) => {
+        const vorkalkulation = vorkalkulationJeAuftrag.get(auftrag.id);
+        const istKosten = istKostenJeAuftrag.get(auftrag.id)?.total || 0;
+        if (!vorkalkulation || istKosten <= 0 || vorkalkulation.selbstkosten <= 0) return [];
+
+        const rechnungsumsatz = rechnungsumsatzJeAuftrag.get(auftrag.id) || 0;
+        const abgeschlossen = auftrag.status === "abgeschlossen";
+        const umsatz_netto = abgeschlossen && rechnungsumsatz > 0
+          ? rechnungsumsatz
+          : vorkalkulation.netto_angebotspreis;
+        if (umsatz_netto <= 0) return [];
+
+        const db1 = umsatz_netto - istKosten;
+        const db1_quote = (db1 / umsatz_netto) * 100;
+        if (istKosten <= vorkalkulation.selbstkosten || db1_quote >= 10) return [];
+
+        const ueberschreitung_chf = istKosten - vorkalkulation.selbstkosten;
+        return [{
+          id: auftrag.id,
+          nr: auftrag.nr || "—",
+          kunde: auftrag.kunde || null,
+          status: auftrag.status,
+          vorkalkulation_selbstkosten: rundeGeld(vorkalkulation.selbstkosten),
+          vorkalkulation_netto: rundeGeld(vorkalkulation.netto_angebotspreis),
+          ist_kosten: rundeGeld(istKosten),
+          ueberschreitung_chf: rundeGeld(ueberschreitung_chf),
+          ueberschreitung_prozent: rundeProzent((ueberschreitung_chf / vorkalkulation.selbstkosten) * 100),
+          umsatz_netto: rundeGeld(umsatz_netto),
+          umsatz_basis: abgeschlossen && rechnungsumsatz > 0 ? "rechnungen" : "vorkalkulation",
+          db1: rundeGeld(db1),
+          db1_quote: rundeProzent(db1_quote),
+        }];
+      });
+      const sortiere = (links: any, rechts: any) =>
+        links.db1_quote - rechts.db1_quote
+        || rechts.ueberschreitung_chf - links.ueberschreitung_chf
+        || links.nr.localeCompare(rechts.nr, "de-CH");
+
+      return res.json({
+        aktive_warnungen: risiken.filter((auftrag) => auftrag.status !== "abgeschlossen").sort(sortiere),
+        abgeschlossene_verluste: risiken.filter((auftrag) => auftrag.status === "abgeschlossen").sort(sortiere),
       });
     } catch (e) {
       return res.status(500).json({ message: asError(e) });

@@ -41,6 +41,13 @@ export const DASHBOARD_WIDGETS = [
     default_order: 35,
   },
   {
+    id: "verlustrisiko",
+    label: "Verlustrisiko",
+    description: "Aufträge mit erfassten IST-Kosten über Vorkalkulation und DB1 unter 10 %",
+    default_visible: true,
+    default_order: 35.5,
+  },
+  {
     id: "top_kunden",
     label: "Top-Kunden (YTD)",
     description: "Top 5 Kunden nach fakturiertem Netto-Umsatz seit Jahresbeginn",

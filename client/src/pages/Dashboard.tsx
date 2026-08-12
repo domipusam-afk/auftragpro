@@ -41,6 +41,7 @@ import { AufgabenWidget } from "@/components/dashboard/AufgabenWidget";
 import { UeberfaelligeRechnungenWidget } from "@/components/dashboard/UeberfaelligeRechnungenWidget";
 import { TopKundenWidget } from "@/components/dashboard/TopKundenWidget";
 import { DeckungsbeitragWidget } from "@/components/dashboard/DeckungsbeitragWidget";
+import { VerlustrisikoWidget } from "@/components/dashboard/VerlustrisikoWidget";
 import { OffeneNachkalkulationWidget } from "@/components/dashboard/OffeneNachkalkulationWidget";
 import { SmarteErinnerungenWidget } from "@/components/dashboard/SmarteErinnerungenWidget";
 import {
@@ -611,6 +612,11 @@ export default function Dashboard() {
       <UeberfaelligeRechnungenWidget
         visible={isWidgetVisible("ueberfaellige_rechnungen") && darf_finanzen}
         style={widgetStyle("ueberfaellige_rechnungen")}
+      />
+
+      <VerlustrisikoWidget
+        visible={isWidgetVisible("verlustrisiko") && darf_finanzen}
+        style={widgetStyle("verlustrisiko")}
       />
 
       <TopKundenWidget
