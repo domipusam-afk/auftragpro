@@ -2170,12 +2170,31 @@ export async function registerRoutes(
     // Adressfenster: top=52mm vom Blattrand, left=100mm vom Blattrand
     // @page margin: top=(hdrH+4)mm, left=padMm=10mm
     // position:absolute ist relativ zum body (der NACH dem @page-margin startet)
-    const empfTopAbs  = 52 - (hdrH + 4); // mm relativ zu body-Anfang
-    const empfLeftAbs = 145 - padMm;     // mm relativ zu body-Anfang (130mm ab Blatt - 10mm margin = 120mm)
-    // Content-Padding-Top: Empfänger bei 52mm ab Blatt, Höhe ~14mm = endet ~66mm
-    // body startet nach @page margin-top = (hdrH+4)mm
-    // Abstand: 66mm - (hdrH+4)mm = 66-26 = 40mm
-    const contentPadTopMm = 66 - (hdrH + 4);
+    // Bug-Fix: top/left/Ausrichtung waren hier fest auf die Swiss-Norm-Werte (52mm/145mm,
+    // immer linksbündig) verdrahtet und ignorierten absender_pos_h/absender_top_mm/
+    // absender_left_mm aus der Vorlage komplett — die EMPFÄNGER-POSITION-Einstellung
+    // hatte dadurch in Design A (dem Standard-Design) nie eine sichtbare Wirkung.
+    // Jetzt werden dieselben Vorlagenfelder genutzt wie in Design G (Swiss Classic).
+    // Kalibrierung: bei unveränderten Vorlagen-Defaultwerten (top=55mm, left=20mm,
+    // Ausrichtung=links — siehe Fallback-Konstanten oben) MUSS exakt die bisherige
+    // Swiss-Norm-Position (52mm/145mm ab Blatt, immer linksbündig) herauskommen,
+    // damit bestehende, unveränderte Kundenvorlagen sich optisch nicht verschieben.
+    // Jede Abweichung vom Default wirkt sich ab jetzt zusätzlich 1:1 aus.
+    const absenderTopMmDefault  = 55;
+    const absenderLeftMmDefault = 20;
+    const empfBlockBreiteMm = 76;
+    const empfTopAbsBasis  = 52 - (hdrH + 4); // bisherige feste Basis
+    const empfLeftAbsBasis = 145 - padMm;     // bisherige feste Basis
+    const empfTopAbs  = empfTopAbsBasis + (absenderTopMm - absenderTopMmDefault);
+    const empfLeftAbs = absenderPosH === "rechts"
+      ? (210 - padMm * 2) - empfBlockBreiteMm // rechtsbündig am Content-Rand
+      : absenderPosH === "mitte"
+      ? ((210 - padMm * 2) - empfBlockBreiteMm) / 2 // horizontal zentriert im Content-Bereich
+      : empfLeftAbsBasis + (absenderLeftMm - absenderLeftMmDefault); // links: Basis + Versatz-Differenz
+    // Content-Padding-Top: gleiche Kalibrierung wie oben — bisherige feste Basis (66mm ab
+    // Blatt, Empfänger endet bei 52mm+14mm Blockhöhe) plus Differenz zum Top-Default.
+    const contentPadTopMmBasis = 66 - (hdrH + 4);
+    const contentPadTopMm = contentPadTopMmBasis + (absenderTopMm - absenderTopMmDefault);
 
     // ─── Puppeteer displayHeaderFooter Templates (Design A) ───────────────────
     // Diese Methode ist zuverlässiger als position:fixed (kein Overlap, korrekte Seitenzahlen)
