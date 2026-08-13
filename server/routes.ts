@@ -1988,11 +1988,19 @@ export async function registerRoutes(
     // titelImHeader: false = Titel+Meta immer im Content (Design A: Bild-2-Layout)
     const titelImHeader = (design === "G"); // nur G hat Titel im Header
 
-    // Ansprechperson — immer aus ansprechpersonIntern lesen (Name aus Dialog/Auftrag)
+    // Ansprechperson — Reihenfolge/Quelle steuerbar über Vorlagen-Feld ansprechperson_quelle
+    // ("intern" | "extern" | "manuell"). Vorher war die Reihenfolge fest hartkodiert und
+    // diese Einstellung dadurch wirkungslos. Fallback-Kette bleibt wie zuvor erhalten,
+    // falls die bevorzugte Quelle leer ist — damit nie eine leere Ansprechperson entsteht,
+    // nur weil die gewählte Quelle im konkreten Dokument nichts liefert.
     const apAktiv = v.ansprechperson_aktiv !== false;
     const apLabel = v.ansprechperson_label || "Ansprechpartner";
-    // Name: bevorzuge intern, dann extern, dann manuell
-    const ansprechperson = data.ansprechpersonIntern || data.ansprechpersonManuell || data.ansprechpersonExtern || "";
+    const apQuelle: string = v.ansprechperson_quelle || "intern";
+    const ansprechperson = apQuelle === "extern"
+      ? (data.ansprechpersonExtern || data.ansprechpersonIntern || data.ansprechpersonManuell || "")
+      : apQuelle === "manuell"
+      ? (data.ansprechpersonManuell || data.ansprechpersonIntern || data.ansprechpersonExtern || "")
+      : (data.ansprechpersonIntern || data.ansprechpersonManuell || data.ansprechpersonExtern || "");
 
     // E-Mail + Telefon: IMMER aus Mitarbeiter-DB laden (Name als Schlüssel)
     // Achtung: Variable heisst maResult (nicht data) um Konflikt mit dem Parameter data zu vermeiden
@@ -2073,6 +2081,7 @@ export async function registerRoutes(
             <div style="height:0.5px;background:#ccc;margin:10px 0 0;"></div>
           </div>`;
       const gHtml = `<!DOCTYPE html><html><head><meta charset="utf-8">
+      <meta name="pptr-show-page-num" content="${showPageNum ? "1" : "0"}">
       <style>
         ${sharedFixedCss}
         th { background:#f5f5f5;color:#333;padding:8px 4px;text-align:left;font-size:8.5pt;border-bottom:1.5px solid #222; }
@@ -2097,7 +2106,7 @@ export async function registerRoutes(
             ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
             ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
           </div>` : `
-          <div style="width:90mm;text-align:left;font-size:10pt;color:#333;line-height:1.55;">
+          <div style="width:90mm;margin-left:${absenderLeftMm}mm;text-align:left;font-size:10pt;color:#333;line-height:1.55;">
             <div style="font-size:7.5pt;color:#999;margin-bottom:3px;white-space:nowrap;">${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
             <div style="font-weight:600;">${data.empfaenger}</div>
             ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
@@ -2221,6 +2230,7 @@ export async function registerRoutes(
     <meta name="pptr-footer" content="${pptrFooterEnc}">
     <meta name="pptr-margin-top" content="${pptrMarginTop}">
     <meta name="pptr-margin-bottom" content="${pptrMarginBot}">
+    <meta name="pptr-show-page-num" content="${showPageNum ? "1" : "0"}">
     <style>
       /* Kein @page margin nötig — Puppeteer margin wird über pptr-meta gesetzt */
       body { font-family:Arial,sans-serif;font-size:10pt;color:#222;margin:0;padding:0; }
@@ -2454,6 +2464,10 @@ export async function registerRoutes(
     const footerMetaMatch = htmlSeiten.match(/<meta\s+name="pptr-footer"\s+content="([^"]+)"/);
     const topMarginMatch  = htmlSeiten.match(/<meta\s+name="pptr-margin-top"\s+content="([^"]+)"/);
     const botMarginMatch  = htmlSeiten.match(/<meta\s+name="pptr-margin-bottom"\s+content="([^"]+)"/);
+    // show_page_num aus PDF-Vorlage: steuert, ob die "Seite X / Y"-Fussnote gezeichnet wird.
+    // Default true, falls kein Meta-Tag vorhanden ist (Abwärtskompatibilität).
+    const showPageNumMatch = htmlSeiten.match(/<meta\s+name="pptr-show-page-num"\s+content="([^"]+)"/);
+    const showPageNumFlag = showPageNumMatch ? showPageNumMatch[1] === "1" : true;
     if (headerMetaMatch && footerMetaMatch) {
       pdfOptions = {
         displayHeaderFooter: true,
@@ -2476,19 +2490,21 @@ export async function registerRoutes(
     const font = await doc.embedFont(StandardFonts.Helvetica);
     const totalPages = doc.getPageCount();
     const white = rgb(1, 1, 1);
-    for (let i = 0; i < totalPages; i++) {
-      const pg = doc.getPage(i);
-      const { width } = pg.getSize();
-      const pageNumText = `Seite ${i + 1} / ${totalPages}`;
-      const textWidth = font.widthOfTextAtSize(pageNumText, 8);
-      pg.drawText(pageNumText, {
-        x: width - 40 - textWidth,
-        y: 14,
-        size: 8,
-        font,
-        color: white,
-        opacity: 0.9,
-      });
+    if (showPageNumFlag) {
+      for (let i = 0; i < totalPages; i++) {
+        const pg = doc.getPage(i);
+        const { width } = pg.getSize();
+        const pageNumText = `Seite ${i + 1} / ${totalPages}`;
+        const textWidth = font.widthOfTextAtSize(pageNumText, 8);
+        pg.drawText(pageNumText, {
+          x: width - 40 - textWidth,
+          y: 14,
+          size: 8,
+          font,
+          color: white,
+          opacity: 0.9,
+        });
+      }
     }
     return Buffer.from(await doc.save());
   }
@@ -7509,10 +7525,11 @@ export async function registerRoutes(
   });
 
 
-  // ─── PDF Live-Vorschau (echtes Puppeteer-Rendering, Seite 1 als JPEG) ────────
+  // ─── PDF Live-Vorschau (echtes Puppeteer-Rendering, direktes PDF) ────────
   // POST /api/pdf-vorlagen/vorschau  — body: { vorlage: {...}, doc_typ: string }
-  // Gibt JSON { pages: ["data:image/jpeg;base64,...", ...] } zurück — 1:1 identisch mit echtem PDF,
-  // inkl. QR-Rechnung Seite 2 bei doc_typ === "rechnung".
+  // Gibt das PDF direkt als application/pdf-Binary zurück — 1:1 identisch mit echtem PDF,
+  // inkl. QR-Rechnung Seite 2 bei doc_typ === "rechnung". Das Frontend zeigt es in einem
+  // <iframe> per Object-URL an (kein JPEG-Zwischenschritt mehr).
   app.post("/api/pdf-vorlagen/vorschau", async (req, res) => {
     try {
       const { vorlage, doc_typ = "rechnung" } = req.body as { vorlage: any; doc_typ?: string };
@@ -7533,7 +7550,9 @@ export async function registerRoutes(
       const subtotal = 1003;
       const mwstPct  = 8.1;
       const mwstBetrag = Math.round(subtotal * mwstPct) / 100;
-      const total = subtotal + mwstBetrag;
+      // Bei Mahnung addiert die echte Route die Mahngebühr zum Total (siehe ~Zeile 4635).
+      // Muss nach musterMahngebuehr berechnet werden, siehe Neuzuweisung unten.
+      let total = subtotal + mwstBetrag;
 
       // Firma-Daten aus Einstellungen — identische Keys wie in den echten PDF-Routen
       const firma       = sMap.firmenname || "Schneggenburger GmbH";
@@ -7555,18 +7574,67 @@ export async function registerRoutes(
 
       const previewVorlage = { ...(originalVorlage || {}), ...vorlage, doc_typ };
 
-      // Muster-HTML generieren
+      // ─── doc_typ-spezifische Muster-Konfiguration ────────────────────────
+      // WICHTIG: Diese Werte MÜSSEN exakt widerspiegeln, was die jeweilige echte
+      // PDF-Route (siehe z.B. Zeilen ~2738 Rechnung, ~4613 Mahnung, ~5015 Offerte,
+      // ~5193 Lohnabrechnung, ~5272 Stundenabrechnung, ~7172 Lieferschein, ~7235
+      // Auftragsbestätigung) tatsächlich übergibt — sonst zeigt die Vorschau etwas
+      // anderes als das echte Dokument.
       const docTitle = doc_typ === "offerte" ? "OFFERTE"
-        : doc_typ === "mahnung" ? "MAHNUNG"
+        : doc_typ === "mahnung" ? "MAHNUNG (1. Mahnung)" // echte Route hängt " (N. Mahnung)" an, wenn mahnstufe gesetzt ist
         : doc_typ === "lieferschein" ? "LIEFERSCHEIN"
         : doc_typ === "auftragsbestaetigung" ? "AUFTRAGSBESTÄTIGUNG"
+        : doc_typ === "lohnabrechnung" ? "LOHNABRECHNUNG"
+        : doc_typ === "stundenabrechnung" ? "STUNDENABRECHNUNG"
         : "RECHNUNG";
+
+      // showTotals: 1:1 wie in der jeweiligen echten Route.
+      // rechnung/offerte/mahnung -> true; lieferschein/lohnabrechnung/stundenabrechnung -> false;
+      // auftragsbestaetigung -> abhängig von vorhandenen Positionen (hier: Musterpositionen sind immer vorhanden -> true).
+      const showTotalsForDocTyp =
+        doc_typ === "lieferschein" || doc_typ === "lohnabrechnung" || doc_typ === "stundenabrechnung"
+          ? false
+          : true;
+
+      // Mahngebühr: echte Mahnung-Route addiert eine optionale Mahngebühr zum Total
+      // und übergibt sie separat an buildPdfHtml, damit sie als eigene Zeile erscheint.
+      // WICHTIG: mahnung.mahngebuehr (pro einzelner Mahnung) ist NICHT dasselbe wie
+      // pdf_vorlagen.mahngebuehr (der Vorbelegungswert im Vorlagen-Formular) — die
+      // echte PDF-Route liest den individuellen Mahnungswert, nicht den Vorlagen-Default.
+      // Damit das Vorlagen-Feld in der Vorschau trotzdem sichtbar etwas bewirkt (es ist
+      // sonst ein wirkungsloses Feld, siehe unten), nutzen wir hier den Vorlagen-Wert
+      // als realistischen Beispielwert.
+      const musterMahngebuehr = doc_typ === "mahnung"
+        ? Number(previewVorlage.mahngebuehr || 30) || 30
+        : undefined;
+      if (musterMahngebuehr !== undefined) total += musterMahngebuehr;
 
       const musterEmpfaenger = "Musterfirma AG";
       const musterEmpStrasse = "Musterstrasse 42";
       const musterEmpPlzOrt  = "8001 Zürich";
       const musterFaelligStr = "31. Juli 2026";
       const musterNummer = doc_typ === "offerte" ? "O260001" : "R260001";
+
+      // Lieferschein: echte Route hängt einen Empfangsbestätigungs-Block
+      // (Empfangen am / Unterschrift) unten an — das muss die Vorschau auch zeigen,
+      // sonst wirkt die Vorlage im Vergleich zum echten PDF unvollständig.
+      const musterExtraHtml = doc_typ === "lieferschein"
+        ? `
+        <div style="margin-top:20px;padding-top:16px;border-top:1px solid #ddd;">
+          <div style="display:flex;justify-content:space-between;gap:40px;margin-top:24px;">
+            <div style="flex:1;">
+              <div style="font-size:8pt;color:#999;margin-bottom:6px;">Empfangen am</div>
+              <div style="border-bottom:1px solid #333;height:28px;"></div>
+            </div>
+            <div style="flex:1;">
+              <div style="font-size:8pt;color:#999;margin-bottom:6px;">Unterschrift</div>
+              <div style="border-bottom:1px solid #333;height:28px;"></div>
+            </div>
+          </div>
+        </div>`
+        : doc_typ === "mahnung"
+        ? `<div style="margin-top:12px;padding:8px 12px;background:#fff3cd;border-left:3px solid #f0ad4e;font-size:8.5pt;color:#444;white-space:pre-line;">Bitte begleichen Sie den offenen Betrag innert 10 Tagen.</div>`
+        : "";
 
       // Bei Rechnung: echten QR-Zahlschein-Block bauen (identisch zur echten Rechnungserzeugung),
       // damit die Vorschau die tatsächliche Seite 2 mit Swiss-QR-Code zeigt.
@@ -7595,10 +7663,12 @@ export async function registerRoutes(
         subtotal,
         mwstPct,
         mwstBetrag,
+        ...(musterMahngebuehr !== undefined ? { mahngebuehr: musterMahngebuehr } : {}),
         total,
         einleitung: vorlage.einleitung || "Vielen Dank für Ihr Vertrauen.",
         schluss: vorlage.schluss || "Mit freundlichen Grüssen\n" + firma,
-        showTotals: true,
+        showTotals: showTotalsForDocTyp,
+        ...(musterExtraHtml ? { extraHtml: musterExtraHtml } : {}),
         kundenNr: "K260001",
         anrede: "Herr",
         ansprechpersonIntern: "Max Muster",
@@ -7614,36 +7684,14 @@ export async function registerRoutes(
       // komplette Header in der Live-Vorschau (renderPdfFromHtml liest diese Meta-Tags nicht).
       const pdfBuf = await renderRechnungPdfFromHtml(html);
 
-      // Alle Seiten als JPEG via pdftoppm (Rechnung hat 2 Seiten: Inhalt + QR-Zahlschein)
-      const { execSync } = await import("child_process");
-      const { writeFileSync, readFileSync, unlinkSync, readdirSync } = await import("fs");
-      const tmpPdf  = `/tmp/vorschau_${Date.now()}_${Math.random().toString(36).slice(2)}.pdf`;
-      const tmpBase = `${tmpPdf}_out`;
-      writeFileSync(tmpPdf, pdfBuf);
-      try {
-        execSync(`pdftoppm -jpeg -r 210 "${tmpPdf}" "${tmpBase}"`, { timeout: 20000 });
-        const dir = "/tmp";
-        const baseName = tmpBase.replace("/tmp/", "");
-        const files = readdirSync(dir)
-          .filter(f => f.startsWith(baseName) && f.endsWith(".jpg"))
-          .sort(); // z.B. ..._out-1.jpg, ..._out-2.jpg — alphabetisch = Seitenreihenfolge
-        if (files.length === 0) throw new Error("pdftoppm hat kein Bild erzeugt");
-        const pages = files.map(f => {
-          const buf = readFileSync(`${dir}/${f}`);
-          return `data:image/jpeg;base64,${buf.toString("base64")}`;
-        });
-        // Aufräumen
-        try { unlinkSync(tmpPdf); files.forEach(f => unlinkSync(`${dir}/${f}`)); } catch {}
-        res.set("Content-Type", "application/json");
-        res.set("Cache-Control", "no-cache");
-        return res.json({ pages });
-      } catch (imgErr) {
-        try { unlinkSync(tmpPdf); } catch {}
-        console.error("[PDF Vorschau] pdftoppm error:", imgErr);
-        // Fallback: PDF direkt als Base64 in JSON (Frontend kann zumindest Fehler klar anzeigen)
-        res.set("Content-Type", "application/json");
-        return res.status(200).json({ pages: [], pdfFallback: true });
-      }
+      // Direkte PDF-Antwort statt JPEG-Konvertierung: das Frontend zeigt das PDF nun
+      // unverändert in einem <iframe> an (Browser-natives PDF-Rendering). Das entfernt
+      // die bisherige verlustbehaftete pdftoppm-Zwischenkonvertierung als potenzielle
+      // eigene Fehlerquelle (Layoutverschiebungen, Auflösungsverlust) komplett —
+      // die Vorschau zeigt jetzt exakt dasselbe Byte-für-Byte PDF wie der echte Download.
+      res.set("Content-Type", "application/pdf");
+      res.set("Cache-Control", "no-cache");
+      return res.send(pdfBuf);
     } catch (e) {
       console.error("[PDF Vorschau] Error:", e);
       res.status(500).json({ message: asError(e) });

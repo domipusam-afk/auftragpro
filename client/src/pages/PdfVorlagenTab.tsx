@@ -60,6 +60,11 @@ interface PdfVorlage {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
+// WICHTIG: Nur Dokumenttypen anbieten, für die es tatsächlich einen echten
+// PDF-Export gibt (eigene Route mit buildPdfHtml). "vorkalkulation" und
+// "nachkalkulation" wurden entfernt: es existiert dafür kein echter PDF-Export,
+// die Vorschau zeigte also ein Layout, das nie als reales Dokument entsteht.
+// Falls dafür später ein PDF-Export gebaut wird, hier wieder ergänzen.
 const DOC_TYPES = [
   { key: "offerte", label: "Offerte" },
   { key: "rechnung", label: "Rechnung" },
@@ -68,8 +73,6 @@ const DOC_TYPES = [
   { key: "auftragsbestaetigung", label: "Auftragsbestätigung" },
   { key: "lohnabrechnung", label: "Lohnabrechnung" },
   { key: "stundenabrechnung", label: "Stundenabrechnung" },
-  { key: "vorkalkulation", label: "Vorkalkulation" },
-  { key: "nachkalkulation", label: "Nachkalkulation" },
 ];
 
 const WATERMARK_POSITIONS = [
@@ -114,35 +117,10 @@ const DEFAULT_VORLAGE = (doc_typ: string): PdfVorlage => ({
   positionstexte: { pos: "Pos.", beschreibung: "Beschreibung", menge: "Menge", einheit: "Einheit", preis: "Preis", total: "Total" },
 });
 
-// ─── A4 Preview Renderer ─────────────────────────────────────────────────────
-
-function getWatermarkStyle(pos: string, size: number, opacity: number): string {
-  const opacityVal = opacity / 100;
-  const sizeVal = `${size}%`;
-
-  const baseStyle = `position:absolute;opacity:${opacityVal};pointer-events:none;`;
-
-  if (pos === "full") {
-    return `${baseStyle}inset:0;width:100%;height:100%;object-fit:cover;z-index:1;`;
-  }
-
-  const widthStyle = `width:${sizeVal};max-width:${sizeVal};`;
-
-  switch (pos) {
-    case "bottom":
-      return `${baseStyle}${widthStyle}bottom:24px;left:50%;transform:translateX(-50%);z-index:1;`;
-    case "bottom-left":
-      return `${baseStyle}${widthStyle}bottom:24px;left:16px;z-index:1;`;
-    case "bottom-right":
-      return `${baseStyle}${widthStyle}bottom:24px;right:16px;z-index:1;`;
-    case "center":
-      return `${baseStyle}${widthStyle}top:50%;left:50%;transform:translate(-50%,-50%);z-index:1;`;
-    case "top":
-      return `${baseStyle}${widthStyle}top:24px;left:50%;transform:translateX(-50%);z-index:1;`;
-    default:
-      return `${baseStyle}${widthStyle}bottom:24px;left:50%;transform:translateX(-50%);z-index:1;`;
-  }
-}
+// ─── Doc-Type Titel ──────────────────────────────────────────────────────────
+// (getWatermarkStyle/getSampleRows/getSampleTableHeader/renderA4Preview — der alte
+// JPEG-Vorschau-Renderer — wurden entfernt: die Vorschau nutzt jetzt ausschliesslich
+// das echte Backend-PDF, siehe fetchPreview()/<iframe> weiter unten.)
 
 function getDocTitle(docTyp: string): string {
   const titles: Record<string, string> = {
@@ -153,428 +131,10 @@ function getDocTitle(docTyp: string): string {
     auftragsbestaetigung: "AUFTRAGSBESTÄTIGUNG",
     lohnabrechnung: "LOHNABRECHNUNG",
     stundenabrechnung: "STUNDENABRECHNUNG",
-    vorkalkulation: "VORKALKULATION",
-    nachkalkulation: "NACHKALKULATION",
   };
   return titles[docTyp] ?? docTyp.toUpperCase();
 }
 
-function getSampleRows(docTyp: string): string {
-  if (docTyp === "lieferschein") {
-    return `
-      <tr style="border-bottom:1px solid #eee;">
-        <td style="padding:3px 4px;">1</td>
-        <td style="padding:3px 4px;">Holzplatte 200×100cm</td>
-        <td style="padding:3px 4px;text-align:right;">2 St.</td>
-        <td style="padding:3px 4px;text-align:right;">✓</td>
-      </tr>
-      <tr style="border-bottom:1px solid #eee;">
-        <td style="padding:3px 4px;">2</td>
-        <td style="padding:3px 4px;">Scharniere Stahl</td>
-        <td style="padding:3px 4px;text-align:right;">8 St.</td>
-        <td style="padding:3px 4px;text-align:right;">✓</td>
-      </tr>
-      <tr>
-        <td style="padding:3px 4px;">3</td>
-        <td style="padding:3px 4px;">Schrauben M6×30</td>
-        <td style="padding:3px 4px;text-align:right;">24 St.</td>
-        <td style="padding:3px 4px;text-align:right;">✓</td>
-      </tr>
-    `;
-  }
-  if (docTyp === "mahnung") {
-    return `
-      <tr style="border-bottom:1px solid #eee;">
-        <td style="padding:3px 4px;">RE-2024-042</td>
-        <td style="padding:3px 4px;">Offene Rechnung</td>
-        <td style="padding:3px 4px;text-align:right;">01.03.2024</td>
-        <td style="padding:3px 4px;text-align:right;">CHF 1'850.00</td>
-      </tr>
-      <tr style="border-bottom:1px solid #eee;">
-        <td style="padding:3px 4px;"></td>
-        <td style="padding:3px 4px;">Mahngebühr</td>
-        <td style="padding:3px 4px;"></td>
-        <td style="padding:3px 4px;text-align:right;">CHF 30.00</td>
-      </tr>
-    `;
-  }
-  return `
-    <tr style="border-bottom:1px solid #eee;">
-      <td style="padding:3px 4px;">1</td>
-      <td style="padding:3px 4px;">Tischlerarbeit Eiche massiv</td>
-      <td style="padding:3px 4px;text-align:right;">8 h</td>
-      <td style="padding:3px 4px;text-align:right;">CHF 120.00</td>
-      <td style="padding:3px 4px;text-align:right;">CHF 960.00</td>
-    </tr>
-    <tr style="border-bottom:1px solid #eee;">
-      <td style="padding:3px 4px;">2</td>
-      <td style="padding:3px 4px;">Material Holz & Beschläge</td>
-      <td style="padding:3px 4px;text-align:right;">1 Psch.</td>
-      <td style="padding:3px 4px;text-align:right;">CHF 340.00</td>
-      <td style="padding:3px 4px;text-align:right;">CHF 340.00</td>
-    </tr>
-    <tr>
-      <td style="padding:3px 4px;">3</td>
-      <td style="padding:3px 4px;">Lieferung & Montage</td>
-      <td style="padding:3px 4px;text-align:right;">1 Psch.</td>
-      <td style="padding:3px 4px;text-align:right;">CHF 80.00</td>
-      <td style="padding:3px 4px;text-align:right;">CHF 80.00</td>
-    </tr>
-  `;
-}
-
-function getSampleTableHeader(docTyp: string): string {
-  if (docTyp === "lieferschein") {
-    return `<tr style="background:#f5f5f5;font-weight:600;">
-      <th style="padding:3px 4px;text-align:left;">Pos</th>
-      <th style="padding:3px 4px;text-align:left;">Artikel</th>
-      <th style="padding:3px 4px;text-align:right;">Menge</th>
-      <th style="padding:3px 4px;text-align:right;">Geliefert</th>
-    </tr>`;
-  }
-  if (docTyp === "mahnung") {
-    return `<tr style="background:#f5f5f5;font-weight:600;">
-      <th style="padding:3px 4px;text-align:left;">Beleg</th>
-      <th style="padding:3px 4px;text-align:left;">Beschreibung</th>
-      <th style="padding:3px 4px;text-align:right;">Datum</th>
-      <th style="padding:3px 4px;text-align:right;">Betrag</th>
-    </tr>`;
-  }
-  return `<tr style="background:#f5f5f5;font-weight:600;">
-    <th style="padding:3px 4px;text-align:left;">Pos</th>
-    <th style="padding:3px 4px;text-align:left;">Beschreibung</th>
-    <th style="padding:3px 4px;text-align:right;">Menge</th>
-    <th style="padding:3px 4px;text-align:right;">Preis</th>
-    <th style="padding:3px 4px;text-align:right;">Total</th>
-  </tr>`;
-}
-
-function renderA4Preview(vorlage: PdfVorlage, docTyp: string): string {
-  const {
-    design, header_color: hc, footer_color: fc,
-    logo_pos, logo_data_url, logo_scale,
-    watermark_data_url, watermark_opacity, watermark_size, watermark_pos,
-    show_contact, show_page_num, slogan,
-    einleitung, schluss, zahlungsfrist, mahngebuehr,
-    absender_pos_h = "links", absender_top_mm = 55, absender_left_mm = 0,
-    ansprechperson_aktiv, ansprechperson_label,
-    positionstexte,
-  } = vorlage;
-
-  const lw = Math.round(70 * (logo_scale/100));
-  const lh = Math.round(45 * (logo_scale/100));
-  // Scale for mini-preview: actual PDF is ~794px wide, preview is ~340px → factor ~0.43
-  const S = 0.38;
-
-  // Adaptive Schriftfarbe je nach Hintergrundfarbe
-  const contrastColor = (hex: string): string => {
-    const h = (hex||"").replace("#","");
-    if (h.length < 6) return "#ffffff";
-    const r = parseInt(h.substring(0,2),16);
-    const g = parseInt(h.substring(2,4),16);
-    const b = parseInt(h.substring(4,6),16);
-    const lum = 0.2126*(r/255)**2.2 + 0.7152*(g/255)**2.2 + 0.0722*(b/255)**2.2;
-    return lum > 0.179 ? "#1a1a1a" : "#ffffff";
-  };
-  const hcText = contrastColor(hc||"#6b4c2a");
-  const fcText = contrastColor(fc||"#1a3a6b");
-  const lws = Math.round(lw * S);
-  const lhs = Math.round(lh * S);
-
-  const logoHtml = logo_data_url
-    ? `<img src="${logo_data_url}" style="max-width:${lws}px;max-height:${lhs}px;object-fit:contain;display:block;" alt="Logo"/>`
-    : `<span style="font-size:${Math.round(14*S)}pt;font-weight:700;color:${hc};">SG</span>`;
-
-  const docTitle = getDocTitle(docTyp);
-
-  // Wasserzeichen
-  const wmPosMap: Record<string,string> = {
-    "bottom":      `bottom:0;left:50%;transform:translateX(-50%)`,
-    "bottom-left": `bottom:0;left:0`,
-    "bottom-right":`bottom:0;right:0`,
-    "center":      `top:50%;left:50%;transform:translate(-50%,-50%)`,
-    "top":         `top:0;left:50%;transform:translateX(-50%)`,
-    "full":        `top:0;left:0;width:100%;height:100%`,
-  };
-  const wmStyle = wmPosMap[watermark_pos || "bottom"] || wmPosMap["bottom"];
-  const wmOp = ((watermark_opacity || 15)/100).toFixed(2);
-  const wmSz = watermark_size || 60;
-  const wmHtml = watermark_data_url
-    ? `<div style="position:absolute;${wmStyle};z-index:0;pointer-events:none;">
-        <img src="${watermark_data_url}" style="opacity:${wmOp};${watermark_pos==='full'?`width:100%;height:100%;object-fit:cover`:`width:${wmSz}%;max-width:none;object-fit:contain`};display:block;"/></div>`
-    : "";
-
-  // Empfänger-Block: absolut positioniert wie im echten PDF
-  // absender_pos_h / absender_top_mm / absender_left_mm gilt für ALLE Dokument-Typen
-  const absTopPx  = (absender_top_mm  ?? 55) * S * 3.78;
-  const absLeftPx = (absender_left_mm ?? 20) * S * 3.78;
-  const absWidthPx = Math.round(90 * S * 3.78); // 90mm Fensterbreite (SN-Norm)
-  const absPos = absender_pos_h === "rechts"
-    ? `right:${absLeftPx.toFixed(1)}px;text-align:right;`
-    : absender_pos_h === "mitte"
-      ? `left:50%;transform:translateX(-50%);text-align:left;`
-      : `left:${absLeftPx.toFixed(1)}px;text-align:left;`;
-  // Empfänger ist position:absolute — braucht keinen margin-top im Flow
-  const empfaengerBlock = `
-    <div style="position:absolute;top:${absTopPx.toFixed(1)}px;${absPos}width:${absWidthPx}px;font-size:${Math.round(10*S)}pt;color:#333;line-height:1.55;z-index:10;">
-      <div style="font-weight:600;">Musterfirma AG</div>
-      <div>Musterstrasse 42</div>
-      <div>8001 Z&uuml;rich</div>
-    </div>`;
-  // Empfänger-Höhe: 3 Zeilen × 10pt × 1.55 lineheight × S × 1.33 (pt→px) + 8mm Abstand
-  const empfaengerHoehePx = Math.round(3 * 10 * S * 1.33 * 1.55 + 8 * S * 3.78);
-  // Spacer-Höhe: schiebt Content nach unten, damit er NACH dem Empfänger-Block beginnt.
-  // Empfänger endet bei absTopPx + empfaengerHoehePx (gemessen vom Seitenanfang).
-  // Content-Container startet nach dem Header.
-  // Spacer = Empfänger-Ende - Header-Höhe (pro Design approximiert)
-  // Ohne Logo: A≈20mm, B≈18mm, C≈12mm, E≈16mm, G≈22mm (incl. hr-Linie)
-  // Mit Logo: A≈28mm, B≈26mm, C≈16mm, E≈20mm, G≈28mm
-  // In Pixel skaliert (S=0.38, 1mm=3.78px):
-  const hasLogo = !!logo_data_url;
-  const hdrMmApprox = design === "B" ? (hasLogo ? 26 : 18)
-                    : design === "C" ? (hasLogo ? 14 : 10)
-                    : design === "E" ? (hasLogo ? 20 : 14)
-                    : design === "G" ? (hasLogo ? 28 : 22)
-                    : (hasLogo ? 28 : 20); // Design A
-  const hdrPxApprox = hdrMmApprox * S * 3.78;
-  const spacerHoehePx = Math.max(0, Math.round(absTopPx + empfaengerHoehePx - hdrPxApprox));
-
-  // Ansprechperson — zeigt Beispielwerte (wie in buildPdfHtml aus Mitarbeiter geladen)
-  const apBlock = ansprechperson_aktiv
-    ? `<div style="font-size:${Math.round(9*S)}pt;color:#444;margin-bottom:${Math.round(8*S)}px;">
-        <strong>${ansprechperson_label || "Ansprechperson"}:</strong> Dominik Pusam<br/>
-        <span style="font-size:${Math.round(8*S)}pt;color:#666;">dominik.pusam@schneggenburger.ch &nbsp;|&nbsp; +41 78 907 53 14</span>
-       </div>`
-    : "";
-
-  // Positions-Texte
-  const pt = (typeof positionstexte === "object" && positionstexte) ? positionstexte as any : {};
-  const ptPos    = pt.pos          || "Pos.";
-  const ptBeschr = pt.beschreibung || "Beschreibung";
-  const ptMenge  = pt.menge        || "Menge";
-  const ptPreis  = pt.preis        || "Preis";
-  const ptTotal  = pt.total        || "Total";
-
-  // Tabelle
-  const fs = Math.round(8.5*S);
-  const tableHtml = `
-    <table style="width:100%;border-collapse:collapse;font-size:${fs}pt;margin-bottom:${Math.round(4*S)}px;">
-      <thead>
-        <tr style="background:${hc};color:${hcText};">
-          <th style="padding:${Math.round(8*S)}px ${Math.round(4*S)}px;text-align:left;width:${Math.round(28*S)}px;">${ptPos}</th>
-          <th style="padding:${Math.round(8*S)}px ${Math.round(4*S)}px;text-align:left;">${ptBeschr}</th>
-          <th style="padding:${Math.round(8*S)}px ${Math.round(4*S)}px;text-align:right;width:${Math.round(65*S)}px;">${ptMenge}</th>
-          <th style="padding:${Math.round(8*S)}px ${Math.round(4*S)}px;text-align:right;width:${Math.round(90*S)}px;">${ptPreis}</th>
-          <th style="padding:${Math.round(8*S)}px ${Math.round(4*S)}px;text-align:right;width:${Math.round(90*S)}px;">${ptTotal}</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr style="border-bottom:1px solid #f0ebde;">
-          <td style="padding:${Math.round(7*S)}px ${Math.round(4*S)}px;color:#999;vertical-align:top;">1</td>
-          <td style="padding:${Math.round(7*S)}px ${Math.round(4*S)}px;line-height:1.5;">
-            <span style="font-weight:600;color:#1a1a1a;">Tischlerarbeit Eiche massiv</span><br/>
-            <span style="font-size:${Math.round(8.5*S)}pt;color:#555;padding-left:${Math.round(8*S)}px;">&ndash; Massivholz Eiche, geölt</span>
-          </td>
-          <td style="padding:${Math.round(7*S)}px ${Math.round(4*S)}px;text-align:right;color:#555;vertical-align:top;">8 h</td>
-          <td style="padding:${Math.round(7*S)}px ${Math.round(4*S)}px;text-align:right;color:#555;vertical-align:top;">CHF 120.00</td>
-          <td style="padding:${Math.round(7*S)}px ${Math.round(4*S)}px;text-align:right;font-weight:600;vertical-align:top;">CHF 960.00</td>
-        </tr>
-        <tr style="border-bottom:1px solid #f0ebde;">
-          <td style="padding:${Math.round(7*S)}px ${Math.round(4*S)}px;color:#999;vertical-align:top;">2</td>
-          <td style="padding:${Math.round(7*S)}px ${Math.round(4*S)}px;"><span style="font-weight:600;color:#1a1a1a;">Material Holz &amp; Beschl&auml;ge</span></td>
-          <td style="padding:${Math.round(7*S)}px ${Math.round(4*S)}px;text-align:right;color:#555;">1 Psch.</td>
-          <td style="padding:${Math.round(7*S)}px ${Math.round(4*S)}px;text-align:right;color:#555;">CHF 340.00</td>
-          <td style="padding:${Math.round(7*S)}px ${Math.round(4*S)}px;text-align:right;font-weight:600;">CHF 340.00</td>
-        </tr>
-        <tr style="border-bottom:1px solid #f0ebde;">
-          <td style="padding:${Math.round(7*S)}px ${Math.round(4*S)}px;color:#999;vertical-align:top;">3</td>
-          <td style="padding:${Math.round(7*S)}px ${Math.round(4*S)}px;"><span style="font-weight:600;color:#1a1a1a;">Lieferung &amp; Montage</span></td>
-          <td style="padding:${Math.round(7*S)}px ${Math.round(4*S)}px;text-align:right;color:#555;">1 Psch.</td>
-          <td style="padding:${Math.round(7*S)}px ${Math.round(4*S)}px;text-align:right;color:#555;">CHF 80.00</td>
-          <td style="padding:${Math.round(7*S)}px ${Math.round(4*S)}px;text-align:right;font-weight:600;">CHF 80.00</td>
-        </tr>
-      </tbody>
-    </table>`;
-
-  // Totals
-  const totalsHtml = docTyp !== "lieferschein" ? `
-    <div style="display:flex;justify-content:flex-end;margin-top:${Math.round(16*S)}px;">
-      <div style="width:44%;font-size:${Math.round(9*S)}pt;">
-        <div style="display:flex;justify-content:space-between;padding:${Math.round(3*S)}px 0;"><span>Subtotal</span><span>CHF 1'380.00</span></div>
-        <div style="display:flex;justify-content:space-between;padding:${Math.round(3*S)}px 0;"><span>MWST 8.1%</span><span>CHF 111.78</span></div>
-        ${docTyp === "mahnung" ? `<div style="display:flex;justify-content:space-between;padding:${Math.round(3*S)}px 0;"><span>Mahngebühr</span><span>CHF ${mahngebuehr}</span></div>` : ""}
-        <div style="display:flex;justify-content:space-between;padding:${Math.round(5*S)}px 0;border-top:1.5px solid ${fc};margin-top:${Math.round(3*S)}px;font-weight:700;font-size:${Math.round(11*S)}pt;color:${fc};">
-          <span>Total</span><span>CHF ${docTyp === "mahnung" ? "1'521.78" : "1'491.78"}</span>
-        </div>
-      </div>
-    </div>` : "";
-
-  // Einleitung + Schluss
-  const einlHtml = einleitung ? `<div style="font-size:${Math.round(9*S)}pt;color:#444;white-space:pre-line;margin-bottom:${Math.round(12*S)}px;">${einleitung}</div>` : "";
-  const schlHtml = schluss ? `<div style="font-size:${Math.round(9*S)}pt;color:#444;white-space:pre-line;margin-top:${Math.round(14*S)}px;">${schluss}</div>` : "";
-
-  // Dokument-Info rechts oben — neue 2-spaltige Info-Tabelle (spiegelt buildPdfHtml)
-  // Zeigt: Kundennummer / Datum / Gültig bis oder Zahlbar bis / Unsere Referenz
-  const sampleNr = docTyp === "offerte" ? "26001" : docTyp === "rechnung" ? "26001" : docTyp === "mahnung" ? "26001" : "26001";
-  const sampleKundenNr = "K26005";
-  const sampleDatum = "29. Mai 2026";
-  const datumLabel = docTyp === "offerte" ? "Offertendatum" : docTyp === "rechnung" ? "Rechnungsdatum" : docTyp === "mahnung" ? "Mahndatum" : "Datum";
-  const gueltigLabel = docTyp === "offerte" ? "G&uuml;ltig bis" : "Zahlbar bis";
-  const gueltigVal = docTyp === "offerte" ? "30 Tage" : `${zahlungsfrist} Tage`;
-  const tdL = `padding:${Math.round(1.5*S)}px ${Math.round(5*S)}px ${Math.round(1.5*S)}px 0;color:#666;white-space:nowrap;font-size:${Math.round(8*S)}pt;`;
-  const tdR = `padding:${Math.round(1.5*S)}px 0;font-weight:600;color:#222;font-size:${Math.round(8*S)}pt;`;
-  const docInfoHtml = `
-    <div style="text-align:right;">
-      <div style="font-size:${Math.round(8*S)}pt;color:#888;margin-bottom:${Math.round(2*S)}px;">Nr. ${sampleNr}</div>
-      <table style="border-collapse:collapse;margin-left:auto;">
-        <tr><td style="${tdL}">Ihre Kundennummer:</td><td style="${tdR}">${sampleKundenNr}</td></tr>
-        <tr><td style="${tdL}">${datumLabel}:</td><td style="${tdR}">${sampleDatum}</td></tr>
-        ${(docTyp === "offerte" || docTyp === "rechnung" || docTyp === "mahnung") ? `<tr><td style="${tdL}">${gueltigLabel}:</td><td style="${tdR}">${gueltigVal}</td></tr>` : ""}
-        <tr><td style="${tdL}">Unsere Referenz:</td><td style="${tdR}">Dominik Pusam</td></tr>
-      </table>
-    </div>`;
-
-  // Footer
-  const footerContact = show_contact ? `Schneggenburger GmbH &middot; Hefenhoferstrasse 7 &middot; 8580 Sommeri &middot; 071 411 16 87` : "";
-  const footerPage = show_page_num ? "Seite 1 / 1" : "";
-
-  // ═══════════════════════════════════════════════════════
-  // EINHEITLICHER INHALTS-BLOCK — gleich für alle Designs
-  // Empfänger: position:absolute (kein Flow-Element)
-  // Spacer: schiebt Ansprechperson + Tabelle nach unten
-  // ═══════════════════════════════════════════════════════
-  const contentBlock = `
-    ${empfaengerBlock}
-    <div style="height:${spacerHoehePx}px;"></div>
-    ${apBlock}
-    ${einlHtml}
-    ${tableHtml}
-    ${totalsHtml}
-    ${schlHtml}`;
-
-  // ── Design A: Klassisch ──────────────────────────────────────────────────────
-  if (design === "A") {
-    const logoLeft = logo_pos !== "rechts";
-    return `<div style="font-family:Arial,sans-serif;font-size:${Math.round(10*S)}pt;color:#222;min-height:100%;display:flex;flex-direction:column;position:relative;padding-bottom:${Math.round(24*S)}px;box-sizing:border-box;">
-      ${wmHtml}
-      <div style="padding:${Math.round(20*S)}px ${Math.round(40*S)}px ${Math.round(14*S)}px;display:flex;align-items:flex-start;justify-content:space-between;gap:${Math.round(16*S)}px;flex-direction:${logoLeft?"row":"row-reverse"};position:relative;z-index:1;">
-        <div style="flex-shrink:0;">${logoHtml}${slogan ? `<div style="font-size:${Math.round(8*S)}pt;color:#888;margin-top:${Math.round(3*S)}px;">${slogan}</div>` : ""}</div>
-        <div style="font-size:${Math.round(14*S)}pt;font-weight:700;color:#222;text-align:right;">
-          ${docTitle}
-          ${docInfoHtml.replace(`font-size:${Math.round(8.5*S)}pt`, `font-size:${Math.round(8*S)}pt`)}
-        </div>
-      </div>
-      <div style="height:2px;background:${hc};margin:0 ${Math.round(40*S)}px;"></div>
-      <div style="padding:${Math.round(14*S)}px ${Math.round(40*S)}px;flex:1;position:relative;z-index:1;">
-        ${contentBlock}
-      </div>
-      <div style="background:${fc};color:${fcText};padding:${Math.round(6*S)}px ${Math.round(40*S)}px;font-size:${Math.round(8*S)}pt;display:flex;justify-content:space-between;align-items:center;">
-        <span>${footerContact}</span><span>${footerPage}</span>
-      </div>
-    </div>`;
-  }
-
-  // ── Design B: Modern ─────────────────────────────────────────────────────────
-  if (design === "B") {
-    const logoLeft = logo_pos !== "rechts";
-    return `<div style="font-family:Arial,sans-serif;font-size:${Math.round(10*S)}pt;color:#222;min-height:100%;display:flex;flex-direction:column;position:relative;padding-bottom:${Math.round(24*S)}px;box-sizing:border-box;">
-      ${wmHtml}
-      <div style="background:${hc};color:${hcText};padding:${Math.round(22*S)}px ${Math.round(40*S)}px ${Math.round(18*S)}px;display:flex;align-items:center;gap:${Math.round(16*S)}px;flex-direction:${logoLeft?"row":"row-reverse"};position:relative;z-index:1;">
-        <div style="flex-shrink:0;">${logo_data_url ? `<img src="${logo_data_url}" style="max-width:${lws}px;max-height:${lhs}px;object-fit:contain;filter:brightness(0) invert(1);" alt="Logo"/>` : `<span style="font-size:${Math.round(14*S)}pt;font-weight:700;color:${hcText};">SG</span>`}${slogan ? `<div style="font-size:${Math.round(7*S)}pt;opacity:0.8;margin-top:${Math.round(2*S)}px;">${slogan}</div>` : ""}</div>
-        <div style="flex:1;font-size:${Math.round(15*S)}pt;font-weight:700;">${docTitle}</div>
-        ${docInfoHtml.replace(`color:#555`, "color:rgba(255,255,255,0.85)")}
-      </div>
-      <div style="padding:${Math.round(10*S)}px ${Math.round(40*S)}px;flex:1;position:relative;z-index:1;">
-        ${contentBlock}
-      </div>
-      <div style="background:${fc};color:${fcText};padding:${Math.round(6*S)}px ${Math.round(40*S)}px;font-size:${Math.round(8*S)}pt;display:flex;justify-content:space-between;align-items:center;">
-        <span>${footerContact}</span><span>${footerPage}</span>
-      </div>
-    </div>`;
-  }
-
-  // ── Design C: Minimal ────────────────────────────────────────────────────────
-  if (design === "C") {
-    return `<div style="font-family:Arial,sans-serif;font-size:${Math.round(10*S)}pt;color:#222;min-height:100%;display:flex;flex-direction:column;position:relative;padding-bottom:${Math.round(24*S)}px;box-sizing:border-box;">
-      ${wmHtml}
-      <div style="padding:${Math.round(16*S)}px ${Math.round(40*S)}px ${Math.round(6*S)}px;position:relative;z-index:1;">
-        ${logoHtml}
-      </div>
-      <div style="padding:${Math.round(4*S)}px ${Math.round(40*S)}px;flex:1;position:relative;z-index:1;">
-        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:${Math.round(8*S)}px;">
-          <div style="font-size:${Math.round(15*S)}pt;font-weight:700;color:#111;">${docTitle}</div>
-          ${docInfoHtml}
-        </div>
-        <div style="height:1px;background:#ddd;margin-bottom:${Math.round(10*S)}px;"></div>
-        ${contentBlock}
-      </div>
-      <div style="background:${fc};color:${fcText};padding:${Math.round(6*S)}px ${Math.round(40*S)}px;font-size:${Math.round(8*S)}pt;display:flex;justify-content:space-between;align-items:center;">
-        <span>${footerContact}</span><span>${footerPage}</span>
-      </div>
-    </div>`;
-  }
-
-
-  // ── Design E: Elegant ────────────────────────────────────────────────────────
-  if (design === "E") {
-    return `<div style="font-family:Arial,sans-serif;font-size:${Math.round(10*S)}pt;color:#222;min-height:100%;display:flex;flex-direction:column;position:relative;padding-bottom:${Math.round(24*S)}px;box-sizing:border-box;">
-      ${wmHtml}
-      <div style="padding:${Math.round(20*S)}px ${Math.round(40*S)}px ${Math.round(10*S)}px;display:flex;align-items:center;justify-content:space-between;gap:${Math.round(16*S)}px;position:relative;z-index:1;">
-        <div style="flex-shrink:0;">${logoHtml}${slogan ? `<div style="font-size:${Math.round(7*S)}pt;color:#aaa;letter-spacing:0.1em;margin-top:${Math.round(3*S)}px;">${slogan.toUpperCase()}</div>` : ""}</div>
-        <div style="text-align:right;">
-          <div style="font-size:${Math.round(13*S)}pt;font-weight:700;color:${hc};">${docTitle}</div>
-          ${docInfoHtml}
-        </div>
-      </div>
-      <div style="height:3px;background:linear-gradient(90deg,${hc},${fc});margin:0 ${Math.round(40*S)}px;border-radius:2px;"></div>
-      <div style="padding:${Math.round(12*S)}px ${Math.round(40*S)}px;flex:1;position:relative;z-index:1;">
-        ${contentBlock}
-      </div>
-      <div style="position:relative;z-index:1;">
-        <div style="height:2px;background:linear-gradient(90deg,${fc},${hc});margin:0 ${Math.round(40*S)}px;border-radius:2px;"></div>
-        <div style="padding:${Math.round(6*S)}px ${Math.round(40*S)}px;font-size:${Math.round(8*S)}pt;color:#999;font-style:italic;display:flex;justify-content:space-between;">
-          <span>${footerContact}</span><span>${footerPage}</span>
-        </div>
-      </div>
-    </div>`;
-  }
-
-
-  // ── Design G: Swiss Classic ──────────────────────────────────────────────────
-  if (design === "G") {
-    const logoLeft = logo_pos !== "rechts";
-    return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:${Math.round(10*S)}pt;color:#222;min-height:100%;display:flex;flex-direction:column;position:relative;padding-bottom:${Math.round(24*S)}px;box-sizing:border-box;">
-      ${wmHtml}
-      <div style="padding:${Math.round(28*S)}px ${Math.round(40*S)}px 0;border-top:2px solid ${hc};position:relative;z-index:1;">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-direction:${logoLeft?"row":"row-reverse"};">
-          <div style="flex-shrink:0;">${logoHtml}${slogan ? `<div style="font-size:${Math.round(8*S)}pt;color:#888;margin-top:${Math.round(3*S)}px;">${slogan}</div>` : ""}</div>
-          <div style="text-align:right;font-size:${Math.round(8.5*S)}pt;color:#555;line-height:1.6;">
-            <div style="font-weight:700;color:#222;">Schneggenburger GmbH</div>
-            <div>Hefenhoferstrasse 7</div>
-            <div>8580 Sommeri &middot; Tel 071 411 16 87</div>
-          </div>
-        </div>
-        <div style="height:0.5px;background:#ccc;margin:${Math.round(12*S)}px 0;"></div>
-        <div style="font-size:${Math.round(8*S)}pt;color:#aaa;margin-bottom:${Math.round(4*S)}px;">Schneggenburger GmbH &middot; Hefenhoferstrasse 7 &middot; 8580 Sommeri</div>
-        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:${Math.round(10*S)}px;">
-          <div style="font-size:${Math.round(15*S)}pt;font-weight:700;color:#111;">${docTitle}</div>
-          ${docInfoHtml}
-        </div>
-      </div>
-      <div style="padding:0 ${Math.round(40*S)}px;flex:1;position:relative;z-index:1;">
-        ${contentBlock}
-      </div>
-      <div style="background:${fc};color:${fcText};padding:${Math.round(6*S)}px ${Math.round(40*S)}px;font-size:${Math.round(8*S)}pt;display:flex;justify-content:space-between;align-items:center;">
-        <span>${footerContact}</span><span>${footerPage}</span>
-      </div>
-    </div>`;
-  }
-
-
-
-  // Fallback: Design A
-  return renderA4Preview({ ...vorlage, design: "A" }, docTyp);
-}
 
 // ─── Slider Component ────────────────────────────────────────────────────────
 
@@ -819,12 +379,18 @@ export default function PdfVorlagenTab() {
   const { toast } = useToast();
 
   const [activeDoc, setActiveDoc] = useState<string>("offerte");
-  // Echte PDF-Vorschau: Bilder vom Backend (Puppeteer-gerendert) — mehrseitig (Rechnung: Seite 2 = QR-Zahlschein)
-  const [previewPages, setPreviewPages] = useState<string[]>([]);
-  const [previewPageIdx, setPreviewPageIdx] = useState(0);
+  // Echte PDF-Vorschau: direktes PDF vom Backend (Puppeteer-gerendert), angezeigt via
+  // Object-URL in einem <iframe> — der native Browser-PDF-Viewer übernimmt Mehrseiten-
+  // Navigation (z.B. Rechnung: Seite 2 = QR-Zahlschein) selbst, keine eigene Paging-UI nötig.
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Schutz gegen Race Conditions: nur die Antwort der zuletzt gestarteten Anfrage darf
+  // den State noch aktualisieren. Ohne dies könnte eine ältere, langsamere Antwort eine
+  // neuere überschreiben, wenn schnell hintereinander getippt wird.
+  const previewSeqRef = useRef(0);
+  const previewUrlRef = useRef<string | null>(null);
 
   const [vorlagen, setVorlagen] = useState<Record<string, PdfVorlage>>(() => {
     const init: Record<string, PdfVorlage> = {};
@@ -895,6 +461,7 @@ export default function PdfVorlagenTab() {
   const fetchPreview = useCallback((v: PdfVorlage, docTyp: string) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
+      const mySeq = ++previewSeqRef.current;
       setPreviewLoading(true);
       setPreviewError(false);
       try {
@@ -904,23 +471,28 @@ export default function PdfVorlagenTab() {
           body: JSON.stringify({ vorlage: v, doc_typ: docTyp }),
         });
         if (!resp.ok) throw new Error("Fehler beim Rendern");
-        const data = await resp.json();
-        if (!data.pages || data.pages.length === 0) {
-          throw new Error("Server hat kein Bild geliefert");
-        }
-        setPreviewPages(data.pages);
-        setPreviewPageIdx((old) => (old >= data.pages.length ? 0 : old));
+        const blob = await resp.blob();
+        // Race-Schutz: falls inzwischen eine neuere Anfrage gestartet wurde, diese
+        // (jetzt veraltete) Antwort verwerfen — nicht mehr in den State schreiben.
+        if (mySeq !== previewSeqRef.current) return;
+        const objectUrl = URL.createObjectURL(blob);
+        // Alte Object-URL erst NACH dem Setzen der neuen freigeben, damit das <iframe>
+        // nie kurzzeitig auf eine bereits ungültige URL zeigt (verhindert Flackern/Fehler).
+        const prevUrl = previewUrlRef.current;
+        previewUrlRef.current = objectUrl;
+        setPreviewUrl(objectUrl);
+        if (prevUrl) URL.revokeObjectURL(prevUrl);
       } catch {
+        if (mySeq !== previewSeqRef.current) return;
         setPreviewError(true);
       } finally {
-        setPreviewLoading(false);
+        if (mySeq === previewSeqRef.current) setPreviewLoading(false);
       }
     }, 800); // 800ms Debounce
   }, []);
 
   // Vorschau neu laden wenn sich Vorlage oder Dokumenttyp ändert
   useEffect(() => {
-    setPreviewPageIdx(0);
     fetchPreview(vorlage, activeDoc);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vorlage, activeDoc]);
@@ -928,10 +500,19 @@ export default function PdfVorlagenTab() {
   // Cleanup bei Unmount
   useEffect(() => () => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
   }, []);
 
   // ─── Design preview mini content ─────────────────────
-  const designPreviews = [
+  // WICHTIG: Nur Designs anbieten, die im echten PDF-Generator (buildPdfHtml,
+  // server/routes.ts) auch tatsächlich als eigenständiges Layout ankommen.
+  // "B" (Modern), "C" (Minimal) und "E" (Elegant) werden serverseitig aktuell
+  // NICHT eigenständig gerendert (der finale Rückgabepfad kennt nur "G" und
+  // einen "A"-Fallback für alles andere) — sie würden in der Auswahl etwas
+  // anderes zeigen als im echten PDF. Deshalb bewusst deaktiviert, bis sie
+  // als eigenes Feature nachgebaut werden. Nicht einfach löschen, damit die
+  // Definitionen für eine spätere Wiederaufnahme erhalten bleiben.
+  const allDesignPreviews = [
     {
       id: "A",
       title: "Klassisch",
@@ -1031,6 +612,17 @@ export default function PdfVorlagenTab() {
     },
     ];
 
+  // Aktiv anwählbar sind nur A und G (siehe Kommentar oben). Bereits gespeicherte
+  // ältere Vorlagen mit design B/C/E werden serverseitig ohnehin wie A behandelt;
+  // die Karte für die zuvor gewählte, jetzt deaktivierte Design-ID bleibt sichtbar
+  // (aber ausgegraut/nicht auswählbar), damit der Nutzer sieht, was aktuell gespeichert ist.
+  const designPreviews = allDesignPreviews.filter(dp => dp.id === "A" || dp.id === "G");
+  // Fallback wie im Backend (buildPdfHtml): jeder unbekannte/deaktivierte Design-Wert
+  // (z.B. altes "B"/"C"/"E" oder ein Fremdwert) wird wie "A" gerendert. Damit die
+  // Auswahl-Karten das widerspiegeln, gilt "A" auch in der UI als ausgewählt, sobald
+  // der gespeicherte Wert keiner aktiven Karte entspricht.
+  const effectiveSelectedDesign = designPreviews.some(dp => dp.id === vorlage.design) ? vorlage.design : "A";
+
   return (
     <div className="space-y-4">
       {/* Tab navigation */}
@@ -1077,7 +669,7 @@ export default function PdfVorlagenTab() {
                     id={dp.id}
                     title={dp.title}
                     description={dp.description}
-                    selected={vorlage.design === dp.id}
+                    selected={effectiveSelectedDesign === dp.id}
                     onClick={() => updateVorlage({ design: dp.id })}
                     previewContent={dp.previewContent}
                   />
@@ -1540,78 +1132,23 @@ export default function PdfVorlagenTab() {
                 justifyContent: "center",
               }}
             >
-              {/* Vorheriges Bild als Hintergrund (verhindert Flackern) */}
-              {previewPages.length > 0 && (
-                <img
-                  src={previewPages[Math.min(previewPageIdx, previewPages.length - 1)]}
-                  alt={`PDF-Vorschau Seite ${previewPageIdx + 1}`}
+              {/* Vorheriges PDF als Hintergrund (verhindert Flackern beim Nachladen).
+                  Natives Browser-PDF-Rendering — exakt byte-identisch mit dem echten PDF,
+                  inkl. nativer Mehrseiten-Navigation (z.B. Rechnung: Seite 2 = QR-Zahlschein). */}
+              {previewUrl && (
+                <iframe
+                  key={previewUrl}
+                  src={previewUrl}
+                  title="PDF-Vorschau"
                   style={{
                     width: "100%",
                     height: "100%",
-                    objectFit: "cover",
-                    objectPosition: "top",
+                    border: "none",
                     display: "block",
                     opacity: previewLoading ? 0.45 : 1,
                     transition: "opacity 0.25s",
                   }}
                 />
-              )}
-              {/* Seiten-Navigation (z.B. Rechnung: Seite 1 Inhalt, Seite 2 QR-Zahlschein) */}
-              {previewPages.length > 1 && (
-                <div style={{
-                  position: "absolute",
-                  bottom: 8,
-                  left: "50%",
-                  transform: "translateX(-50%)",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  background: "rgba(0,0,0,0.55)",
-                  borderRadius: 20,
-                  padding: "4px 8px",
-                  zIndex: 5,
-                }}>
-                  <button
-                    type="button"
-                    onClick={() => setPreviewPageIdx((i) => Math.max(0, i - 1))}
-                    disabled={previewPageIdx === 0}
-                    style={{
-                      width: 20, height: 20, borderRadius: "50%", border: "none",
-                      background: "transparent", color: "#fff",
-                      opacity: previewPageIdx === 0 ? 0.35 : 1,
-                      cursor: previewPageIdx === 0 ? "default" : "pointer",
-                      fontSize: 13, lineHeight: 1,
-                    }}
-                  >&#8249;</button>
-                  {previewPages.map((_, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => setPreviewPageIdx(i)}
-                      title={i === 1 && activeDoc === "rechnung" ? "Seite 2 — QR-Zahlschein" : `Seite ${i + 1}`}
-                      style={{
-                        width: 7, height: 7, borderRadius: "50%", border: "none", padding: 0,
-                        background: i === previewPageIdx ? "#fff" : "rgba(255,255,255,0.4)",
-                        cursor: "pointer",
-                      }}
-                    />
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => setPreviewPageIdx((i) => Math.min(previewPages.length - 1, i + 1))}
-                    disabled={previewPageIdx === previewPages.length - 1}
-                    style={{
-                      width: 20, height: 20, borderRadius: "50%", border: "none",
-                      background: "transparent", color: "#fff",
-                      opacity: previewPageIdx === previewPages.length - 1 ? 0.35 : 1,
-                      cursor: previewPageIdx === previewPages.length - 1 ? "default" : "pointer",
-                      fontSize: 13, lineHeight: 1,
-                    }}
-                  >&#8250;</button>
-                  <span style={{ color: "#fff", fontSize: 10, marginLeft: 2 }}>
-                    {previewPageIdx + 1}/{previewPages.length}
-                  </span>
-                </div>
               )}
               {/* Ladeindikator */}
               {previewLoading && (
@@ -1623,7 +1160,7 @@ export default function PdfVorlagenTab() {
                   alignItems: "center",
                   justifyContent: "center",
                   gap: 10,
-                  background: previewPages.length > 0 ? "rgba(255,255,255,0.4)" : "#f8f7f5",
+                  background: previewUrl ? "rgba(255,255,255,0.4)" : "#f8f7f5",
                 }}>
                   <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#6b4c2a" strokeWidth="2" strokeLinecap="round">
                     <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83">
@@ -1654,13 +1191,13 @@ export default function PdfVorlagenTab() {
                   >Erneut versuchen</button>
                 </div>
               )}
-              {/* Initialer Leerzustand (noch kein Bild, kein Fehler) */}
-              {previewPages.length === 0 && !previewLoading && !previewError && (
+              {/* Initialer Leerzustand (noch kein PDF, kein Fehler) */}
+              {!previewUrl && !previewLoading && !previewError && (
                 <div style={{ fontSize: 11, color: "#999", textAlign: "center" }}>Vorschau wird geladen…</div>
               )}
             </div>
             <div className="flex items-center justify-between mt-1.5">
-              <p className="text-xs text-gray-400">Echte Vorschau — 1:1 identisch mit generiertem PDF</p>
+              <p className="text-xs text-gray-400">Echte Vorschau — 1:1 identisch mit generiertem PDF{activeDoc === "rechnung" ? " (Seite 2 im PDF-Viewer: QR-Zahlschein)" : ""}</p>
               <button
                 type="button"
                 onClick={handleSave}
