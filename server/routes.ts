@@ -793,7 +793,10 @@ export async function registerRoutes(
       const rolleNormalisiert = rolle === "admin" ? "admin" : "mitarbeiter";
 
       const hash = await bcrypt.hash(passwort, 12);
-      const { data, error } = await identity.client
+      // Wie bei PATCH: app_benutzer hat nur eine SELECT-RLS-Policy, daher
+      // Service-Role-Client für den Schreibzugriff im Supabase-Modus verwenden.
+      const writeClient = getAuthMode() === "supabase" ? getServiceRoleClient() : identity.client;
+      const { data, error } = await writeClient
         .from("app_benutzer")
         .insert({
           benutzername: String(benutzername).toLowerCase().trim(),
@@ -858,7 +861,14 @@ export async function registerRoutes(
           updates.gesperrt_am = null;
         }
       }
-      const { data, error } = await identity.client
+      // Schreibzugriffe auf app_benutzer nutzen bewusst den Service-Role-Client:
+      // für diese Tabelle existiert nur eine SELECT-RLS-Policy, keine für UPDATE.
+      // Der RLS-gebundene Client (identity.client bei req.auth) würde daher 0
+      // Zeilen treffen und PGRST116 werfen. Die Admin-Berechtigung ist bereits
+      // serverseitig durch isAdminIdentity() geprüft — RLS ist hier nicht die
+      // zuständige Schutzschicht.
+      const writeClient = getAuthMode() === "supabase" ? getServiceRoleClient() : identity.client;
+      const { data, error } = await writeClient
         .from("app_benutzer")
         .update(updates)
         .eq("id", id)
@@ -881,11 +891,16 @@ export async function registerRoutes(
       if (id === identity.userId) {
         return res.status(400).json({ message: "Der eigene Account kann nicht gelöscht werden." });
       }
-      await identity.client
+      // Wie bei PATCH: app_benutzer hat nur eine SELECT-RLS-Policy, daher
+      // Service-Role-Client für den Schreibzugriff im Supabase-Modus verwenden.
+      const writeClient = getAuthMode() === "supabase" ? getServiceRoleClient() : identity.client;
+      const { error, count } = await writeClient
         .from("app_benutzer")
-        .delete()
+        .delete({ count: "exact" })
         .eq("id", id)
         .eq("tenant_id", identity.tenantId);
+      if (error) return res.status(400).json({ message: asError(error) });
+      if (!count) return res.status(404).json({ message: "Benutzer nicht gefunden." });
       return res.json({ ok: true });
     } catch (e) {
       return res.status(500).json({ message: asError(e) });
@@ -899,11 +914,16 @@ export async function registerRoutes(
       if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       if (!isAdminIdentity(identity)) return res.status(403).json({ message: "Nur Administratoren." });
       const { id } = req.params;
-      await identity.client
+      // Wie bei PATCH: app_benutzer hat nur eine SELECT-RLS-Policy, daher
+      // Service-Role-Client für den Schreibzugriff im Supabase-Modus verwenden.
+      const writeClient = getAuthMode() === "supabase" ? getServiceRoleClient() : identity.client;
+      const { error, count } = await writeClient
         .from("app_benutzer")
-        .update({ totp_aktiv: false, totp_secret: null, backup_codes: null })
+        .update({ totp_aktiv: false, totp_secret: null, backup_codes: null }, { count: "exact" })
         .eq("id", id)
         .eq("tenant_id", identity.tenantId);
+      if (error) return res.status(400).json({ message: asError(error) });
+      if (!count) return res.status(404).json({ message: "Benutzer nicht gefunden." });
       return res.json({ ok: true });
     } catch (e) {
       return res.status(500).json({ message: asError(e) });
