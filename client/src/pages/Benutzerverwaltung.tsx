@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Users, Plus, Pencil, Trash2, ShieldOff, ShieldCheck, Eye, EyeOff, SlidersHorizontal, Check, ChevronDown, ChevronRight } from "lucide-react";
+import { Users, Plus, Pencil, Trash2, ShieldOff, ShieldCheck, Eye, EyeOff, SlidersHorizontal, Check, ChevronDown, ChevronRight, Lock, Unlock } from "lucide-react";
 import { formatDate } from "@/lib/format";
 import {
   ALLE_EINZELBERECHTIGUNGEN,
@@ -30,6 +30,8 @@ interface Benutzer {
   aktiv: boolean;
   erstellt: string;
   berechtigungen: string | null;
+  gesperrt?: boolean;
+  gesperrt_am?: string | null;
 }
 
 // ─── Berechtigungs-Modal ────────────────────────────────────────────────────
@@ -265,7 +267,7 @@ export default function Benutzerverwaltung() {
   });
 
   const editMut = useMutation({
-    mutationFn: async (updates: Partial<{ benutzername: string; rolle: string; aktiv: boolean; passwort: string }>) => {
+    mutationFn: async (updates: Partial<{ benutzername: string; rolle: string; aktiv: boolean; passwort: string; gesperrt: boolean }>) => {
       if (!editUser) return;
       const res = await apiRequest("PATCH", `/api/benutzer/${editUser.id}`, updates);
       const d = await res.json();
@@ -276,6 +278,20 @@ export default function Benutzerverwaltung() {
       queryClient.invalidateQueries({ queryKey: ["/api/benutzer"] });
       toast({ title: "✅ Gespeichert" });
       setEditUser(null);
+    },
+    onError: (e: Error) => toast({ title: "Fehler", description: e.message, variant: "destructive" }),
+  });
+
+  const unlockMut = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("PATCH", `/api/benutzer/${id}`, { gesperrt: false });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.message);
+      return d;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/benutzer"] });
+      toast({ title: "✅ Konto entsperrt" });
     },
     onError: (e: Error) => toast({ title: "Fehler", description: e.message, variant: "destructive" }),
   });
@@ -347,6 +363,11 @@ export default function Benutzerverwaltung() {
                     : <span className="flex items-center gap-1 text-muted-foreground"><ShieldOff className="h-3 w-3" />Kein 2FA</span>
                   }
                   {!u.aktiv && <Badge variant="destructive" className="text-xs">Deaktiviert</Badge>}
+                  {u.gesperrt && (
+                    <Badge variant="destructive" className="text-xs flex items-center gap-1" data-testid={`badge-gesperrt-${u.id}`}>
+                      <Lock className="h-3 w-3" /> Gesperrt
+                    </Badge>
+                  )}
                   {permCount !== null && (
                     <span className="text-muted-foreground">· {permCount} von {ALLE_EINZELBERECHTIGUNGEN.length} Bereichen erlaubt</span>
                   )}
@@ -357,6 +378,19 @@ export default function Benutzerverwaltung() {
                 </div>
               </div>
               <div className="flex gap-2 flex-wrap justify-end shrink-0">
+                {u.gesperrt && (
+                  <Button
+                    size="sm" variant="outline"
+                    className="text-green-700 border-green-300 hover:bg-green-50"
+                    onClick={() => unlockMut.mutate(u.id)}
+                    disabled={unlockMut.isPending}
+                    title="Konto entsperren"
+                    data-testid={`button-unlock-${u.id}`}
+                  >
+                    <Unlock className="h-3 w-3 mr-1" />
+                    <span className="hidden sm:inline">Entsperren</span>
+                  </Button>
+                )}
                 {/* Berechtigungen Button (nur für Mitarbeiter) */}
                 {u.rolle === "mitarbeiter" && (
                   <Button
@@ -501,6 +535,9 @@ export default function Benutzerverwaltung() {
                   id="edit-pw"
                   data-testid="input-edit-password"
                 />
+                {editUser.gesperrt && (
+                  <p className="text-xs text-muted-foreground mt-1">Ein neues Passwort setzen entsperrt dieses Konto automatisch.</p>
+                )}
               </div>
               <div>
                 <label className="text-sm font-medium mb-1 block">Rolle</label>

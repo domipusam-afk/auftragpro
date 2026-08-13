@@ -238,34 +238,39 @@ export async function registerRoutes(
   // ============= AUTH =============
 
   // ─── Login-Sperre (Brute-Force Schutz) ──────────────────────────────────
-  const loginVersuche = new Map<string, { count: number; gesperrtBis?: number }>();
+  // Zählung der Fehlversuche bleibt in-memory (pro IP+Benutzername), aber ab
+  // MAX_VERSUCHE wird das Konto dauerhaft in der Datenbank gesperrt (Spalte
+  // app_benutzer.gesperrt) statt nur zeitbasiert für 15 Minuten. Eine
+  // dauerhafte Sperre kann ausschliesslich ein Admin in der
+  // Benutzerverwaltung wieder aufheben (Entsperren oder Passwort-Reset).
+  const loginVersuche = new Map<string, { count: number }>();
   const MAX_VERSUCHE = 5;
-  const SPERRE_MS = 15 * 60 * 1000; // 15 Minuten
 
   function getLoginKey(req: any, benutzername: string) {
     const ip = req.headers["x-forwarded-for"]?.toString().split(",")[0] || req.socket.remoteAddress || "unknown";
     return `${ip}:${benutzername.toLowerCase().trim()}`;
   }
 
-  function pruefeSperre(key: string): { gesperrt: boolean; minutenNoch?: number; versuche?: number } {
-    const e = loginVersuche.get(key);
-    if (!e) return { gesperrt: false, versuche: 0 };
-    if (e.gesperrtBis && Date.now() < e.gesperrtBis) {
-      return { gesperrt: true, minutenNoch: Math.ceil((e.gesperrtBis - Date.now()) / 60000) };
-    }
-    if (e.gesperrtBis && Date.now() >= e.gesperrtBis) {
-      loginVersuche.delete(key); // Sperre abgelaufen
-      return { gesperrt: false, versuche: 0 };
-    }
-    return { gesperrt: false, versuche: e.count };
-  }
-
   function registriereFehlversuch(key: string) {
     const e = loginVersuche.get(key) || { count: 0 };
     e.count += 1;
-    if (e.count >= MAX_VERSUCHE) e.gesperrtBis = Date.now() + SPERRE_MS;
     loginVersuche.set(key, e);
     return e.count;
+  }
+
+  // Sperrt das Konto dauerhaft in der DB, sobald MAX_VERSUCHE erreicht ist.
+  // Nutzt den Service-Role-Client, da zu diesem Zeitpunkt noch keine
+  // authentifizierte Identität existiert (Login ist ja gerade gescheitert).
+  async function sperreKontoDauerhaft(normalizedUsername: string) {
+    try {
+      const client = getAuthMode() === "supabase" ? getServiceRoleClient() : supabase;
+      await client
+        .from("app_benutzer")
+        .update({ gesperrt: true, gesperrt_am: new Date().toISOString() })
+        .eq("benutzername", normalizedUsername);
+    } catch (e) {
+      console.error("[Login-Sperre] Konnte Konto nicht dauerhaft sperren:", e);
+    }
   }
 
   // ─── Sensible Einstellungs-Keys ────────────────────────────────────────
@@ -298,15 +303,46 @@ export async function registerRoutes(
       const rawUsername = String(benutzername).trim();
       const normalizedUsername = rawUsername.toLowerCase();
       const key = getLoginKey(req, normalizedUsername);
-      const sperre = pruefeSperre(key);
-      if (sperre.gesperrt)
-        return res.status(429).json({ ok: false, message: `Zu viele Fehlversuche. Bitte ${sperre.minutenNoch} Minute(n) warten.`, gesperrt: true, minutenNoch: sperre.minutenNoch });
-      if (rawUsername !== normalizedUsername) {
+
+      const GESPERRT_MSG = "Konto gesperrt wegen zu vieler Fehlversuche. Bitte einen Administrator kontaktieren, um das Konto zu entsperren.";
+
+      // Dauerhafte DB-Sperre hat Vorrang vor allem anderen — unabhängig von IP,
+      // Zeit oder korrektem Passwort. Nur ein Admin kann sie aufheben.
+      const pruefeDbSperre = async (): Promise<boolean> => {
+        try {
+          const client = getAuthMode() === "supabase" ? getServiceRoleClient() : supabase;
+          const { data } = await client
+            .from("app_benutzer")
+            .select("gesperrt")
+            .eq("benutzername", normalizedUsername)
+            .maybeSingle();
+          return !!data?.gesperrt;
+        } catch {
+          return false;
+        }
+      };
+      if (await pruefeDbSperre()) {
+        return res.status(423).json({ ok: false, message: GESPERRT_MSG, gesperrt: true, dauerhaft: true });
+      }
+
+      // Registriert einen Fehlversuch; sperrt das Konto dauerhaft in der DB,
+      // sobald MAX_VERSUCHE erreicht ist, und liefert die passende Antwort.
+      const fehlversuch = async () => {
         const count = registriereFehlversuch(key);
         const verbleibend = MAX_VERSUCHE - count;
-        return res.status(401).json({ ok: false, message: verbleibend > 0
-          ? `Benutzername oder Passwort falsch (${verbleibend} Versuch${verbleibend === 1 ? "" : "e"} verbleibend)`
-          : `Konto gesperrt für ${SPERRE_MS / 60000} Minuten.` });
+        if (verbleibend <= 0) {
+          await sperreKontoDauerhaft(normalizedUsername);
+          loginVersuche.delete(key);
+          return res.status(423).json({ ok: false, message: GESPERRT_MSG, gesperrt: true, dauerhaft: true });
+        }
+        return res.status(401).json({
+          ok: false,
+          message: `Benutzername oder Passwort falsch (${verbleibend} Versuch${verbleibend === 1 ? "" : "e"} verbleibend)`,
+        });
+      };
+
+      if (rawUsername !== normalizedUsername) {
+        return fehlversuch();
       }
 
       if (getAuthMode() === "supabase") {
@@ -326,11 +362,7 @@ export async function registerRoutes(
               .eq("aktiv", true)
               .maybeSingle();
             if (lookupError || !legacyUser || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(legacyUser.benutzername || ""))) {
-              const count = registriereFehlversuch(key);
-              const verbleibend = MAX_VERSUCHE - count;
-              return res.status(401).json({ ok: false, message: verbleibend > 0
-                ? `Benutzername oder Passwort falsch (${verbleibend} Versuch${verbleibend === 1 ? "" : "e"} verbleibend)`
-                : `Konto gesperrt für ${SPERRE_MS / 60000} Minuten.` });
+              return fehlversuch();
             }
             email = String(legacyUser.benutzername).toLowerCase().trim();
           }
@@ -343,11 +375,7 @@ export async function registerRoutes(
           password: String(passwort),
         });
         if (signInError || !signInData.session || !signInData.user) {
-          const count = registriereFehlversuch(key);
-          const verbleibend = MAX_VERSUCHE - count;
-          return res.status(401).json({ ok: false, message: verbleibend > 0
-            ? `Benutzername oder Passwort falsch (${verbleibend} Versuch${verbleibend === 1 ? "" : "e"} verbleibend)`
-            : `Konto gesperrt für ${SPERRE_MS / 60000} Minuten.` });
+          return fehlversuch();
         }
 
         // The UUID is the trust boundary: a matching email alone must never
@@ -385,22 +413,12 @@ export async function registerRoutes(
         .single();
 
       if (error || !user) {
-        const count = registriereFehlversuch(key);
-        const verbleibend = MAX_VERSUCHE - count;
-        const msg = verbleibend > 0
-          ? `Benutzername oder Passwort falsch (${verbleibend} Versuch${verbleibend === 1 ? "" : "e"} verbleibend)`
-          : `Konto gesperrt für ${SPERRE_MS / 60000} Minuten.`;
-        return res.status(401).json({ ok: false, message: msg });
+        return fehlversuch();
       }
 
       const pwOk = await bcrypt.compare(passwort, user.passwort_hash);
       if (!pwOk) {
-        const count = registriereFehlversuch(key);
-        const verbleibend = MAX_VERSUCHE - count;
-        const msg = verbleibend > 0
-          ? `Benutzername oder Passwort falsch (${verbleibend} Versuch${verbleibend === 1 ? "" : "e"} verbleibend)`
-          : `Konto gesperrt für ${SPERRE_MS / 60000} Minuten.`;
-        return res.status(401).json({ ok: false, message: msg });
+        return fehlversuch();
       }
 
       // Login erfolgreich → Fehlversuche zurücksetzen
@@ -532,10 +550,17 @@ export async function registerRoutes(
 
       const { data: user } = await supabase
         .from("app_benutzer")
-        .select("id, aktiv")
+        .select("id, aktiv, gesperrt")
         .eq("id", resetRow.benutzer_id)
         .maybeSingle();
       if (!user || !user.aktiv) return res.status(400).json({ ok: false, message: "Konto nicht gefunden oder inaktiv." });
+      // Ein wegen zu vieler Fehlversuche dauerhaft gesperrtes Konto darf sich
+      // nicht selbst per E-Mail-Link entsperren — sonst hätte die Sperre keine
+      // Schutzwirkung gegen einen Angreifer, der zusätzlich Zugriff aufs Postfach hat.
+      // Nur ein Administrator kann in diesem Fall entsperren (Benutzerverwaltung).
+      if (user.gesperrt) {
+        return res.status(423).json({ ok: false, message: "Dieses Konto ist gesperrt. Bitte kontaktiere einen Administrator, um es zu entsperren." });
+      }
 
       if (getAuthMode() === "supabase") {
         const serviceClient = getServiceRoleClient();
@@ -746,7 +771,7 @@ export async function registerRoutes(
       if (!isAdminIdentity(identity)) return res.status(403).json({ message: "Nur Administratoren." });
       const { data } = await identity.client
         .from("app_benutzer")
-        .select("id, benutzername, rolle, totp_aktiv, aktiv, erstellt, berechtigungen")
+        .select("id, benutzername, rolle, totp_aktiv, aktiv, erstellt, berechtigungen, gesperrt, gesperrt_am")
         .eq("tenant_id", identity.tenantId)
         .order("erstellt");
       return res.json(data || []);
@@ -792,7 +817,7 @@ export async function registerRoutes(
       if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       if (!isAdminIdentity(identity)) return res.status(403).json({ message: "Nur Administratoren." });
       const { id } = req.params;
-      const { benutzername, rolle, aktiv, passwort, berechtigungen } = req.body;
+      const { benutzername, rolle, aktiv, passwort, berechtigungen, gesperrt } = req.body;
       const updates: Record<string, unknown> = { aktualisiert: new Date().toISOString() };
       if (benutzername) updates.benutzername = String(benutzername).toLowerCase().trim();
       if (rolle !== undefined) {
@@ -803,16 +828,42 @@ export async function registerRoutes(
       }
       if (aktiv !== undefined) updates.aktiv = aktiv;
       if (berechtigungen !== undefined) updates.berechtigungen = berechtigungen ? JSON.stringify(berechtigungen) : null;
+      // Admin kann ein Konto manuell entsperren (gesperrt: false) oder
+      // vorsorglich sperren (gesperrt: true). Ein Passwort-Reset durch den
+      // Admin entsperrt das Konto zusätzlich immer automatisch mit (siehe unten).
+      if (gesperrt !== undefined) {
+        updates.gesperrt = !!gesperrt;
+        updates.gesperrt_am = gesperrt ? new Date().toISOString() : null;
+      }
       if (passwort) {
         if (typeof passwort !== "string" || passwort.length < 12) return res.status(400).json({ message: "Passwort muss mindestens 12 Zeichen haben." });
+        // In Supabase-Auth-Modus besitzt GoTrue das eigentliche Passwort;
+        // ein reines Update von app_benutzer.passwort_hash hätte keine Wirkung
+        // auf den echten Login. Daher zusätzlich (bzw. stattdessen) das
+        // Passwort direkt über die Supabase Admin-API setzen.
+        if (getAuthMode() === "supabase") {
+          try {
+            const { error: authUpdateError } = await getServiceRoleClient().auth.admin.updateUserById(id, { password: passwort });
+            if (authUpdateError) return res.status(400).json({ message: `Passwort konnte nicht gesetzt werden: ${authUpdateError.message}` });
+          } catch (e) {
+            return res.status(500).json({ message: `Passwort-Reset fehlgeschlagen: ${asError(e)}` });
+          }
+        }
         updates.passwort_hash = await bcrypt.hash(passwort, 12);
+        // Admin-Passwort-Reset ist der beschriebene Entsperr-Weg: ein gesperrtes
+        // Konto wird dabei automatisch wieder freigegeben, sofern nicht explizit
+        // im selben Request erneut gesperrt werden soll.
+        if (gesperrt === undefined) {
+          updates.gesperrt = false;
+          updates.gesperrt_am = null;
+        }
       }
       const { data, error } = await identity.client
         .from("app_benutzer")
         .update(updates)
         .eq("id", id)
         .eq("tenant_id", identity.tenantId)
-        .select("id, benutzername, rolle, totp_aktiv, aktiv, erstellt, berechtigungen")
+        .select("id, benutzername, rolle, totp_aktiv, aktiv, erstellt, berechtigungen, gesperrt, gesperrt_am")
         .single();
       if (error) return res.status(400).json({ message: asError(error) });
       return res.json(data);

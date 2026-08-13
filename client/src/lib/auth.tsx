@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import { apiRequest } from "./queryClient";
+import { apiRequest, API_BASE } from "./queryClient";
 import { lsGet, lsSet } from "./storage";
 import { clearAccessToken, onApiUnauthorized, setAccessToken } from "./api-auth";
 import { hatZugriff as checkZugriff, BerechtigungKey } from "./permissions";
@@ -41,8 +41,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       // Vertrauens-Token aus persistentem Speicher lesen
       const vertrauensToken = lsGet(`ap_vt_${benutzername}`) || undefined;
-      const res = await apiRequest("POST", "/api/auth/login", { benutzername, passwort, vertrauensToken });
-      const data = await res.json();
+      // Direkter fetch statt apiRequest: apiRequest wirft bei jedem Nicht-2xx-
+      // Status einen Error, bevor die JSON-Antwort gelesen werden kann — damit
+      // gingen Server-Meldungen wie "Versuche verbleibend" oder "Konto
+      // gesperrt" verloren und es wurde nur "Verbindungsfehler" angezeigt.
+      const res = await fetch(`${API_BASE}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ benutzername, passwort, vertrauensToken }),
+      });
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) return { ok: false, message: data.message, gesperrt: data.gesperrt, minutenNoch: data.minutenNoch };
       if (data.requires2fa) return { ok: true, requires2fa: true, userId: data.userId };
       if (data.session?.access_token) setAccessToken(data.session.access_token);

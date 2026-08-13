@@ -31,7 +31,6 @@ export default function Login() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [gesperrt, setGesperrt] = useState(false);
-  const [minutenNoch, setMinutenNoch] = useState(0);
   const [verbleibend, setVerbleibend] = useState<number | null>(null);
   const [geraetMerken, setGeraetMerken] = useState(true);
   const [resetEmail, setResetEmail] = useState("");
@@ -48,7 +47,6 @@ export default function Login() {
     if (!result.ok) {
       if (result.gesperrt) {
         setGesperrt(true);
-        setMinutenNoch(result.minutenNoch || 15);
         setVerbleibend(null);
       } else {
         setGesperrt(false);
@@ -176,8 +174,8 @@ export default function Login() {
                   <div className="flex items-start gap-2 rounded-lg bg-destructive/10 border border-destructive/25 px-3 py-2.5">
                     <ShieldOff className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
                     <div>
-                      <p className="text-sm font-semibold text-destructive">Konto gesperrt für {minutenNoch} Minuten</p>
-                      <p className="text-xs text-destructive/80 mt-0.5">Zu viele Fehlversuche. Bitte warten und es danach erneut versuchen.</p>
+                      <p className="text-sm font-semibold text-destructive">Konto gesperrt</p>
+                      <p className="text-xs text-destructive/80 mt-0.5">Zu viele Fehlversuche. Bitte einen Administrator kontaktieren, um das Konto wieder zu entsperren.</p>
                     </div>
                   </div>
                 )}
@@ -187,7 +185,7 @@ export default function Login() {
                     <div>
                       <p className="text-sm font-semibold text-amber-800">Falsches Passwort</p>
                       <p className="text-xs text-amber-700 mt-0.5">
-                        Noch <span className="font-bold">{verbleibend}</span> {verbleibend === 1 ? "Versuch" : "Versuche"} verbleibend — danach wird das Konto 15 Minuten gesperrt.
+                        Noch <span className="font-bold">{verbleibend}</span> {verbleibend === 1 ? "Versuch" : "Versuche"} verbleibend — danach wird das Konto dauerhaft gesperrt.
                       </p>
                     </div>
                   </div>
