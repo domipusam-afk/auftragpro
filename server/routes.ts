@@ -7634,7 +7634,6 @@ export async function registerRoutes(
       const musterEmpfaenger = "Musterfirma AG";
       const musterEmpStrasse = "Musterstrasse 42";
       const musterEmpPlzOrt  = "8001 Zürich";
-      const musterFaelligStr = "31. Juli 2026";
       const musterNummer = doc_typ === "offerte" ? "O260001" : "R260001";
 
       // Lieferschein: echte Route hängt einen Empfangsbestätigungs-Block
@@ -7658,6 +7657,20 @@ export async function registerRoutes(
         ? `<div style="margin-top:12px;padding:8px 12px;background:#fff3cd;border-left:3px solid #f0ad4e;font-size:8.5pt;color:#444;white-space:pre-line;">Bitte begleichen Sie den offenen Betrag innert 10 Tagen.</div>`
         : "";
 
+      // Bug-Fix: gueltigBis/faelligDatum waren fest verdrahtet ("30 Tage" bzw. eine
+      // feste Musterzeichenkette) und ignorierten previewVorlage.zahlungsfrist komplett —
+      // Aenderungen an diesem Vorlagenfeld hatten dadurch in der Live-Vorschau nie
+      // eine sichtbare Wirkung. Jetzt wird der tatsaechliche Vorlagenwert genutzt:
+      // Offerte zeigt ihn direkt als "X Tage", Rechnung/Mahnung leiten daraus ein
+      // realistisches Faelligkeitsdatum (Musterdatum + X Tage) ab — inkl. QR-Block,
+      // damit Seite 1 (Faelligkeitstext) und Seite 2 (QR-Zahlschein) konsistent bleiben.
+      const musterZahlungsfristTage = parseInt(String(previewVorlage.zahlungsfrist || "30"), 10) || 30;
+      const musterFaelligDatumBerechnet = (() => {
+        const basis = new Date("2026-07-01");
+        basis.setDate(basis.getDate() + musterZahlungsfristTage);
+        return basis.toLocaleDateString("de-CH", { day: "2-digit", month: "long", year: "numeric" });
+      })();
+
       // Bei Rechnung: echten QR-Zahlschein-Block bauen (identisch zur echten Rechnungserzeugung),
       // damit die Vorschau die tatsächliche Seite 2 mit Swiss-QR-Code zeigt.
       const qrInlineBlock = doc_typ === "rechnung"
@@ -7665,7 +7678,7 @@ export async function registerRoutes(
             sMap,
             totalInkl: total,
             rechnungsNr: musterNummer,
-            faelligStr: musterFaelligStr,
+            faelligStr: musterFaelligDatumBerechnet,
             empfaenger: musterEmpfaenger,
             empStrasse: musterEmpStrasse,
             empPlzOrt: musterEmpPlzOrt,
@@ -7676,7 +7689,7 @@ export async function registerRoutes(
         titel: docTitle,
         nummer: musterNummer,
         datum: "01. Juli 2026",
-        ...(doc_typ === "offerte" ? { gueltigBis: "30 Tage" } : { faelligDatum: musterFaelligStr }),
+        ...(doc_typ === "offerte" ? { gueltigBis: `${musterZahlungsfristTage} Tage` } : { faelligDatum: musterFaelligDatumBerechnet }),
         empfaenger: musterEmpfaenger,
         empfaengerStrasse: musterEmpStrasse,
         empfaengerPlzOrt: musterEmpPlzOrt,
