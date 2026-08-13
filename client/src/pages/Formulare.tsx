@@ -87,6 +87,16 @@ const FORMULAR_TYPEN = [
       { key: "bemerkungen", label: "Bemerkungen", typ: "textarea" },
     ],
   },
+  {
+    value: "wartungscheckliste", label: "Wartungscheckliste",
+    felder: [
+      { key: "datum", label: "Datum Wartung", typ: "date" },
+      { key: "anlage_objekt", label: "Anlage / Objekt", typ: "text" },
+      { key: "geprueft_punkte", label: "Geprüfte Punkte", typ: "textarea" },
+      { key: "maengel_festgestellt", label: "Festgestellte Mängel", typ: "textarea" },
+      { key: "naechste_wartung", label: "Nächste Wartung fällig am", typ: "date" },
+    ],
+  },
 ];
 
 const STATUS_COLOR: Record<string, string> = {

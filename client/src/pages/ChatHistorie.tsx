@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { MessageSquare, Send, Building2, HardHat } from "lucide-react";
+import { MessageSquare, Send, Building2, HardHat, Paperclip, X, FileText, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import type { Auftrag } from "@shared/schema";
@@ -17,10 +17,15 @@ interface Nachricht {
   id: string;
   auftrag_id: string;
   absender: string;
-  nachricht: string;
+  nachricht: string | null;
   typ: string;
   erstellt: string;
+  anhang_name?: string | null;
+  anhang_mime?: string | null;
+  anhang_data?: string | null;
 }
+
+const CHAT_ANHANG_MAX_BYTES = 10 * 1024 * 1024; // 10 MB Rohdatei (Base64 ist ~1.37x groesser)
 
 const TYP_OPTIONS = [
   { value: "intern", label: "Büro intern", icon: Building2, color: "bg-blue-100 text-blue-800" },
@@ -34,6 +39,8 @@ export default function ChatHistorie() {
   const [absender, setAbsender] = useState("");
   const [nachricht, setNachricht] = useState("");
   const [typ, setTyp] = useState("intern");
+  const [anhang, setAnhang] = useState<{ name: string; mime: string; data: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Timestamp-basiertes "gelesen"-Tracking (nur im React-State, kein localStorage)
@@ -125,20 +132,53 @@ export default function ChatHistorie() {
 
   const sendMutation = useMutation({
     mutationFn: () =>
-      apiRequest("POST", `/api/chat/${selectedAuftrag}`, { absender, nachricht, typ }),
+      apiRequest("POST", `/api/chat/${selectedAuftrag}`, {
+        absender,
+        nachricht,
+        typ,
+        ...(anhang ? { anhang_name: anhang.name, anhang_mime: anhang.mime, anhang_data: anhang.data } : {}),
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/chat", selectedAuftrag] });
       setNachricht("");
+      setAnhang(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
       toast({ title: "Nachricht gesendet" });
     },
-    onError: () => toast({ title: "Fehler", variant: "destructive" }),
+    onError: (error: Error) => toast({ title: "Fehler", description: error.message, variant: "destructive" }),
   });
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > CHAT_ANHANG_MAX_BYTES) {
+      toast({ title: "Datei zu gross", description: "Maximal 10 MB pro Anhang.", variant: "destructive" });
+      e.target.value = "";
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setAnhang({ name: file.name, mime: file.type || "application/octet-stream", data: String(reader.result) });
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (nachricht.trim() && absender) sendMutation.mutate();
+      if ((nachricht.trim() || anhang) && absender) sendMutation.mutate();
     }
+  };
+
+  const downloadAnhang = (n: Nachricht) => {
+    if (!n.anhang_data) return;
+    const a = document.createElement("a");
+    a.href = n.anhang_data;
+    a.download = n.anhang_name || "anhang";
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
   };
 
   const formatTime = (ts: string) => {
@@ -217,8 +257,25 @@ export default function ChatHistorie() {
                       </span>
                       <span className="text-[10px] text-muted-foreground ml-auto">{formatTime(n.erstellt)}</span>
                     </div>
-                    <div className="bg-muted rounded-lg px-3 py-2 text-sm max-w-[85%]">
-                      {n.nachricht}
+                    <div className="bg-muted rounded-lg px-3 py-2 text-sm max-w-[85%] space-y-2">
+                      {n.nachricht && <p>{n.nachricht}</p>}
+                      {n.anhang_data && (
+                        n.anhang_mime?.startsWith("image/") ? (
+                          <button type="button" onClick={() => downloadAnhang(n)} className="block">
+                            <img src={n.anhang_data} alt={n.anhang_name || "Anhang"} className="max-h-48 rounded border" />
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => downloadAnhang(n)}
+                            className="flex items-center gap-2 text-xs underline hover:no-underline"
+                          >
+                            <FileText className="h-3.5 w-3.5 shrink-0" />
+                            <span className="truncate max-w-[200px]">{n.anhang_name || "Anhang"}</span>
+                            <Download className="h-3.5 w-3.5 shrink-0" />
+                          </button>
+                        )
+                      )}
                     </div>
                   </div>
                 ))
@@ -226,8 +283,37 @@ export default function ChatHistorie() {
               <div ref={messagesEndRef} />
             </div>
 
+            {/* Anhang-Vorschau vor dem Senden */}
+            {anhang && (
+              <div className="border-t px-3 pt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                <Paperclip className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate flex-1">{anhang.name}</span>
+                <button type="button" onClick={() => { setAnhang(null); if (fileInputRef.current) fileInputRef.current.value = ""; }} className="p-1 rounded hover:bg-muted">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+
             {/* Input */}
             <div className="border-t p-3 flex gap-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                onChange={handleFileSelect}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                disabled={!absender}
+                onClick={() => fileInputRef.current?.click()}
+                className="shrink-0"
+                title="Datei anhängen"
+                aria-label="Datei anhängen"
+              >
+                <Paperclip className="h-4 w-4" />
+              </Button>
               <Input
                 value={nachricht}
                 onChange={(e) => setNachricht(e.target.value)}
@@ -238,7 +324,7 @@ export default function ChatHistorie() {
               />
               <Button
                 onClick={() => sendMutation.mutate()}
-                disabled={!nachricht.trim() || !absender || sendMutation.isPending}
+                disabled={(!nachricht.trim() && !anhang) || !absender || sendMutation.isPending}
                 className="text-white shrink-0"
                 style={{ background: "#e8620a" }}
               >

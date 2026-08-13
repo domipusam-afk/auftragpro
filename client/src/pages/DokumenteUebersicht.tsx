@@ -67,36 +67,16 @@ export default function DokumenteUebersicht() {
     queryFn: () => apiRequest("GET", "/api/auftraege").then((r) => r.json()),
   });
 
-  // Load documents from all orders
-  const { data: allDocs = [], isLoading: docsLoading } = useQuery<Dokument[]>({
+  // Dokumente und Fotos aller Auftraege in EINEM Request statt bisher zwei
+  // Requests pro Auftrag (2*N). Der Server liefert beide Listen gebuendelt.
+  const { data: alleDateien, isLoading: dateienLoading } = useQuery<{ dokumente: Dokument[]; fotos: Foto[] }>({
     queryKey: ["/api/dokumente/alle"],
-    queryFn: async () => {
-      const results = await Promise.all(
-        auftraege.map((a) =>
-          apiRequest("GET", `/api/auftraege/${a.id}/dokumente`)
-            .then((r) => r.json())
-            .catch(() => [])
-        )
-      );
-      return results.flat();
-    },
-    enabled: auftraege.length > 0,
+    queryFn: () => apiRequest("GET", "/api/dokumente/alle").then((r) => r.json()),
   });
-
-  const { data: allFotos = [], isLoading: fotosLoading } = useQuery<Foto[]>({
-    queryKey: ["/api/fotos/alle"],
-    queryFn: async () => {
-      const results = await Promise.all(
-        auftraege.map((a) =>
-          apiRequest("GET", `/api/fotos/${a.id}`)
-            .then((r) => r.json())
-            .catch(() => [])
-        )
-      );
-      return results.flat();
-    },
-    enabled: auftraege.length > 0,
-  });
+  const allDocs = alleDateien?.dokumente ?? [];
+  const allFotos = alleDateien?.fotos ?? [];
+  const docsLoading = dateienLoading;
+  const fotosLoading = dateienLoading;
 
   const getAuftrag = (id: string) => {
     return auftraege.find((a) => a.id === id);
@@ -159,7 +139,6 @@ export default function DokumenteUebersicht() {
     },
     onSuccess: (_, file) => {
       queryClient.invalidateQueries({ queryKey: ["/api/dokumente/alle"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/fotos/alle"] });
       queryClient.invalidateQueries({ queryKey: ["/api/auftraege", file.auftrag_id] });
       toast({ title: `${file.typ} gelöscht` });
     },

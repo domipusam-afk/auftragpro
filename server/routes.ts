@@ -1299,6 +1299,33 @@ export async function registerRoutes(
     }
   });
 
+  // Konsolidierter Endpoint fuer die Dokumente-Uebersicht: liefert Dokumente
+  // UND Fotos aller Auftraege des Mandanten in genau zwei Datenbank-Abfragen
+  // statt der bisherigen 2*N Einzelabfragen (eine je Auftrag und Datei-Typ).
+  app.get("/api/dokumente/alle", async (req, res) => {
+    try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const [dokResult, fotoResult] = await Promise.all([
+        identity.client
+          .from("dokumente")
+          .select("id, auftrag_id, name, mime, size_bytes, kat, beschreibung, storage_path, datum")
+          .eq("tenant_id", identity.tenantId)
+          .order("datum", { ascending: false }),
+        identity.client
+          .from("foto_dokumentation")
+          .select("*")
+          .eq("tenant_id", identity.tenantId)
+          .order("erstellt", { ascending: false }),
+      ]);
+      if (dokResult.error) throw dokResult.error;
+      if (fotoResult.error) throw fotoResult.error;
+      res.json({ dokumente: dokResult.data || [], fotos: fotoResult.data || [] });
+    } catch (e) {
+      res.status(500).json({ message: asError(e) });
+    }
+  });
+
   // ============= RECHNUNGEN =============
 
   // Summiert alle Rechnungen eines Auftrags (Netto-Positionensumme, inkl. 8.1% MWST
@@ -3225,6 +3252,8 @@ export async function registerRoutes(
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
+  const CHAT_ANHANG_MAX_BASE64_LEN = 15_000_000;
+
   app.post("/api/chat/:auftragId", async (req, res) => {
     try {
       const identity = dashboardPreferenceIdentity(req);
@@ -3234,13 +3263,22 @@ export async function registerRoutes(
       }
       const body = req.body || {};
       const nachricht = typeof body.nachricht === "string" ? body.nachricht.trim() : "";
-      if (!nachricht) return res.status(400).json({ message: "Nachricht erforderlich" });
+      const anhangData = typeof body.anhang_data === "string" ? body.anhang_data : "";
+      if (!nachricht && !anhangData) {
+        return res.status(400).json({ message: "Nachricht oder Anhang erforderlich" });
+      }
+      if (anhangData.length > CHAT_ANHANG_MAX_BASE64_LEN) {
+        return res.status(413).json({ message: "Anhang übersteigt die maximale Grösse." });
+      }
       const row = {
         id: uid(),
         auftrag_id: req.params.auftragId,
         absender: typeof body.absender === "string" ? body.absender : null,
-        nachricht,
+        nachricht: nachricht || null,
         typ: typeof body.typ === "string" ? body.typ : null,
+        anhang_name: anhangData && typeof body.anhang_name === "string" ? body.anhang_name : null,
+        anhang_mime: anhangData && typeof body.anhang_mime === "string" ? body.anhang_mime : null,
+        anhang_data: anhangData || null,
         erstellt: new Date().toISOString(),
         tenant_id: identity.tenantId,
       };
@@ -4135,6 +4173,101 @@ export async function registerRoutes(
         .eq("tenant_id", identity.tenantId);
       if (error) throw error;
       res.json({ ok: true });
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+  // ─── Aufgaben-Erinnerung (Cron) ─────────────────────────────────────────────
+  // Wird von einem externen Scheduler periodisch aufgerufen (z.B. 1x täglich).
+  // Prüft überfällige, offene Aufgaben pro Tenant und verschickt eine E-Mail an
+  // den zuständigen Mitarbeiter (oder die SMTP-Absenderadresse als Fallback),
+  // sofern SMTP konfiguriert ist. Schützt vor Mehrfachversand über
+  // erinnerung_gesendet_am. Zugriff nur mit gültigem Secret-Header.
+  app.post("/api/cron/aufgaben-erinnerung", async (req, res) => {
+    try {
+      const secret = process.env.CRON_SECRET;
+      if (!secret || req.header("x-cron-secret") !== secret) {
+        return res.status(401).json({ message: "Nicht autorisiert." });
+      }
+
+      const heute = new Date().toISOString().slice(0, 10);
+      const { data: ueberfaellig, error: aufgabenErr } = await supabase
+        .from("aufgaben")
+        .select("id, titel, beschreibung, faellig_datum, mitarbeiter_id, tenant_id")
+        .eq("status", "offen")
+        .is("erinnerung_gesendet_am", null)
+        .lte("faellig_datum", heute)
+        .not("faellig_datum", "is", null);
+      if (aufgabenErr) throw aufgabenErr;
+      if (!ueberfaellig || ueberfaellig.length === 0) {
+        return res.json({ ok: true, geprueft: 0, versendet: 0 });
+      }
+
+      const tenantIds = Array.from(new Set(ueberfaellig.map((a) => a.tenant_id).filter(Boolean)));
+      const { data: einstellungenArr } = await supabase
+        .from("einstellungen")
+        .select("tenant_id, schluessel, wert")
+        .in("tenant_id", tenantIds);
+      const smtpByTenant = new Map<string, Record<string, string>>();
+      for (const row of einstellungenArr || []) {
+        if (!smtpByTenant.has(row.tenant_id)) smtpByTenant.set(row.tenant_id, {});
+        smtpByTenant.get(row.tenant_id)![row.schluessel] = row.wert || "";
+      }
+
+      const mitarbeiterIds = Array.from(new Set(ueberfaellig.map((a) => a.mitarbeiter_id).filter(Boolean)));
+      const { data: mitarbeiterArr } = mitarbeiterIds.length
+        ? await supabase.from("mitarbeiter").select("id, vorname, nachname, email_geschaeftlich, email").in("id", mitarbeiterIds)
+        : { data: [] as any[] };
+      const mitarbeiterById = new Map((mitarbeiterArr || []).map((m: any) => [m.id, m]));
+
+      const nodemailer = await import("nodemailer");
+      let versendet = 0;
+      const versendeteIds: string[] = [];
+
+      for (const aufgabe of ueberfaellig) {
+        const sm = smtpByTenant.get(aufgabe.tenant_id) || {};
+        const smtpHost = sm.smtp_host || "";
+        const smtpPort = Number(sm.smtp_port) || 587;
+        const smtpUser = sm.smtp_user || "";
+        const smtpPass = sm.smtp_passwort || sm.smtp_pass || "";
+        const smtpFrom = sm.smtp_von || sm.smtp_from || smtpUser;
+        const smtpSsl = sm.smtp_ssl || "starttls";
+        if (!smtpHost || !smtpUser || !smtpPass) continue; // SMTP nicht konfiguriert für diesen Tenant
+
+        const mitarbeiter = aufgabe.mitarbeiter_id ? mitarbeiterById.get(aufgabe.mitarbeiter_id) : null;
+        const empfaenger = mitarbeiter?.email_geschaeftlich || mitarbeiter?.email || smtpFrom || smtpUser;
+        if (!empfaenger) continue;
+
+        try {
+          const secure = smtpSsl === "ssl" || smtpPort === 465;
+          const transporter = nodemailer.default.createTransport({
+            host: smtpHost,
+            port: smtpPort,
+            secure,
+            auth: { user: smtpUser, pass: smtpPass },
+            tls: secure ? undefined : { ciphers: "SSLv3" },
+          });
+          await transporter.sendMail({
+            from: `"${sm.firmenname || "AuftragsPro"}" <${smtpFrom || smtpUser}>`,
+            to: empfaenger,
+            subject: `Erinnerung: Aufgabe "${aufgabe.titel}" ist überfällig`,
+            text: `Die Aufgabe "${aufgabe.titel}" war fällig am ${aufgabe.faellig_datum} und ist noch nicht abgeschlossen.\n\n${aufgabe.beschreibung || ""}`,
+            html: `<div style="font-family:Arial,sans-serif;font-size:11pt;line-height:1.6;"><p>Die Aufgabe <strong>${aufgabe.titel}</strong> war fällig am <strong>${aufgabe.faellig_datum}</strong> und ist noch nicht abgeschlossen.</p>${aufgabe.beschreibung ? `<p>${String(aufgabe.beschreibung).replace(/\n/g, "<br/>")}</p>` : ""}</div>`,
+          });
+          versendet++;
+          versendeteIds.push(aufgabe.id);
+        } catch (mailErr) {
+          console.error(`[Aufgaben-Erinnerung] SMTP-Fehler für Aufgabe ${aufgabe.id}:`, mailErr);
+        }
+      }
+
+      if (versendeteIds.length > 0) {
+        await supabase
+          .from("aufgaben")
+          .update({ erinnerung_gesendet_am: new Date().toISOString() })
+          .in("id", versendeteIds);
+      }
+
+      res.json({ ok: true, geprueft: ueberfaellig.length, versendet });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
