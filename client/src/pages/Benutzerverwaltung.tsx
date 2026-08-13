@@ -235,6 +235,7 @@ export default function Benutzerverwaltung() {
   const { isAdmin, user: currentUser } = useAuth();
   const [showAdd, setShowAdd] = useState(false);
   const [editUser, setEditUser] = useState<Benutzer | null>(null);
+  const [editPw, setEditPw] = useState("");
   const [permUser, setPermUser] = useState<Benutzer | null>(null);
   const [newName, setNewName] = useState("");
   const [newPw, setNewPw] = useState("");
@@ -278,6 +279,7 @@ export default function Benutzerverwaltung() {
       queryClient.invalidateQueries({ queryKey: ["/api/benutzer"] });
       toast({ title: "✅ Gespeichert" });
       setEditUser(null);
+      setEditPw("");
     },
     onError: (e: Error) => toast({ title: "Fehler", description: e.message, variant: "destructive" }),
   });
@@ -477,7 +479,7 @@ export default function Benutzerverwaltung() {
               <div className="relative">
                 <Input
                   type={showPw ? "text" : "password"}
-                  placeholder="Mindestens 6 Zeichen"
+                  placeholder="Mindestens 12 Zeichen"
                   value={newPw}
                   onChange={(e) => setNewPw(e.target.value)}
                   data-testid="input-new-password"
@@ -486,6 +488,11 @@ export default function Benutzerverwaltung() {
                   {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
+              {newPw.length > 0 && newPw.length < 12 ? (
+                <p className="text-xs text-destructive mt-1">Noch {12 - newPw.length} Zeichen bis zur Mindestlänge von 12.</p>
+              ) : (
+                <p className="text-xs text-muted-foreground mt-1">Mindestens 12 Zeichen.</p>
+              )}
             </div>
             <div>
               <label className="text-sm font-medium mb-1 block">Rolle</label>
@@ -502,7 +509,7 @@ export default function Benutzerverwaltung() {
             <Button
               className="w-full"
               onClick={() => addMut.mutate()}
-              disabled={addMut.isPending || !newName || !newPw}
+              disabled={addMut.isPending || !newName || newPw.length < 12}
               data-testid="button-save-user"
             >
               {addMut.isPending ? "Wird erstellt…" : "Benutzer erstellen"}
@@ -513,7 +520,7 @@ export default function Benutzerverwaltung() {
 
       {/* Edit user dialog */}
       {editUser && (
-        <Dialog open={!!editUser} onOpenChange={() => setEditUser(null)}>
+        <Dialog open={!!editUser} onOpenChange={(open) => { if (!open) { setEditUser(null); setEditPw(""); } }}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Benutzer bearbeiten</DialogTitle>
@@ -531,10 +538,16 @@ export default function Benutzerverwaltung() {
                 <label className="text-sm font-medium mb-1 block">Neues Passwort (leer lassen = unverändert)</label>
                 <Input
                   type="password"
-                  placeholder="Neues Passwort"
-                  id="edit-pw"
+                  placeholder="Mindestens 12 Zeichen"
+                  value={editPw}
+                  onChange={(e) => setEditPw(e.target.value)}
                   data-testid="input-edit-password"
                 />
+                {editPw.length > 0 && editPw.length < 12 ? (
+                  <p className="text-xs text-destructive mt-1">Noch {12 - editPw.length} Zeichen bis zur Mindestlänge von 12.</p>
+                ) : (
+                  <p className="text-xs text-muted-foreground mt-1">Leer lassen, um das Passwort nicht zu ändern. Sonst mindestens 12 Zeichen.</p>
+                )}
                 {editUser.gesperrt && (
                   <p className="text-xs text-muted-foreground mt-1">Ein neues Passwort setzen entsperrt dieses Konto automatisch.</p>
                 )}
@@ -567,15 +580,14 @@ export default function Benutzerverwaltung() {
               <Button
                 className="w-full"
                 onClick={() => {
-                  const pw = (document.getElementById("edit-pw") as HTMLInputElement)?.value;
                   editMut.mutate({
                     benutzername: editUser.benutzername,
                     rolle: editUser.rolle,
                     aktiv: editUser.aktiv,
-                    ...(pw ? { passwort: pw } : {}),
+                    ...(editPw ? { passwort: editPw } : {}),
                   });
                 }}
-                disabled={editMut.isPending}
+                disabled={editMut.isPending || (editPw.length > 0 && editPw.length < 12)}
                 data-testid="button-save-edit"
               >
                 {editMut.isPending ? "Wird gespeichert…" : "Speichern"}
