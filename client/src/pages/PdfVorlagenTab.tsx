@@ -753,75 +753,10 @@ export default function PdfVorlagenTab() {
               )}
             </AccordionSection>
 
-            {/* 4. Empfänger-Position — für ALLE Dokumente */}
-            <AccordionSection title="Empfänger-Position" defaultOpen={true}
-              icon={<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>}
-            >
-              <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-gray-600">Horizontale Ausrichtung</Label>
-                  <div className="flex gap-2">
-                    {([["links", "◀ Links"], ["mitte", "● Mitte"], ["rechts", "Rechts ▶"]] as const).map(([val, lbl]) => (
-                      <button
-                        key={val}
-                        type="button"
-                        onClick={() => updateVorlage({ absender_pos_h: val })}
-                        className={`flex-1 py-1.5 px-2 rounded text-xs border transition-colors ${
-                          vorlage.absender_pos_h === val
-                            ? "text-white border-transparent"
-                            : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
-                        }`}
-                        style={vorlage.absender_pos_h === val ? { background: "#6b4c2a", borderColor: "#6b4c2a" } : undefined}
-                      >
-                        {lbl}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Couvert-Fenster Position — für ALLE Dokument-Typen */}
-                <div className="rounded bg-blue-50 border border-blue-100 px-2.5 py-1.5 text-xs text-blue-700">
-                  Schweizer Norm SN (C5/6 Couvert): oben 55 mm, links 20 mm
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <Label className="text-xs text-gray-600">Abstand oben (mm)</Label>
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        type="number"
-                        min={10}
-                        max={150}
-                        value={vorlage.absender_top_mm ?? 55}
-                        onChange={(e) => updateVorlage({ absender_top_mm: Number(e.target.value) })}
-                        className="h-8 text-xs border border-gray-200 rounded-md px-2 w-20 focus:outline-none"
-                      />
-                      <span className="text-xs text-gray-400">mm</span>
-                    </div>
-                    <p className="text-xs text-gray-400">SN-Norm: 55 mm (A4 2× gefaltet)</p>
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs text-gray-600">Abstand links (mm)</Label>
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        type="number"
-                        min={0}
-                        max={150}
-                        value={vorlage.absender_left_mm ?? 20}
-                        onChange={(e) => updateVorlage({ absender_left_mm: Number(e.target.value) })}
-                        className="h-8 text-xs border border-gray-200 rounded-md px-2 w-20 focus:outline-none"
-                      />
-                      <span className="text-xs text-gray-400">mm</span>
-                    </div>
-                    <p className="text-xs text-gray-400">SN-Norm: 20 mm vom Rand</p>
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-1 text-xs text-gray-400 bg-gray-50 rounded p-2">
-                  <div><span className="font-semibold text-gray-600">C5/6 (DL)</span><br/>oben 21 mm<br/>links 12 mm (SN)</div>
-                  <div><span className="font-semibold text-gray-600">C5</span><br/>oben 65 mm<br/>links 12 mm (SN)</div>
-                  <div><span className="font-semibold text-gray-600">A4 gefaltet</span><br/>oben 55 mm<br/>links 20 mm (⭐)</div>
-                </div>
-              </div>
-            </AccordionSection>
+            {/* Empfänger-Position entfernt: Position ist jetzt fest im Code pro
+                Dokumenttyp (Rechnung + Mahnung = rechts, alle anderen = links,
+                immer Schweizer Norm 55mm oben / 20mm links). Weniger Einstellungen,
+                weniger Fehlerquellen, immer richtig für Fensterumschläge. */}
 
             {/* 5. Dokument-Texte */}
             <AccordionSection title="Texte" defaultOpen={false}

@@ -1786,12 +1786,16 @@ export async function registerRoutes(
     const wmSize     = v.watermark_size || 60;
     const wmPos      = v.watermark_pos || "bottom";
     const showTotals = data.showTotals !== false;
-    // Couvert-Fenster-Einstellungen nur für Offerte/Rechnung relevant
-    // Alle Docs lesen Empfänger-Position aus Vorlage
-    // Schweizer Norm SN C5/6 (DL): Fenster 100x45mm, top=55mm (A4 zweifach gefaltet), left=20mm
-    const absenderPosH   = v.absender_pos_h   || "links";
-    const absenderTopMm  = v.absender_top_mm  != null ? Number(v.absender_top_mm)  : 55;
-    const absenderLeftMm = v.absender_left_mm != null ? Number(v.absender_left_mm) : 20;
+    // Empfänger-Position: fest im Code pro Dokumenttyp, NICHT mehr aus Vorlagen-
+    // Feldern (absender_pos_h/_top_mm/_left_mm) übernommen. Rechnung + Mahnung
+    // stehen fest rechts (für Fensterumschlag-Retour), alle anderen Dokumente links
+    // nach Schweizer Norm SN C5/6 (DL): Fenster 100x45mm, top=55mm bei A4 zweifach
+    // gefaltet, left=20mm. Die DB-Felder bleiben für Rückwärtskompatibilität erhalten,
+    // werden aber vom Renderer ignoriert.
+    const EMPFAENGER_RECHTS_DOC_TYPES = new Set(["rechnung", "mahnung"]);
+    const absenderPosH: "links" | "rechts" = EMPFAENGER_RECHTS_DOC_TYPES.has(docTyp) ? "rechts" : "links";
+    const absenderTopMm  = 55;
+    const absenderLeftMm = 20;
     // Empfänger-Block endet bei: absenderTopMm + ~20mm (3 Zeilen + Abstand)
     // pdf-content muss DARUNTER starten — sonst Überlappung mit Tabelle
     // contentTopMm wird nach hdrH-Berechnung via Closure genutzt (Inline-Berechnung)
@@ -2121,12 +2125,6 @@ export async function registerRoutes(
             <div style="font-weight:600;">${data.empfaenger}</div>
             ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
             ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
-          </div>` : absenderPosH==='mitte' ? `
-          <div style="margin:0 auto;width:90mm;text-align:left;font-size:10pt;color:#333;line-height:1.55;">
-            <div style="font-size:7.5pt;color:#999;margin-bottom:3px;white-space:nowrap;">${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
-            <div style="font-weight:600;">${data.empfaenger}</div>
-            ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
-            ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
           </div>` : `
           <div style="width:90mm;margin-left:${absenderLeftMm}mm;text-align:left;font-size:10pt;color:#333;line-height:1.55;">
             <div style="font-size:7.5pt;color:#999;margin-bottom:3px;white-space:nowrap;">${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
@@ -2169,32 +2167,16 @@ export async function registerRoutes(
     // Swiss-Norm SN 010130 Empfänger-Position (Fenstercouvert C5/C6):
     // Adressfenster: top=52mm vom Blattrand, left=100mm vom Blattrand
     // @page margin: top=(hdrH+4)mm, left=padMm=10mm
-    // position:absolute ist relativ zum body (der NACH dem @page-margin startet)
-    // Bug-Fix: top/left/Ausrichtung waren hier fest auf die Swiss-Norm-Werte (52mm/145mm,
-    // immer linksbündig) verdrahtet und ignorierten absender_pos_h/absender_top_mm/
-    // absender_left_mm aus der Vorlage komplett — die EMPFÄNGER-POSITION-Einstellung
-    // hatte dadurch in Design A (dem Standard-Design) nie eine sichtbare Wirkung.
-    // Jetzt werden dieselben Vorlagenfelder genutzt wie in Design G (Swiss Classic).
-    // Kalibrierung: bei unveränderten Vorlagen-Defaultwerten (top=55mm, left=20mm,
-    // Ausrichtung=links — siehe Fallback-Konstanten oben) MUSS exakt die bisherige
-    // Swiss-Norm-Position (52mm/145mm ab Blatt, immer linksbündig) herauskommen,
-    // damit bestehende, unveränderte Kundenvorlagen sich optisch nicht verschieben.
-    // Jede Abweichung vom Default wirkt sich ab jetzt zusätzlich 1:1 aus.
-    const absenderTopMmDefault  = 55;
-    const absenderLeftMmDefault = 20;
+    // position:absolute ist relativ zum body (der NACH dem @page-margin startet).
+    // Empfänger-Position ist fest im Code pro Dokumenttyp definiert (siehe oben):
+    // Rechnung/Mahnung = rechts, alle anderen = links. Swiss-Norm-Basis: 52mm/145mm
+    // ab Blattoberkante (=Empfängeradresse im Fensterumschlag), Content startet bei 66mm.
     const empfBlockBreiteMm = 76;
-    const empfTopAbsBasis  = 52 - (hdrH + 4); // bisherige feste Basis
-    const empfLeftAbsBasis = 145 - padMm;     // bisherige feste Basis
-    const empfTopAbs  = empfTopAbsBasis + (absenderTopMm - absenderTopMmDefault);
+    const empfTopAbs  = 52 - (hdrH + 4);
     const empfLeftAbs = absenderPosH === "rechts"
       ? (210 - padMm * 2) - empfBlockBreiteMm // rechtsbündig am Content-Rand
-      : absenderPosH === "mitte"
-      ? ((210 - padMm * 2) - empfBlockBreiteMm) / 2 // horizontal zentriert im Content-Bereich
-      : empfLeftAbsBasis + (absenderLeftMm - absenderLeftMmDefault); // links: Basis + Versatz-Differenz
-    // Content-Padding-Top: gleiche Kalibrierung wie oben — bisherige feste Basis (66mm ab
-    // Blatt, Empfänger endet bei 52mm+14mm Blockhöhe) plus Differenz zum Top-Default.
-    const contentPadTopMmBasis = 66 - (hdrH + 4);
-    const contentPadTopMm = contentPadTopMmBasis + (absenderTopMm - absenderTopMmDefault);
+      : 145 - padMm;                          // linksbündig an Swiss-Norm-Position
+    const contentPadTopMm = 66 - (hdrH + 4);
 
     // ─── Puppeteer displayHeaderFooter Templates (Design A) ───────────────────
     // Diese Methode ist zuverlässiger als position:fixed (kein Overlap, korrekte Seitenzahlen)
