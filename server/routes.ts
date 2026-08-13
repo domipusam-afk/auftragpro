@@ -291,11 +291,23 @@ export async function registerRoutes(
       if (!benutzername || !passwort)
         return res.status(400).json({ ok: false, message: "Benutzername und Passwort erforderlich" });
 
-      const normalizedUsername = String(benutzername).toLowerCase().trim();
+      // Exakte Gross-/Kleinschreibung erzwingen: Benutzernamen/E-Mails werden im
+      // System immer klein gespeichert. Wer beim Login auch nur einen
+      // Grossbuchstaben verwendet, wird abgelehnt statt stillschweigend über
+      // GoTrue's case-insensitiven E-Mail-Vergleich hereingelassen zu werden.
+      const rawUsername = String(benutzername).trim();
+      const normalizedUsername = rawUsername.toLowerCase();
       const key = getLoginKey(req, normalizedUsername);
       const sperre = pruefeSperre(key);
       if (sperre.gesperrt)
         return res.status(429).json({ ok: false, message: `Zu viele Fehlversuche. Bitte ${sperre.minutenNoch} Minute(n) warten.`, gesperrt: true, minutenNoch: sperre.minutenNoch });
+      if (rawUsername !== normalizedUsername) {
+        const count = registriereFehlversuch(key);
+        const verbleibend = MAX_VERSUCHE - count;
+        return res.status(401).json({ ok: false, message: verbleibend > 0
+          ? `Benutzername oder Passwort falsch (${verbleibend} Versuch${verbleibend === 1 ? "" : "e"} verbleibend)`
+          : `Konto gesperrt für ${SPERRE_MS / 60000} Minuten.` });
+      }
 
       if (getAuthMode() === "supabase") {
         const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedUsername);
@@ -416,6 +428,130 @@ export async function registerRoutes(
         requires2fa: false,
         user: { id: user.id, benutzername: user.benutzername, rolle: user.rolle, berechtigungen: user.berechtigungen || null }
       });
+    } catch (e) {
+      return res.status(500).json({ ok: false, message: asError(e) });
+    }
+  });
+
+  // ─── Passwort vergessen (Self-Service Reset per E-Mail-Link) ──────────────
+  // Schritt 1: Nutzer gibt E-Mail ein. Wir erzeugen (falls Konto existiert und
+  // SMTP für den Tenant konfiguriert ist) einen kurzlebigen Token und
+  // verschicken den Reset-Link. Die Antwort ist bewusst IMMER identisch, damit
+  // niemand über diesen Endpoint herausfinden kann, welche E-Mails registriert
+  // sind (Enumeration-Schutz).
+  app.post("/api/auth/passwort-vergessen", async (req, res) => {
+    const genericOk = { ok: true, message: "Falls ein Konto mit dieser E-Mail existiert, wurde ein Link zum Zurücksetzen versendet." };
+    try {
+      const { benutzername } = req.body;
+      if (!benutzername || typeof benutzername !== "string") return res.json(genericOk);
+      // Bewusst case-insensitiv: Ziel ist Zustellung, nicht Authentifizierung.
+      const normalizedUsername = benutzername.toLowerCase().trim();
+      if (!normalizedUsername) return res.json(genericOk);
+
+      const { data: user } = await supabase
+        .from("app_benutzer")
+        .select("id, benutzername, tenant_id")
+        .eq("benutzername", normalizedUsername)
+        .eq("aktiv", true)
+        .maybeSingle();
+      if (!user) return res.json(genericOk);
+
+      const { data: smtpRows } = await supabase
+        .from("einstellungen")
+        .select("schluessel, wert")
+        .eq("tenant_id", user.tenant_id)
+        .in("schluessel", ["smtp_host", "smtp_port", "smtp_user", "smtp_passwort", "smtp_pass", "smtp_von", "smtp_from", "smtp_ssl", "firmenname", "app_url"]);
+      const sm: Record<string, string> = {};
+      for (const row of smtpRows || []) sm[row.schluessel] = row.wert || "";
+      const smtpHost = sm.smtp_host || "";
+      const smtpPort = Number(sm.smtp_port) || 587;
+      const smtpUser = sm.smtp_user || "";
+      const smtpPass = sm.smtp_passwort || sm.smtp_pass || "";
+      const smtpFrom = sm.smtp_von || sm.smtp_from || smtpUser;
+      const smtpSsl = sm.smtp_ssl || "starttls";
+      if (!smtpHost || !smtpUser || !smtpPass) return res.json(genericOk); // kein SMTP konfiguriert → still ignorieren
+
+      const crypto = await import("crypto");
+      const rawToken = crypto.randomBytes(32).toString("hex");
+      const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+      const ablauf = new Date(Date.now() + 60 * 60 * 1000).toISOString(); // 1 Stunde gültig
+
+      const { error: insertError } = await supabase
+        .from("passwort_reset_tokens")
+        .insert({ benutzer_id: user.id, token_hash: tokenHash, ablauf });
+      if (insertError) throw insertError;
+
+      const appUrl = (sm.app_url || "https://auftragpro.onrender.com").replace(/\/$/, "");
+      const resetLink = `${appUrl}/#/passwort-zuruecksetzen?token=${rawToken}`;
+
+      const nodemailer = await import("nodemailer");
+      const secure = smtpSsl === "ssl" || smtpPort === 465;
+      const transporter = nodemailer.default.createTransport({
+        host: smtpHost,
+        port: smtpPort,
+        secure,
+        auth: { user: smtpUser, pass: smtpPass },
+        tls: secure ? undefined : { ciphers: "SSLv3" },
+      });
+      await transporter.sendMail({
+        from: `"${sm.firmenname || "AuftragsPro"}" <${smtpFrom || smtpUser}>`,
+        to: user.benutzername,
+        subject: "Passwort zurücksetzen — AuftragsPro",
+        text: `Du hast angefordert, dein Passwort zurückzusetzen. Öffne diesen Link (gültig für 1 Stunde):\n\n${resetLink}\n\nFalls du das nicht warst, kannst du diese E-Mail ignorieren.`,
+        html: `<div style="font-family:Arial,sans-serif;font-size:11pt;line-height:1.6;"><p>Du hast angefordert, dein Passwort zurückzusetzen.</p><p><a href="${resetLink}" style="display:inline-block;background:#1a1a1a;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;">Neues Passwort festlegen</a></p><p style="color:#666;font-size:9pt;">Der Link ist 1 Stunde gültig. Falls du das nicht warst, kannst du diese E-Mail ignorieren.</p></div>`,
+      });
+
+      return res.json(genericOk);
+    } catch (e) {
+      console.error("[Passwort-Vergessen] Fehler:", e);
+      return res.json(genericOk); // niemals Fehlerdetails an Client, um Enumeration zu verhindern
+    }
+  });
+
+  // Schritt 2: Nutzer klickt Link, gibt neues Passwort ein. Token wird gegen
+  // den gehashten Wert geprüft, muss ungenutzt und nicht abgelaufen sein.
+  app.post("/api/auth/passwort-zuruecksetzen", async (req, res) => {
+    try {
+      const { token, neuesPasswort } = req.body;
+      if (!token || typeof token !== "string") return res.status(400).json({ ok: false, message: "Ungültiger Link." });
+      if (!neuesPasswort || typeof neuesPasswort !== "string" || neuesPasswort.length < 12)
+        return res.status(400).json({ ok: false, message: "Passwort muss mindestens 12 Zeichen haben." });
+
+      const crypto = await import("crypto");
+      const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+
+      const { data: resetRow } = await supabase
+        .from("passwort_reset_tokens")
+        .select("id, benutzer_id, ablauf, verwendet_am")
+        .eq("token_hash", tokenHash)
+        .maybeSingle();
+
+      if (!resetRow || resetRow.verwendet_am || new Date(resetRow.ablauf).getTime() < Date.now()) {
+        return res.status(400).json({ ok: false, message: "Der Link ist ungültig oder abgelaufen. Bitte fordere einen neuen an." });
+      }
+
+      const { data: user } = await supabase
+        .from("app_benutzer")
+        .select("id, aktiv")
+        .eq("id", resetRow.benutzer_id)
+        .maybeSingle();
+      if (!user || !user.aktiv) return res.status(400).json({ ok: false, message: "Konto nicht gefunden oder inaktiv." });
+
+      if (getAuthMode() === "supabase") {
+        const serviceClient = getServiceRoleClient();
+        const { error: updateAuthError } = await serviceClient.auth.admin.updateUserById(user.id, { password: neuesPasswort });
+        if (updateAuthError) throw updateAuthError;
+      } else {
+        const hash = await bcrypt.hash(neuesPasswort, 12);
+        await supabase.from("app_benutzer").update({ passwort_hash: hash, aktualisiert: new Date().toISOString() }).eq("id", user.id);
+      }
+
+      await supabase
+        .from("passwort_reset_tokens")
+        .update({ verwendet_am: new Date().toISOString() })
+        .eq("id", resetRow.id);
+
+      return res.json({ ok: true, message: "Passwort wurde erfolgreich zurückgesetzt. Du kannst dich jetzt anmelden." });
     } catch (e) {
       return res.status(500).json({ ok: false, message: asError(e) });
     }

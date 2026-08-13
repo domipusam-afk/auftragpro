@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/auth";
+import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Lock, User, ShieldCheck, Eye, EyeOff, ShieldOff } from "lucide-react";
+import { Lock, User, ShieldCheck, Eye, EyeOff, ShieldOff, Mail, CheckCircle2 } from "lucide-react";
 
-type Step = "credentials" | "totp";
+type Step = "credentials" | "totp" | "passwort-vergessen";
 
 export default function Login() {
   const { login, verify2fa } = useAuth();
@@ -33,6 +34,9 @@ export default function Login() {
   const [minutenNoch, setMinutenNoch] = useState(0);
   const [verbleibend, setVerbleibend] = useState<number | null>(null);
   const [geraetMerken, setGeraetMerken] = useState(true);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetSent, setResetSent] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
 
   const handleCredentials = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,6 +67,17 @@ export default function Login() {
       setStep("totp");
     }
     // If ok and no 2fa required, auth context handles redirect automatically
+  };
+
+  const handlePasswortVergessen = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetEmail) return;
+    setResetLoading(true);
+    try {
+      await apiRequest("POST", "/api/auth/passwort-vergessen", { benutzername: resetEmail });
+    } catch { /* Antwort ist bewusst immer generisch, Fehler hier egal */ }
+    setResetLoading(false);
+    setResetSent(true);
   };
 
   const handleTotp = async (e: React.FormEvent) => {
@@ -186,7 +201,70 @@ export default function Login() {
                 >
                   {loading ? "Wird geprüft…" : "Anmelden"}
                 </Button>
+                <button
+                  type="button"
+                  className="w-full text-sm text-muted-foreground hover:text-foreground text-center"
+                  onClick={() => { setStep("passwort-vergessen"); setError(""); setResetSent(false); setResetEmail(benutzername); }}
+                  data-testid="link-passwort-vergessen"
+                >
+                  Passwort vergessen?
+                </button>
               </form>
+            </>
+          )}
+
+          {step === "passwort-vergessen" && (
+            <>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <Mail className="h-4 w-4 text-primary" />
+                </div>
+                <h2 className="font-semibold">Passwort zurücksetzen</h2>
+              </div>
+              {!resetSent ? (
+                <>
+                  <p className="text-sm text-muted-foreground mb-6">
+                    Gib deine E-Mail-Adresse ein. Falls ein Konto existiert, erhältst du einen Link zum Zurücksetzen.
+                  </p>
+                  <form onSubmit={handlePasswortVergessen} className="space-y-4">
+                    <div className="relative">
+                      <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        type="text"
+                        placeholder="vorname.nachname@schneggenburger.ch"
+                        value={resetEmail}
+                        onChange={(e) => setResetEmail(e.target.value)}
+                        className="pl-9 h-11 placeholder:text-[13px] sm:placeholder:text-sm"
+                        autoFocus
+                        autoComplete="username"
+                        data-testid="input-reset-email"
+                      />
+                    </div>
+                    <Button
+                      type="submit"
+                      className="w-full h-11"
+                      disabled={resetLoading || !resetEmail}
+                      data-testid="button-reset-anfordern"
+                    >
+                      {resetLoading ? "Wird gesendet…" : "Link anfordern"}
+                    </Button>
+                  </form>
+                </>
+              ) : (
+                <div className="flex flex-col items-center gap-3 py-2 text-center">
+                  <CheckCircle2 className="h-10 w-10 text-emerald-600" />
+                  <p className="text-sm text-muted-foreground">
+                    Falls ein Konto mit dieser E-Mail existiert, wurde soeben ein Link zum Zurücksetzen versendet. Prüfe dein Postfach (auch den Spam-Ordner).
+                  </p>
+                </div>
+              )}
+              <button
+                type="button"
+                className="w-full text-sm text-muted-foreground hover:text-foreground mt-4"
+                onClick={() => { setStep("credentials"); setError(""); setResetSent(false); }}
+              >
+                ← Zurück zur Anmeldung
+              </button>
             </>
           )}
 

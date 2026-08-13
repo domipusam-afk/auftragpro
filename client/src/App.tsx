@@ -51,6 +51,7 @@ import Aufgaben from "@/pages/Aufgaben";
 import Lagerverwaltung from "@/pages/Lagerverwaltung";
 
 import ProjektStatus from "@/pages/ProjektStatus";
+import PasswortZuruecksetzen from "@/pages/PasswortZuruecksetzen";
 import ZugriffGesperrt from "@/components/ZugriffGesperrt";
 
 function Geschuetzt({ modul, children, label }: { modul: import('@/lib/permissions').BerechtigungKey; children: React.ReactNode; label?: string }) {
@@ -134,6 +135,9 @@ function AuthGuard() {
   if (hash.startsWith("#/projekt/")) {
     const token = hash.split("#/projekt/")[1];
     return <Router hook={useHashLocation}><ProjektStatus token={token} /></Router>;
+  }
+  if (hash.startsWith("#/passwort-zuruecksetzen")) {
+    return <PasswortZuruecksetzen />;
   }
 
   // Intentionally unlinked Stage-6 technical preview. This does not use or
