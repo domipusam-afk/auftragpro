@@ -1786,14 +1786,10 @@ export async function registerRoutes(
     const wmSize     = v.watermark_size || 60;
     const wmPos      = v.watermark_pos || "bottom";
     const showTotals = data.showTotals !== false;
-    // Empfänger-Position: fest im Code pro Dokumenttyp, NICHT mehr aus Vorlagen-
-    // Feldern (absender_pos_h/_top_mm/_left_mm) übernommen. Rechnung + Mahnung
-    // stehen fest rechts (für Fensterumschlag-Retour), alle anderen Dokumente links
-    // nach Schweizer Norm SN C5/6 (DL): Fenster 100x45mm, top=55mm bei A4 zweifach
-    // gefaltet, left=20mm. Die DB-Felder bleiben für Rückwärtskompatibilität erhalten,
-    // werden aber vom Renderer ignoriert.
-    const EMPFAENGER_RECHTS_DOC_TYPES = new Set(["rechnung", "mahnung"]);
-    const absenderPosH: "links" | "rechts" = EMPFAENGER_RECHTS_DOC_TYPES.has(docTyp) ? "rechts" : "links";
+    // Empfänger-Position: bei ALLEN Dokumenten fest rechts oben nach Schweizer
+    // Norm SN C5/6 (Fensterumschlag). Vorher steuerbar über Vorlagen-Felder
+    // absender_pos_h/_top_mm/_left_mm — diese werden jetzt vom Renderer komplett
+    // ignoriert. Die DB-Felder bleiben für Rückwärtskompatibilität erhalten.
     const absenderTopMm  = 55;
     const absenderLeftMm = 20;
     // Empfänger-Block endet bei: absenderTopMm + ~20mm (3 Zeilen + Abstand)
@@ -2119,19 +2115,12 @@ export async function registerRoutes(
         <div class="pdf-header">${gHeaderHtml}</div>
         <div class="pdf-footer">${footerHtml}</div>
         <div style="margin-top:${Math.max(0, absenderTopMm - (hdrH + 4))}mm;min-height:25mm;overflow:hidden;">
-          ${absenderPosH==='rechts' ? `
           <div style="float:right;width:90mm;text-align:right;font-size:10pt;color:#333;line-height:1.55;">
             <div style="font-size:7.5pt;color:#999;margin-bottom:3px;white-space:nowrap;">${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
             <div style="font-weight:600;">${data.empfaenger}</div>
             ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
             ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
-          </div>` : `
-          <div style="width:90mm;margin-left:${absenderLeftMm}mm;text-align:left;font-size:10pt;color:#333;line-height:1.55;">
-            <div style="font-size:7.5pt;color:#999;margin-bottom:3px;white-space:nowrap;">${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
-            <div style="font-weight:600;">${data.empfaenger}</div>
-            ${data.empfaengerStrasse ? `<div>${data.empfaengerStrasse}</div>` : ""}
-            ${data.empfaengerPlzOrt  ? `<div>${data.empfaengerPlzOrt}</div>` : ""}
-          </div>`}
+          </div>
         </div>
         <div class="pdf-content" style="padding:42mm ${pad}px ${ftrH+8}mm;">
           <div style="font-size:8pt;color:#aaa;margin-bottom:3px;">${data.firma} · ${data.firmaAdresse} · ${data.firmaPlzOrt}</div>
@@ -2168,14 +2157,11 @@ export async function registerRoutes(
     // Adressfenster: top=52mm vom Blattrand, left=100mm vom Blattrand
     // @page margin: top=(hdrH+4)mm, left=padMm=10mm
     // position:absolute ist relativ zum body (der NACH dem @page-margin startet).
-    // Empfänger-Position ist fest im Code pro Dokumenttyp definiert (siehe oben):
-    // Rechnung/Mahnung = rechts, alle anderen = links. Swiss-Norm-Basis: 52mm/145mm
-    // ab Blattoberkante (=Empfängeradresse im Fensterumschlag), Content startet bei 66mm.
+    // Empfänger-Position: bei ALLEN Dokumenten fest rechtsbündig am Content-Rand
+    // (Swiss-Norm-Fensterumschlag, Content startet bei 66mm ab Blattoberkante).
     const empfBlockBreiteMm = 76;
     const empfTopAbs  = 52 - (hdrH + 4);
-    const empfLeftAbs = absenderPosH === "rechts"
-      ? (210 - padMm * 2) - empfBlockBreiteMm // rechtsbündig am Content-Rand
-      : 145 - padMm;                          // linksbündig an Swiss-Norm-Position
+    const empfLeftAbs = (210 - padMm * 2) - empfBlockBreiteMm;
     const contentPadTopMm = 66 - (hdrH + 4);
 
     // ─── Puppeteer displayHeaderFooter Templates (Design A) ───────────────────
