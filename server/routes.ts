@@ -876,6 +876,28 @@ export async function registerRoutes(
         .select("id, benutzername, rolle, totp_aktiv, aktiv, erstellt, berechtigungen, gesperrt, gesperrt_am")
         .single();
       if (error) return res.status(400).json({ message: asError(error) });
+
+      // tenant_memberships ist die Berechtigungsquelle, die req.auth im
+      // Supabase-Auth-Modus tatsächlich liest (siehe auth-middleware.ts).
+      // Ohne diesen Sync bleiben Rollen-/Rechteänderungen aus der
+      // Benutzerverwaltung für jeden Nicht-Admin-Mitarbeiter wirkungslos,
+      // sobald der Zugriff über einen Supabase-JWT (statt Legacy-Cookie)
+      // erfolgt — Admins sind unbetroffen, weil isRoutePolicyAllowed()
+      // rolle === "admin" immer durchlässt.
+      if (rolle !== undefined || berechtigungen !== undefined) {
+        const membershipUpdates: Record<string, unknown> = { aktualisiert_am: new Date().toISOString() };
+        if (rolle !== undefined) membershipUpdates.rolle = rolle;
+        if (berechtigungen !== undefined) membershipUpdates.berechtigungen = berechtigungen || {};
+        const { error: membershipError } = await getServiceRoleClient()
+          .from("tenant_memberships")
+          .update(membershipUpdates)
+          .eq("user_id", id)
+          .eq("tenant_id", identity.tenantId);
+        if (membershipError) {
+          console.error(`[BENUTZER_PATCH] tenant_memberships-Sync fehlgeschlagen für ${id}: ${asError(membershipError)}`);
+        }
+      }
+
       return res.json(data);
     } catch (e) {
       return res.status(500).json({ message: asError(e) });
