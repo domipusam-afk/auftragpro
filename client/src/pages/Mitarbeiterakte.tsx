@@ -29,6 +29,9 @@ interface Mitarbeiter {
   nachname: string;
   email: string;
   telefon: string;
+  // Zwei zusätzliche Prod-Spalten (Geschäfts-E-Mail, Direkt-Telefon).
+  email_geschaeftlich?: string | null;
+  telefon_direkt?: string | null;
   position: string;
   stundensatz: number;
   eintrittsdatum: string;
@@ -188,7 +191,16 @@ export default function Mitarbeiterakte() {
 
   const openEdit = (m: Mitarbeiter) => {
     setEditId(m.id);
-    setForm({ ...m, stundensatz: String(m.stundensatz) });
+    // id wird nicht ins Form übernommen; die Prod-Spalten email_geschaeftlich/
+    // telefon_direkt sind optional — wir setzen leere Strings als Fallback.
+    const { id: _id, ...rest } = m;
+    void _id;
+    setForm({
+      ...rest,
+      email_geschaeftlich: rest.email_geschaeftlich ?? "",
+      telefon_direkt: rest.telefon_direkt ?? "",
+      stundensatz: String(m.stundensatz),
+    });
     setOpen(true);
   };
 

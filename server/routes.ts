@@ -268,6 +268,20 @@ export async function registerRoutes(
     return e.count;
   }
 
+  // ─── Sensible Einstellungs-Keys ────────────────────────────────────────
+  // Server-Secrets dürfen niemals im Client ausgeliefert oder von Nicht-Admins
+  // verändert werden. Login-Hintergrund ist explizit öffentlich zugänglich.
+  const SENSITIVE_SETTING_KEYS = new Set<string>([
+    "smtp_passwort", "smtp_pass", "app_passwort",
+  ]);
+  const ADMIN_ONLY_SETTING_KEYS = new Set<string>([
+    ...Array.from(SENSITIVE_SETTING_KEYS),
+    "smtp_host", "smtp_port", "smtp_user", "smtp_ssl", "smtp_von",
+  ]);
+  const PUBLIC_SETTING_KEYS = new Set<string>([
+    "login_hintergrund",
+  ]);
+
   // Step 1: Login with username + password. AUTH_MODE is read for every
   // request: legacy keeps the established bcrypt flow below verbatim, while
   // supabase returns the GoTrue session for Bearer-authenticated API calls.
@@ -467,16 +481,20 @@ export async function registerRoutes(
   });
 
   // Setup 2FA: generate secret + QR code
+  // Bindung an authentifizierte Session — der Client darf keine fremde
+  // userId mehr im Body übermitteln.
   app.post("/api/auth/setup-2fa", async (req, res) => {
     try {
-      const { userId } = req.body;
-      if (!userId) return res.status(400).json({ message: "userId fehlt" });
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const userId = identity.userId;
 
-      const { data: user } = await supabase
+      const { data: user } = await identity.client
         .from("app_benutzer")
         .select("benutzername")
         .eq("id", userId)
-        .single();
+        .eq("tenant_id", identity.tenantId)
+        .maybeSingle();
 
       if (!user) return res.status(404).json({ message: "Benutzer nicht gefunden" });
 
@@ -494,10 +512,11 @@ export async function registerRoutes(
       const backupCodes = generateBackupCodes();
 
       // Store secret temporarily (not yet active)
-      await supabase
+      await identity.client
         .from("app_benutzer")
         .update({ totp_secret: secret.base32, backup_codes: backupCodes })
-        .eq("id", userId);
+        .eq("id", userId)
+        .eq("tenant_id", identity.tenantId);
 
       return res.json({ ok: true, qrDataUrl, backupCodes, secret: secret.base32 });
     } catch (e) {
@@ -508,12 +527,20 @@ export async function registerRoutes(
   // Confirm 2FA setup with a valid code
   app.post("/api/auth/confirm-2fa", async (req, res) => {
     try {
-      const { userId, code } = req.body;
-      const { data: user } = await supabase
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const userId = identity.userId;
+      const { code } = req.body;
+      if (typeof code !== "string" || code.trim().length === 0) {
+        return res.status(400).json({ message: "Code fehlt." });
+      }
+
+      const { data: user } = await identity.client
         .from("app_benutzer")
         .select("totp_secret")
         .eq("id", userId)
-        .single();
+        .eq("tenant_id", identity.tenantId)
+        .maybeSingle();
 
       if (!user?.totp_secret) return res.status(400).json({ message: "Kein Secret gefunden" });
 
@@ -525,10 +552,11 @@ export async function registerRoutes(
       const delta = totp.validate({ token: code.replace(/\s/g, ""), window: 1 });
       if (delta === null) return res.status(401).json({ ok: false, message: "Falscher Code" });
 
-      await supabase
+      await identity.client
         .from("app_benutzer")
         .update({ totp_aktiv: true })
-        .eq("id", userId);
+        .eq("id", userId)
+        .eq("tenant_id", identity.tenantId);
 
       return res.json({ ok: true });
     } catch (e) {
@@ -537,29 +565,35 @@ export async function registerRoutes(
   });
 
   // Change own password
+  // userId kommt aus der Session, nie aus dem Body. Passwort-Policy: mind. 12 Zeichen.
   app.post("/api/auth/passwort-aendern", async (req, res) => {
     try {
-      const { userId, altesPasswort, neuesPasswort } = req.body;
-      if (!userId || !altesPasswort || !neuesPasswort)
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const userId = identity.userId;
+      const { altesPasswort, neuesPasswort } = req.body;
+      if (!altesPasswort || !neuesPasswort)
         return res.status(400).json({ message: "Fehlende Felder" });
-      if (neuesPasswort.length < 6)
-        return res.status(400).json({ message: "Passwort muss mindestens 6 Zeichen haben" });
+      if (typeof neuesPasswort !== "string" || neuesPasswort.length < 12)
+        return res.status(400).json({ message: "Passwort muss mindestens 12 Zeichen haben." });
 
-      const { data: user } = await supabase
+      const { data: user } = await identity.client
         .from("app_benutzer")
         .select("passwort_hash")
         .eq("id", userId)
-        .single();
+        .eq("tenant_id", identity.tenantId)
+        .maybeSingle();
 
       if (!user) return res.status(404).json({ message: "Benutzer nicht gefunden" });
       const ok = await bcrypt.compare(altesPasswort, user.passwort_hash);
       if (!ok) return res.status(401).json({ message: "Altes Passwort falsch" });
 
       const hash = await bcrypt.hash(neuesPasswort, 12);
-      await supabase
+      await identity.client
         .from("app_benutzer")
         .update({ passwort_hash: hash, aktualisiert: new Date().toISOString() })
-        .eq("id", userId);
+        .eq("id", userId)
+        .eq("tenant_id", identity.tenantId);
 
       return res.json({ ok: true });
     } catch (e) {
@@ -569,11 +603,15 @@ export async function registerRoutes(
 
   // ============= BENUTZER VERWALTUNG (Admin only) =============
 
-  app.get("/api/benutzer", async (_req, res) => {
+  app.get("/api/benutzer", async (req, res) => {
     try {
-      const { data } = await supabase
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      if (!isAdminIdentity(identity)) return res.status(403).json({ message: "Nur Administratoren." });
+      const { data } = await identity.client
         .from("app_benutzer")
         .select("id, benutzername, rolle, totp_aktiv, aktiv, erstellt, berechtigungen")
+        .eq("tenant_id", identity.tenantId)
         .order("erstellt");
       return res.json(data || []);
     } catch (e) {
@@ -583,19 +621,24 @@ export async function registerRoutes(
 
   app.post("/api/benutzer", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      if (!isAdminIdentity(identity)) return res.status(403).json({ message: "Nur Administratoren." });
       const { benutzername, passwort, rolle } = req.body;
       if (!benutzername || !passwort)
         return res.status(400).json({ message: "Benutzername und Passwort erforderlich" });
-      if (passwort.length < 6)
-        return res.status(400).json({ message: "Passwort muss mindestens 6 Zeichen haben" });
+      if (typeof passwort !== "string" || passwort.length < 12)
+        return res.status(400).json({ message: "Passwort muss mindestens 12 Zeichen haben." });
+      const rolleNormalisiert = rolle === "admin" ? "admin" : "mitarbeiter";
 
       const hash = await bcrypt.hash(passwort, 12);
-      const { data, error } = await supabase
+      const { data, error } = await identity.client
         .from("app_benutzer")
         .insert({
-          benutzername: benutzername.toLowerCase().trim(),
+          benutzername: String(benutzername).toLowerCase().trim(),
           passwort_hash: hash,
-          rolle: rolle || "mitarbeiter",
+          rolle: rolleNormalisiert,
+          tenant_id: identity.tenantId,
         })
         .select("id, benutzername, rolle, totp_aktiv, aktiv, erstellt")
         .single();
@@ -609,21 +652,30 @@ export async function registerRoutes(
 
   app.patch("/api/benutzer/:id", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      if (!isAdminIdentity(identity)) return res.status(403).json({ message: "Nur Administratoren." });
       const { id } = req.params;
       const { benutzername, rolle, aktiv, passwort, berechtigungen } = req.body;
       const updates: Record<string, unknown> = { aktualisiert: new Date().toISOString() };
-      if (benutzername) updates.benutzername = benutzername.toLowerCase().trim();
-      if (rolle) updates.rolle = rolle;
+      if (benutzername) updates.benutzername = String(benutzername).toLowerCase().trim();
+      if (rolle !== undefined) {
+        if (rolle !== "admin" && rolle !== "mitarbeiter") {
+          return res.status(400).json({ message: "Ungültige Rolle." });
+        }
+        updates.rolle = rolle;
+      }
       if (aktiv !== undefined) updates.aktiv = aktiv;
       if (berechtigungen !== undefined) updates.berechtigungen = berechtigungen ? JSON.stringify(berechtigungen) : null;
       if (passwort) {
-        if (passwort.length < 6) return res.status(400).json({ message: "Passwort muss mindestens 6 Zeichen haben" });
+        if (typeof passwort !== "string" || passwort.length < 12) return res.status(400).json({ message: "Passwort muss mindestens 12 Zeichen haben." });
         updates.passwort_hash = await bcrypt.hash(passwort, 12);
       }
-      const { data, error } = await supabase
+      const { data, error } = await identity.client
         .from("app_benutzer")
         .update(updates)
         .eq("id", id)
+        .eq("tenant_id", identity.tenantId)
         .select("id, benutzername, rolle, totp_aktiv, aktiv, erstellt, berechtigungen")
         .single();
       if (error) return res.status(400).json({ message: asError(error) });
@@ -635,8 +687,18 @@ export async function registerRoutes(
 
   app.delete("/api/benutzer/:id", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      if (!isAdminIdentity(identity)) return res.status(403).json({ message: "Nur Administratoren." });
       const { id } = req.params;
-      await supabase.from("app_benutzer").delete().eq("id", id);
+      if (id === identity.userId) {
+        return res.status(400).json({ message: "Der eigene Account kann nicht gelöscht werden." });
+      }
+      await identity.client
+        .from("app_benutzer")
+        .delete()
+        .eq("id", id)
+        .eq("tenant_id", identity.tenantId);
       return res.json({ ok: true });
     } catch (e) {
       return res.status(500).json({ message: asError(e) });
@@ -646,11 +708,15 @@ export async function registerRoutes(
   // Reset 2FA for a user (Admin)
   app.post("/api/benutzer/:id/reset-2fa", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      if (!isAdminIdentity(identity)) return res.status(403).json({ message: "Nur Administratoren." });
       const { id } = req.params;
-      await supabase
+      await identity.client
         .from("app_benutzer")
         .update({ totp_aktiv: false, totp_secret: null, backup_codes: null })
-        .eq("id", id);
+        .eq("id", id)
+        .eq("tenant_id", identity.tenantId);
       return res.json({ ok: true });
     } catch (e) {
       return res.status(500).json({ message: asError(e) });
@@ -3265,9 +3331,32 @@ export async function registerRoutes(
   });
 
   // ─── Mitarbeiter ─────────────────────────────────────────────────────────────
-  app.get("/api/mitarbeiter", async (_req, res) => {
+  // Whitelist der beschreibbaren Spalten (kein blindes ...req.body).
+  // email_geschaeftlich und telefon_direkt sind Prod-Spalten aus dem Frontend.
+  const MITARBEITER_FIELDS = [
+    "vorname", "nachname", "email", "email_geschaeftlich",
+    "telefon", "telefon_direkt", "position", "stundensatz",
+    "eintrittsdatum", "status", "notiz",
+  ] as const;
+
+  const extractMitarbeiterFields = (body: unknown): Record<string, unknown> => {
+    const src = (body ?? {}) as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const key of MITARBEITER_FIELDS) {
+      if (src[key] !== undefined) out[key] = src[key];
+    }
+    return out;
+  };
+
+  app.get("/api/mitarbeiter", async (req, res) => {
     try {
-      const { data, error } = await supabase.from("mitarbeiter").select("*").order("nachname", { ascending: true });
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { data, error } = await identity.client
+        .from("mitarbeiter")
+        .select("*")
+        .eq("tenant_id", identity.tenantId)
+        .order("nachname", { ascending: true });
       if (error) throw error;
       res.json(data || []);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -3275,9 +3364,20 @@ export async function registerRoutes(
 
   app.post("/api/mitarbeiter", async (req, res) => {
     try {
-      const { vorname, nachname, email, telefon, position, stundensatz, eintrittsdatum, status, notiz } = req.body;
-      const m = { id: uid(), vorname: vorname||'', nachname: nachname||'', email: email||'', telefon: telefon||'', position: position||'', stundensatz: stundensatz||0, eintrittsdatum: eintrittsdatum||'', status: status||'aktiv', notiz: notiz||'' };
-      const { data, error } = await supabase.from("mitarbeiter").insert(m).select().single();
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const fields = extractMitarbeiterFields(req.body);
+      const m: Record<string, unknown> = {
+        id: uid(),
+        tenant_id: identity.tenantId,
+        vorname: fields.vorname ?? "",
+        nachname: fields.nachname ?? "",
+        status: fields.status ?? "aktiv",
+      };
+      for (const key of MITARBEITER_FIELDS) {
+        if (fields[key] !== undefined && !(key in m)) m[key] = fields[key];
+      }
+      const { data, error } = await identity.client.from("mitarbeiter").insert(m).select().single();
       if (error) throw error;
       res.json(data);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -3285,15 +3385,34 @@ export async function registerRoutes(
 
   app.patch("/api/mitarbeiter/:id", async (req, res) => {
     try {
-      const { data, error } = await supabase.from("mitarbeiter").update(req.body).eq("id", req.params.id).select().single();
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const updates = extractMitarbeiterFields(req.body);
+      if (Object.keys(updates).length === 0) {
+        return res.status(400).json({ message: "Keine gültigen Felder zum Aktualisieren." });
+      }
+      const { data, error } = await identity.client
+        .from("mitarbeiter")
+        .update(updates)
+        .eq("id", req.params.id)
+        .eq("tenant_id", identity.tenantId)
+        .select()
+        .maybeSingle();
       if (error) throw error;
+      if (!data) return res.status(404).json({ message: "Mitarbeiter nicht gefunden." });
       res.json(data);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
   app.delete("/api/mitarbeiter/:id", async (req, res) => {
     try {
-      const { error } = await supabase.from("mitarbeiter").delete().eq("id", req.params.id);
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { error } = await identity.client
+        .from("mitarbeiter")
+        .delete()
+        .eq("id", req.params.id)
+        .eq("tenant_id", identity.tenantId);
       if (error) throw error;
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -3424,19 +3543,23 @@ export async function registerRoutes(
 
 
   // ─── E-Mail Test ──────────────────────────────────────────────────────────────
+  // Admin-only: probe eines SMTP-Setups. Passwort im Request bleibt nur im Prozess.
   app.post("/api/email/test", async (req, res) => {
     try {
-      const { smtp_host, smtp_port, smtp_user, smtp_passwort, smtp_von, smtp_ssl } = req.body;
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ ok: false, message: "Authentifizierung erforderlich." });
+      if (!isAdminIdentity(identity)) return res.status(403).json({ ok: false, message: "Nur Administratoren." });
+      const { smtp_host, smtp_port, smtp_user, smtp_passwort, smtp_von, smtp_ssl } = req.body ?? {};
       if (!smtp_host || !smtp_user || !smtp_passwort) {
         return res.json({ ok: false, message: "SMTP Host, Benutzer und Passwort sind erforderlich." });
       }
       const nodemailer = await import("nodemailer");
       const secure = smtp_ssl === "ssl";
       const transporter = nodemailer.createTransport({
-        host: smtp_host,
+        host: String(smtp_host),
         port: Number(smtp_port) || (secure ? 465 : 587),
         secure,
-        auth: { user: smtp_user, pass: smtp_passwort },
+        auth: { user: String(smtp_user), pass: String(smtp_passwort) },
       });
       await transporter.sendMail({
         from: smtp_von || smtp_user,
@@ -3448,23 +3571,62 @@ export async function registerRoutes(
     } catch (e) { res.json({ ok: false, message: String(e) }); }
   });
 
-  // ─── Einstellungen (Key/Value Store) ─────────────────────────────────────────
-  app.get("/api/einstellungen", async (_req, res) => {
+  // ─── Public Login-Hintergrund ─────────────────────────────────────────────────
+  // MUSS unauthenticated funktionieren, damit die Login-Seite den Background
+  // laden kann. Whitelist nur den login_hintergrund-Key, alles andere braucht Auth.
+  app.get("/api/public/login-bg", async (_req, res) => {
     try {
       res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
       res.setHeader("Pragma", "no-cache");
-      const { data, error } = await supabase.from("einstellungen").select("schluessel,wert");
+      const tenantId = getDefaultTenantId();
+      const { data } = await supabase
+        .from("einstellungen")
+        .select("wert")
+        .eq("tenant_id", tenantId)
+        .eq("schluessel", "login_hintergrund")
+        .maybeSingle();
+      res.json({ wert: data?.wert ?? null });
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+  // ─── Einstellungen (Key/Value Store) ─────────────────────────────────────────
+  // Auth erforderlich, sensible Keys werden aus der Liste entfernt und durch
+  // eine boolean-Flagge smtp_konfiguriert ersetzt, damit das Frontend nur weiss
+  // OB SMTP eingerichtet ist – nicht MIT welchem Passwort.
+  app.get("/api/einstellungen", async (req, res) => {
+    try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      const { data, error } = await identity.client
+        .from("einstellungen")
+        .select("schluessel,wert")
+        .eq("tenant_id", identity.tenantId);
       if (error) throw error;
-      res.json(data || []);
+      const rows = (data || []) as Array<{ schluessel: string; wert: string | null }>;
+      const isAdmin = isAdminIdentity(identity);
+      const smtpPasswortRow = rows.find((row) => row.schluessel === "smtp_passwort" || row.schluessel === "smtp_pass");
+      const filtered = rows
+        .filter((row) => !SENSITIVE_SETTING_KEYS.has(row.schluessel))
+        .filter((row) => isAdmin || !ADMIN_ONLY_SETTING_KEYS.has(row.schluessel));
+      filtered.push({
+        schluessel: "smtp_konfiguriert",
+        wert: smtpPasswortRow?.wert ? "true" : "false",
+      });
+      res.json(filtered);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
   // ─── Status-Pipeline CRUD (VOR :key Route!) ────────────────────────────────────────
-  app.get("/api/einstellungen/status-pipeline", async (_req, res) => {
+  app.get("/api/einstellungen/status-pipeline", async (req, res) => {
     try {
-      const { data, error } = await supabase
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { data, error } = await identity.client
         .from("auftrag_status_pipeline")
         .select("*")
+        .eq("tenant_id", identity.tenantId)
         .order("reihenfolge");
       if (error) throw error;
       res.json(data || []);
@@ -3473,22 +3635,51 @@ export async function registerRoutes(
 
   app.post("/api/einstellungen/status-pipeline/reorder", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      if (!isAdminIdentity(identity)) return res.status(403).json({ message: "Nur Administratoren." });
       const { order } = req.body as { order: { id: string; reihenfolge: number }[] };
-      await Promise.all(
-        order.map(({ id, reihenfolge }) =>
-          supabase.from("auftrag_status_pipeline").update({ reihenfolge }).eq("id", id)
-        )
-      );
+      if (!Array.isArray(order) || order.length === 0) {
+        return res.status(400).json({ message: "Reihenfolge-Liste erforderlich." });
+      }
+      // Atomarer Reorder: 2-Phasen-Update in einer RPC-freien Emulation. Wir
+      // schieben zuerst alle Rows temporär in einen negativen Offset um Kollisionen
+      // mit UNIQUE-Constraints zu vermeiden, danach die finalen Werte setzen.
+      const ids = order.map((o) => String(o.id));
+      const offset = -1000000;
+      await Promise.all(order.map((_, index) =>
+        identity.client.from("auftrag_status_pipeline")
+          .update({ reihenfolge: offset - index })
+          .eq("id", ids[index])
+          .eq("tenant_id", identity.tenantId)
+      ));
+      await Promise.all(order.map((entry) =>
+        identity.client.from("auftrag_status_pipeline")
+          .update({ reihenfolge: Number(entry.reihenfolge) || 0 })
+          .eq("id", String(entry.id))
+          .eq("tenant_id", identity.tenantId)
+      ));
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
   app.post("/api/einstellungen/status-pipeline", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      if (!isAdminIdentity(identity)) return res.status(403).json({ message: "Nur Administratoren." });
       const { label, reihenfolge, farbe } = req.body;
-      const { data, error } = await supabase
+      if (!label || typeof label !== "string") {
+        return res.status(400).json({ message: "Label erforderlich." });
+      }
+      const { data, error } = await identity.client
         .from("auftrag_status_pipeline")
-        .insert({ label, reihenfolge: Number(reihenfolge) || 0, farbe: farbe || "gray" })
+        .insert({
+          label,
+          reihenfolge: Number(reihenfolge) || 0,
+          farbe: farbe || "gray",
+          tenant_id: identity.tenantId,
+        })
         .select().single();
       if (error) throw error;
       res.json(data);
@@ -3497,59 +3688,116 @@ export async function registerRoutes(
 
   app.patch("/api/einstellungen/status-pipeline/:id", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      if (!isAdminIdentity(identity)) return res.status(403).json({ message: "Nur Administratoren." });
       const { label, reihenfolge, farbe } = req.body;
-      const update: any = {};
+      const update: Record<string, unknown> = {};
       if (label !== undefined) update.label = label;
       if (reihenfolge !== undefined) update.reihenfolge = Number(reihenfolge);
       if (farbe !== undefined) update.farbe = farbe;
-      const { data, error } = await supabase
+      const { data, error } = await identity.client
         .from("auftrag_status_pipeline")
         .update(update)
         .eq("id", req.params.id)
-        .select().single();
+        .eq("tenant_id", identity.tenantId)
+        .select().maybeSingle();
       if (error) throw error;
+      if (!data) return res.status(404).json({ message: "Status nicht gefunden." });
       res.json(data);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
   app.delete("/api/einstellungen/status-pipeline/:id", async (req, res) => {
     try {
-      const { error } = await supabase
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      if (!isAdminIdentity(identity)) return res.status(403).json({ message: "Nur Administratoren." });
+      // Vor dem Löschen prüfen, ob dieser Status noch von Aufträgen benutzt wird.
+      const { data: status } = await identity.client
+        .from("auftrag_status_pipeline")
+        .select("label")
+        .eq("id", req.params.id)
+        .eq("tenant_id", identity.tenantId)
+        .maybeSingle();
+      if (!status) return res.status(404).json({ message: "Status nicht gefunden." });
+      const { count } = await identity.client
+        .from("auftraege")
+        .select("id", { count: "exact", head: true })
+        .eq("tenant_id", identity.tenantId)
+        .eq("status", status.label);
+      if ((count ?? 0) > 0) {
+        return res.status(409).json({
+          message: `Status wird von ${count} Auftrag/Aufträgen genutzt und kann nicht gelöscht werden.`,
+          count,
+        });
+      }
+      const { error } = await identity.client
         .from("auftrag_status_pipeline")
         .delete()
-        .eq("id", req.params.id);
+        .eq("id", req.params.id)
+        .eq("tenant_id", identity.tenantId);
       if (error) throw error;
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
   // ────────────────────────────────────────────────────────────────────────────────
+  // Einzelwert-Endpoints: Auth erforderlich. Sensible/Admin-Keys nur für Admins.
+  // Sensible Keys sind für alle unlesbar; Frontend nutzt smtp_konfiguriert.
   app.get("/api/einstellungen/:key", async (req, res) => {
     try {
-      const { data, error } = await supabase.from("einstellungen").select("wert").eq("schluessel", req.params.key).single();
-      if (error) res.json({ wert: null });
-      else res.json(data);
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const key = req.params.key;
+      if (SENSITIVE_SETTING_KEYS.has(key)) {
+        return res.status(403).json({ message: "Dieser Wert kann nicht abgerufen werden." });
+      }
+      if (ADMIN_ONLY_SETTING_KEYS.has(key) && !isAdminIdentity(identity)) {
+        return res.status(403).json({ message: "Nur Administratoren." });
+      }
+      const { data } = await identity.client
+        .from("einstellungen")
+        .select("wert")
+        .eq("tenant_id", identity.tenantId)
+        .eq("schluessel", key)
+        .maybeSingle();
+      res.json({ wert: data?.wert ?? null });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
   app.put("/api/einstellungen/:key", async (req, res) => {
     try {
-      const { wert } = req.body;
-      // upsert
-      const { data: existing } = await supabase.from("einstellungen").select("schluessel").eq("schluessel", req.params.key).single();
-      if (existing) {
-        await supabase.from("einstellungen").update({ wert }).eq("schluessel", req.params.key);
-      } else {
-        await supabase.from("einstellungen").insert({ schluessel: req.params.key, wert, erstellt: new Date().toISOString() });
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const key = req.params.key;
+      if (ADMIN_ONLY_SETTING_KEYS.has(key) && !isAdminIdentity(identity)) {
+        return res.status(403).json({ message: "Nur Administratoren." });
       }
+      const { wert } = req.body ?? {};
+      // Upsert via ON CONFLICT (tenant_id, schluessel) — die Migration hat einen
+      // Composite-PK gesetzt, damit brauchen wir kein separates SELECT.
+      const { error } = await identity.client
+        .from("einstellungen")
+        .upsert(
+          { tenant_id: identity.tenantId, schluessel: key, wert: wert ?? null },
+          { onConflict: "tenant_id,schluessel" }
+        );
+      if (error) throw error;
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
   // ─── Stundensätze CRUD ────────────────────────────────────────────────────────
-  app.get("/api/stundensaetze", async (_req, res) => {
+  app.get("/api/stundensaetze", async (req, res) => {
     try {
-      const { data, error } = await supabase.from("stundensaetze").select("*").order("ort").order("maschinenpark");
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { data, error } = await identity.client
+        .from("stundensaetze")
+        .select("*")
+        .eq("tenant_id", identity.tenantId)
+        .order("ort").order("maschinenpark");
       if (error) throw error;
       res.json(data || []);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -3557,8 +3805,11 @@ export async function registerRoutes(
 
   app.patch("/api/stundensaetze/:id", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      if (!isAdminIdentity(identity)) return res.status(403).json({ message: "Nur Administratoren." });
       const { satz, bezeichnung, grundsatz } = req.body;
-      const updateData: any = {
+      const updateData: Record<string, unknown> = {
         satz: Number(satz),
         bezeichnung: bezeichnung || "",
         aktualisiert: new Date().toISOString(),
@@ -3566,12 +3817,14 @@ export async function registerRoutes(
       if (grundsatz !== undefined && grundsatz !== null) {
         updateData.grundsatz = Number(grundsatz);
       }
-      const { data, error } = await supabase
+      const { data, error } = await identity.client
         .from("stundensaetze")
         .update(updateData)
         .eq("id", req.params.id)
-        .select().single();
+        .eq("tenant_id", identity.tenantId)
+        .select().maybeSingle();
       if (error) throw error;
+      if (!data) return res.status(404).json({ message: "Stundensatz nicht gefunden." });
       res.json(data);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
@@ -6775,9 +7028,15 @@ export async function registerRoutes(
   // ─── PDF Vorlagen ─────────────────────────────────────────────────────────────
 
   // GET alle Vorlagen (oder initialisiere defaults)
-  app.get("/api/pdf-vorlagen", async (_req, res) => {
+  app.get("/api/pdf-vorlagen", async (req, res) => {
     try {
-      const { data, error } = await supabase.from("pdf_vorlagen").select("*").order("doc_typ");
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { data, error } = await identity.client
+        .from("pdf_vorlagen")
+        .select("*")
+        .eq("tenant_id", identity.tenantId)
+        .order("doc_typ");
       if (error) return res.status(500).json({ message: error.message });
       
       // Falls noch keine Vorlagen existieren, defaults zurückgeben
@@ -6846,14 +7105,27 @@ export async function registerRoutes(
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
+  // Whitelist der Dokumenttypen. Nur bekannte Typen sind speicherbar.
+  const PDF_VORLAGEN_DOC_TYPES = new Set([
+    "offerte", "rechnung", "mahnung", "lieferschein",
+    "auftragsbestaetigung", "lohnabrechnung", "stundenabrechnung",
+    "vorkalkulation", "nachkalkulation",
+  ]);
+
+  // Nicht über Client setzbare Spalten (z.B. PK/Tenant/Timestamps steuern wir hier).
+  const PDF_VORLAGEN_FORBIDDEN_FIELDS = new Set(["id", "tenant_id", "doc_typ", "created_at", "updated_at", "erstellt", "aktualisiert"]);
+
   // GET einzelne Vorlage by doc_typ
   app.get("/api/pdf-vorlagen/:docTyp", async (req, res) => {
     try {
-      const { data, error } = await supabase
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { data, error } = await identity.client
         .from("pdf_vorlagen")
         .select("*")
+        .eq("tenant_id", identity.tenantId)
         .eq("doc_typ", req.params.docTyp)
-        .single();
+        .maybeSingle();
       if (error || !data) return res.status(404).json({ message: "Nicht gefunden" });
       res.json(data);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -6862,41 +7134,34 @@ export async function registerRoutes(
   // PUT (upsert) Vorlage für einen doc_typ
   app.put("/api/pdf-vorlagen/:docTyp", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       const docTyp = req.params.docTyp;
-      const allAllowed = ["offerte","rechnung","mahnung","lieferschein","auftragsbestaetigung","lohnabrechnung","stundenabrechnung","vorkalkulation","nachkalkulation"];
-      if (!allAllowed.includes(docTyp)) return res.status(400).json({ message: `Ungültiger Dokumenttyp: ${docTyp}` });
+      if (!PDF_VORLAGEN_DOC_TYPES.has(docTyp)) return res.status(400).json({ message: `Ungültiger Dokumenttyp: ${docTyp}` });
 
-      // Payload bereinigen (kein undefined, keine leeren Keys)
-      const payload: Record<string, any> = { doc_typ: docTyp };
-      for (const [k, v] of Object.entries(req.body)) {
-        if (v !== undefined && k !== "id") payload[k] = v;
-      }
-      // updated_at nur wenn Spalte existiert (ignorieren falls nicht)
-      try { payload.updated_at = new Date().toISOString(); } catch {}
-
-      // Zuerst prüfen ob Eintrag bereits existiert
-      const { data: existing } = await supabase.from("pdf_vorlagen").select("id").eq("doc_typ", docTyp).single();
-
-      let result;
-      if (existing) {
-        // UPDATE
-        const { data, error } = await supabase.from("pdf_vorlagen").update(payload).eq("doc_typ", docTyp).select().single();
-        if (error) {
-          console.error("[pdf-vorlagen PUT] update error:", error);
-          return res.status(500).json({ message: error.message });
-        }
-        result = data;
-      } else {
-        // INSERT
-        const { data, error } = await supabase.from("pdf_vorlagen").insert(payload).select().single();
-        if (error) {
-          console.error("[pdf-vorlagen PUT] insert error:", error);
-          return res.status(500).json({ message: error.message });
-        }
-        result = data;
+      // Payload bereinigen: nur erlaubte Client-Felder, kein undefined.
+      const payload: Record<string, unknown> = {
+        doc_typ: docTyp,
+        tenant_id: identity.tenantId,
+        updated_at: new Date().toISOString(),
+      };
+      for (const [k, v] of Object.entries(req.body ?? {})) {
+        if (v === undefined) continue;
+        if (PDF_VORLAGEN_FORBIDDEN_FIELDS.has(k)) continue;
+        payload[k] = v;
       }
 
-      res.json(result);
+      // Upsert via UNIQUE(tenant_id, doc_typ) — die Migration hat diesen
+      // Constraint gesetzt, damit brauchen wir kein separates SELECT.
+      const { data, error } = await identity.client
+        .from("pdf_vorlagen")
+        .upsert(payload, { onConflict: "tenant_id,doc_typ" })
+        .select().single();
+      if (error) {
+        console.error("[pdf-vorlagen PUT] upsert error:", error);
+        return res.status(500).json({ message: error.message });
+      }
+      res.json(data);
     } catch (e) {
       console.error("[pdf-vorlagen PUT] exception:", e);
       res.status(500).json({ message: asError(e) });
@@ -7641,20 +7906,53 @@ export async function registerRoutes(
   });
 
   // ─── BACKUP ───────────────────────────────────────────────────────────────────────────
+  // Nur Admins dürfen Backups ziehen. Sensible Spalten von app_benutzer und
+  // sensible einstellungen-Rows (Passwort-Hashes, TOTP-Secrets, Backup-Codes,
+  // Trust-Tokens, SMTP/App-Passwort) werden aus dem Export entfernt.
   app.get("/api/backup", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      if (!isAdminIdentity(identity)) return res.status(403).json({ message: "Nur Administratoren." });
       const tabellen = [
         "auftraege", "kunden", "rechnungen", "eingangsrechnungen",
         "zeiteintraege", "mitarbeiter", "kalkulationen", "kalkulation_positionen",
         "mahnungen", "verlauf", "notizen", "dokumente", "dokument_daten",
         "rechnungsvorlagen", "lieferanten", "ferien", "einstellungen",
-        "auftrag_schritte", "auftrag_schritt_fotos", "app_benutzer"
+        "auftrag_schritte", "auftrag_schritt_fotos", "app_benutzer",
       ];
+      const SENSITIVE_COLUMNS: Record<string, Set<string>> = {
+        app_benutzer: new Set([
+          "passwort_hash", "totp_secret", "backup_codes",
+          "vertrauens_tokens", "vertrauens_token",
+        ]),
+      };
+      const SENSITIVE_SETTING_ROW_KEYS = new Set([
+        "smtp_passwort", "smtp_pass", "app_passwort",
+      ]);
+
       const backup: Record<string, any[]> = {};
       for (const tabelle of tabellen) {
         try {
-          const { data } = await supabase.from(tabelle).select("*");
-          backup[tabelle] = data || [];
+          const { data } = await identity.client
+            .from(tabelle)
+            .select("*")
+            .eq("tenant_id", identity.tenantId);
+          let rows = (data || []) as Array<Record<string, unknown>>;
+          if (tabelle === "einstellungen") {
+            rows = rows.filter((row) => !SENSITIVE_SETTING_ROW_KEYS.has(String(row.schluessel ?? "")));
+          }
+          const sensitive = SENSITIVE_COLUMNS[tabelle];
+          if (sensitive && sensitive.size > 0) {
+            rows = rows.map((row) => {
+              const copy: Record<string, unknown> = {};
+              for (const [k, v] of Object.entries(row)) {
+                if (!sensitive.has(k)) copy[k] = v;
+              }
+              return copy;
+            });
+          }
+          backup[tabelle] = rows;
         } catch {
           backup[tabelle] = [];
         }
@@ -7664,9 +7962,10 @@ export async function registerRoutes(
       res.setHeader("Content-Disposition", `attachment; filename="auftragspro-backup-${now}.json"`);
       res.json({
         erstellt_am: new Date().toISOString(),
-        version: "1.0",
+        version: "1.1",
+        tenant_id: identity.tenantId,
         firma: "Schneggenburger GmbH",
-        daten: backup
+        daten: backup,
       });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
@@ -8161,6 +8460,7 @@ export async function registerRoutes(
   type DashboardPreferenceIdentity = {
     userId: string;
     tenantId: string;
+    rolle: string;
     client: typeof supabase;
   };
 
@@ -8169,6 +8469,7 @@ export async function registerRoutes(
       return {
         userId: req.auth.userId,
         tenantId: req.auth.tenantId,
+        rolle: typeof req.auth.rolle === "string" ? req.auth.rolle : "",
         client: supabase,
       };
     }
@@ -8180,11 +8481,16 @@ export async function registerRoutes(
       return {
         userId: req.legacyAuth.userId,
         tenantId: getDefaultTenantId(),
+        rolle: typeof req.legacyAuth.rolle === "string" ? req.legacyAuth.rolle : "",
         client: getServiceRoleClient(),
       };
     }
 
     return null;
+  }
+
+  function isAdminIdentity(identity: DashboardPreferenceIdentity | null): boolean {
+    return identity !== null && identity.rolle === "admin";
   }
 
   // ─── Nachkalkulations-Abschluss ─────────────────────────────────────────────

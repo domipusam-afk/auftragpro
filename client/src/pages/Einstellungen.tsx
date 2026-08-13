@@ -526,9 +526,10 @@ function SicherheitTab({ settings }: { settings: EinstellungMap }) {
   const { toast } = useToast();
   const { user } = useAuth();
 
-  // App-Passwort (für Login ohne Benutzer)
-  const appPasswortWert = settings.app_passwort || "HolzMetall8580";
-  const [appPasswortInput, setAppPasswortInput] = useState(appPasswortWert);
+  // App-Passwort (für Login ohne Benutzer) — der Server schickt uns den
+  // Ist-Wert nicht mehr (sensibel). Das Feld startet leer und speichert nur
+  // dann, wenn der Admin einen neuen Wert einträgt.
+  const [appPasswortInput, setAppPasswortInput] = useState("");
   const [showAppPass, setShowAppPass] = useState(false);
 
   const appPasswortMut = useMutation({
@@ -1339,7 +1340,7 @@ function StatusPipelineTab() {
   });
 
   const handleDragStart = (id: string) => setDragging(id);
-  const handleDragOver = (e: DragEvent, overId: string) => {
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>, overId: string) => {
     e.preventDefault();
     if (!dragging || dragging === overId) return;
     const arr = [...localOrder];

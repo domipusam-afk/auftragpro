@@ -33,7 +33,9 @@ export function EmailModal({ open, onClose, to = "", subject = "", body = "", ty
   });
   const sm: Record<string, string> = {};
   for (const e of einstellungen) sm[e.schluessel] = e.wert;
-  const smtpKonfiguriert = !!(sm.smtp_host && sm.smtp_user && (sm.smtp_passwort || sm.smtp_pass));
+  // Backend liefert 'smtp_konfiguriert' als "true"/"false" — das SMTP-Passwort
+  // wird nicht mehr in die Antwort geschrieben.
+  const smtpKonfiguriert = sm.smtp_konfiguriert === "true";
 
   // Props beim Öffnen synchronisieren (wichtig wenn Modal mehrmals geöffnet wird)
   useEffect(() => {

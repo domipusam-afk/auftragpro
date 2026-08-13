@@ -9,14 +9,15 @@ type Step = "credentials" | "totp";
 export default function Login() {
   const { login, verify2fa } = useAuth();
 
-  // Load background image — always fresh from server, no caching/localStorage
+  // Load background image — always fresh from server, no caching/localStorage.
+  // Public-Endpoint, damit die Login-Seite den Hintergrund vor Auth laden kann,
+  // ohne die restlichen Einstellungen (SMTP-Konfig etc.) für Anonyme freizugeben.
   const [loginBg, setLoginBg] = useState<string>("");
   useEffect(() => {
-    fetch("/api/einstellungen", { cache: "no-store" })
+    fetch("/api/public/login-bg", { cache: "no-store" })
       .then((r) => r.json())
-      .then((list: { schluessel: string; wert: string }[]) => {
-        const bg = list.find((e) => e.schluessel === "login_hintergrund")?.wert || "";
-        setLoginBg(bg);
+      .then((data: { wert: string | null }) => {
+        setLoginBg(data?.wert || "");
       })
       .catch(() => { /* kein Hintergrund bei Fehler */ });
   }, []);
