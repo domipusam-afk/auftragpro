@@ -3525,10 +3525,15 @@ export async function registerRoutes(
   });
 
   // ─── Kunden ───────────────────────────────────────────────────────────────────
-  app.get("/api/kunden/next-nr", async (_req, res) => {
+  app.get("/api/kunden/next-nr", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       const yy = String(new Date().getFullYear()).slice(-2);
-      const { data: allNr } = await supabase.from("kunden").select("nr");
+      const { data: allNr } = await identity.client
+        .from("kunden")
+        .select("nr")
+        .eq("tenant_id", identity.tenantId);
       const maxNr = (allNr || []).reduce((mx: number, k: any) => {
         const nr = String(k.nr || "");
         // Neues Format K260001
@@ -3544,9 +3549,15 @@ export async function registerRoutes(
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
-  app.get("/api/kunden", async (_req, res) => {
+  app.get("/api/kunden", async (req, res) => {
     try {
-      const { data, error } = await supabase.from("kunden").select("*").order("nachname", { ascending: true });
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { data, error } = await identity.client
+        .from("kunden")
+        .select("*")
+        .eq("tenant_id", identity.tenantId)
+        .order("nachname", { ascending: true });
       if (error) throw error;
       res.json(data || []);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -3559,12 +3570,17 @@ export async function registerRoutes(
 
   app.post("/api/kunden", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       if (!isValidKundenEmail(req.body?.email)) {
         return res.status(400).json({ message: "Ungültige E-Mail-Adresse" });
       }
       // Nächste Kundennummer generieren: KYYNNN (z.B. K260001)
       const yy = String(new Date().getFullYear()).slice(-2);
-      const { data: allNr } = await supabase.from("kunden").select("nr");
+      const { data: allNr } = await identity.client
+        .from("kunden")
+        .select("nr")
+        .eq("tenant_id", identity.tenantId);
       const maxNr = (allNr || []).reduce((mx: number, k: any) => {
         const nr = String(k.nr || "");
         const m1 = nr.match(/^K(\d{2})(\d{4})$/);
@@ -3574,8 +3590,8 @@ export async function registerRoutes(
         return mx;
       }, 0);
       const nr = `K${yy}${String(maxNr + 1).padStart(4, "0")}`;
-      const k = { id: uid(), nr, ...req.body };
-      const { data, error } = await supabase.from("kunden").insert(k).select().single();
+      const k = { id: uid(), nr, ...req.body, tenant_id: identity.tenantId };
+      const { data, error } = await identity.client.from("kunden").insert(k).select().single();
       if (error) throw error;
       res.json(data);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -3583,18 +3599,33 @@ export async function registerRoutes(
 
   app.patch("/api/kunden/:id", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       if (!isValidKundenEmail(req.body?.email)) {
         return res.status(400).json({ message: "Ungültige E-Mail-Adresse" });
       }
-      const { data, error } = await supabase.from("kunden").update(req.body).eq("id", req.params.id).select().single();
+      const { data, error } = await identity.client
+        .from("kunden")
+        .update({ ...req.body, tenant_id: identity.tenantId })
+        .eq("id", req.params.id)
+        .eq("tenant_id", identity.tenantId)
+        .select()
+        .maybeSingle();
       if (error) throw error;
+      if (!data) return res.status(404).json({ message: "Kunde nicht gefunden." });
       res.json(data);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
   app.delete("/api/kunden/:id", async (req, res) => {
     try {
-      const { error } = await supabase.from("kunden").delete().eq("id", req.params.id);
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { error } = await identity.client
+        .from("kunden")
+        .delete()
+        .eq("id", req.params.id)
+        .eq("tenant_id", identity.tenantId);
       if (error) throw error;
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -4102,6 +4133,8 @@ export async function registerRoutes(
     // ─── Kunden Auto-Sync: beim Auftrag speichern ────────────────────────────────
   app.post("/api/kunden/sync-from-auftrag", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       const { kunde, kunde_adresse, kunde_email, kunde_telefon } = req.body;
       if (!kunde?.trim()) return res.json({ synced: false });
 
@@ -4113,10 +4146,11 @@ export async function registerRoutes(
       // 1. Suche nach E-Mail (eindeutigster Match)
       let existing: any = null;
       if (kunde_email?.trim()) {
-        const { data: byEmail } = await supabase
+        const { data: byEmail } = await identity.client
           .from("kunden")
           .select("id")
           .ilike("email", kunde_email.trim())
+          .eq("tenant_id", identity.tenantId)
           .limit(1)
           .maybeSingle();
         if (byEmail) existing = byEmail;
@@ -4124,7 +4158,10 @@ export async function registerRoutes(
 
       // 2. Suche nach Vor- + Nachname kombiniert
       if (!existing && searchNachname) {
-        const { data: allK } = await supabase.from("kunden").select("id,vorname,nachname,firma");
+        const { data: allK } = await identity.client
+          .from("kunden")
+          .select("id,vorname,nachname,firma")
+          .eq("tenant_id", identity.tenantId);
         const normalizedSearch = kunde.trim().toLowerCase();
         const found = (allK || []).find((k: any) => {
           const fullName = `${k.vorname || ""} ${k.nachname || ""}`.trim().toLowerCase();
@@ -4141,14 +4178,21 @@ export async function registerRoutes(
         if (kunde_email) updates.email = kunde_email;
         if (kunde_telefon) updates.telefon = kunde_telefon;
         if (Object.keys(updates).length)
-          await supabase.from("kunden").update(updates).eq("id", existing.id);
+          await identity.client
+            .from("kunden")
+            .update(updates)
+            .eq("id", existing.id)
+            .eq("tenant_id", identity.tenantId);
         return res.json({ synced: true, action: "updated", id: existing.id });
       }
       const newNameParts = kunde.trim().split(" ");
       const nachname = newNameParts.pop() || kunde.trim();
       const vorname = newNameParts.join(" ");
       const yy2 = String(new Date().getFullYear()).slice(-2);
-      const { data: allNr2 } = await supabase.from("kunden").select("nr");
+      const { data: allNr2 } = await identity.client
+        .from("kunden")
+        .select("nr")
+        .eq("tenant_id", identity.tenantId);
       const maxNr2 = (allNr2 || []).reduce((mx: number, k: any) => {
         const nr2 = String(k.nr || "");
         const m1 = nr2.match(/^K(\d{2})(\d{4})$/);
@@ -4170,8 +4214,9 @@ export async function registerRoutes(
         plz: "",
         ort: "",
         notiz: "Automatisch aus Auftrag erstellt",
+        tenant_id: identity.tenantId,
       };
-      const { data, error } = await supabase.from("kunden").insert(newKunde).select().single();
+      const { data, error } = await identity.client.from("kunden").insert(newKunde).select().single();
       if (error) throw error;
       res.json({ synced: true, action: "created", id: data.id });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
