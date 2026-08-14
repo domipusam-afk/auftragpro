@@ -299,17 +299,26 @@ export function registerSuperAdminRoutes(app: Express): void {
       if (tenantError) throw tenantError;
       tenantId = tenant.id;
       const adminPasswortHash = await bcrypt.hash(adminPasswort, 12);
-      const [{ error: settingsError }, { error: userError }, { error: membershipError }] = await Promise.all([
+      const [{ error: settingsError }, { error: userError }, { error: membershipError }, { error: stundensaetzeError }] = await Promise.all([
         client.from("einstellungen").insert([
           { tenant_id: tenant.id, schluessel: "firmenname", wert: name.trim() },
           { tenant_id: tenant.id, schluessel: "firmenlogo", wert: "" },
           { tenant_id: tenant.id, schluessel: "farbe_primaer", wert: "#01696F" },
           { tenant_id: tenant.id, schluessel: "produktname", wert: "AuftragsPro" },
+          { tenant_id: tenant.id, schluessel: "mwst_satz", wert: "8.1" },
+          { tenant_id: tenant.id, schluessel: "wochenstunden", wert: "42" },
         ]),
         client.from("app_benutzer").insert({ id: authUserId, benutzername: email, passwort_hash: adminPasswortHash, rolle: "admin", tenant_id: tenant.id, aktiv: true }),
         client.from("tenant_memberships").insert({ user_id: authUserId, tenant_id: tenant.id, rolle: "admin", aktiv: true, berechtigungen: {} }),
+        client.from("stundensaetze").insert([
+          { ort: "Avor", maschinenpark: null, satz: 105, bezeichnung: "Arbeitsvorbereitung", grundsatz: null, tenant_id: tenant.id },
+          { ort: "Montage", maschinenpark: null, satz: 130, bezeichnung: "Montage vor Ort", grundsatz: null, tenant_id: tenant.id },
+          { ort: "Werkstatt", maschinenpark: "Kleine Maschinen", satz: 10, bezeichnung: "Kleine Maschinen (Säge, Bohrer...)", grundsatz: 115, tenant_id: tenant.id },
+          { ort: "Werkstatt", maschinenpark: "Mittlere Maschinen", satz: 20, bezeichnung: "Mittlere Maschinen (Biegemaschine...)", grundsatz: 115, tenant_id: tenant.id },
+          { ort: "Werkstatt", maschinenpark: "Grosse Maschinen", satz: 90, bezeichnung: "Grosse Maschinen (CNC, Laser...)", grundsatz: 115, tenant_id: tenant.id },
+        ]),
       ]);
-      if (settingsError || userError || membershipError) throw new Error(settingsError?.message || userError?.message || membershipError?.message);
+      if (settingsError || userError || membershipError || stundensaetzeError) throw new Error(settingsError?.message || userError?.message || membershipError?.message || stundensaetzeError?.message);
       await logAuditEvent(req, "tenant.create", `Neue Firma '${tenant.name}' angelegt`, { tenantId: tenant.id, betroffeneEntitaet: "tenant", entitaetId: tenant.id });
       await logAuditEvent(req, "user.create", `Administrator '${email}' für '${tenant.name}' angelegt`, { tenantId: tenant.id, betroffeneEntitaet: "user", entitaetId: authUserId });
       return res.status(201).json({ tenant, admin: { email, benutzerId: authUserId } });
@@ -319,6 +328,7 @@ export function registerSuperAdminRoutes(app: Express): void {
         await client.from("app_benutzer").delete().eq("tenant_id", tenantId);
         await client.from("tenant_memberships").delete().eq("tenant_id", tenantId);
         await client.from("einstellungen").delete().eq("tenant_id", tenantId);
+        await client.from("stundensaetze").delete().eq("tenant_id", tenantId);
         await client.from("tenants").delete().eq("id", tenantId);
       }
       if (authUserId) await client.auth.admin.deleteUser(authUserId);

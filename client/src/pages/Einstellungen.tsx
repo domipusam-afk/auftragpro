@@ -434,6 +434,8 @@ function StundensaetzeTab() {
   });
 
   const [edits, setEdits] = useState<Record<string, { satz: string; bezeichnung: string; grundsatz: string }>>({}); 
+  const [newRow, setNewRow] = useState({ ort: "", maschinenpark: "", bezeichnung: "", satz: "", grundsatz: "" });
+  const [showNewForm, setShowNewForm] = useState(false);
 
   const updateMut = useMutation({
     mutationFn: ({ id, satz, bezeichnung, grundsatz }: { id: string; satz: number; bezeichnung: string; grundsatz?: number }) =>
@@ -443,6 +445,27 @@ function StundensaetzeTab() {
       toast({ title: "Stundensatz gespeichert ✓" });
     },
     onError: () => toast({ title: "Fehler beim Speichern", variant: "destructive" }),
+  });
+
+  const createMut = useMutation({
+    mutationFn: (body: { ort: string; maschinenpark: string | null; bezeichnung: string; satz: number; grundsatz: number | null }) =>
+      apiRequest("POST", `/api/stundensaetze`, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/stundensaetze"] });
+      toast({ title: "Neue Zeile hinzugefügt ✓" });
+      setNewRow({ ort: "", maschinenpark: "", bezeichnung: "", satz: "", grundsatz: "" });
+      setShowNewForm(false);
+    },
+    onError: (err: unknown) => toast({ title: "Fehler beim Anlegen", description: err instanceof Error ? err.message : "Unbekannter Fehler", variant: "destructive" }),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/stundensaetze/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/stundensaetze"] });
+      toast({ title: "Zeile gelöscht ✓" });
+    },
+    onError: () => toast({ title: "Fehler beim Löschen", variant: "destructive" }),
   });
 
   function getEdit(s: Stundensatz) {
@@ -461,24 +484,75 @@ function StundensaetzeTab() {
     updateMut.mutate({ id: s.id, satz: Number(e.satz), bezeichnung: e.bezeichnung, ...(e.grundsatz !== "" ? { grundsatz: Number(e.grundsatz) } : {}) });
   }
 
+  function saveNew() {
+    if (!newRow.ort.trim()) {
+      toast({ title: "Bitte einen Ort/Bereich eingeben", variant: "destructive" });
+      return;
+    }
+    createMut.mutate({
+      ort: newRow.ort.trim(),
+      maschinenpark: newRow.maschinenpark.trim() || null,
+      bezeichnung: newRow.bezeichnung.trim(),
+      satz: Number(newRow.satz) || 0,
+      grundsatz: newRow.grundsatz !== "" ? Number(newRow.grundsatz) : null,
+    });
+  }
+
   const grouped: Record<string, Stundensatz[]> = {};
   for (const s of saetze) {
     if (!grouped[s.ort]) grouped[s.ort] = [];
     grouped[s.ort].push(s);
   }
 
-  const ORT_ICONS: Record<string, string> = { Avor: "📋", Werkstatt: "🏭", Montage: "🔧" };
+  const ORT_ICONS: Record<string, string> = { Avor: "📋", Werkstatt: "🏭", Montage: "🔧", Büro: "🏢", Garten: "🌱", Aussendienst: "🚗" };
 
   return (
     <Card className="p-6 bg-card">
-      <div className="flex items-center gap-2 mb-4">
-        <DollarSign className="h-5 w-5" style={{ color: "hsl(var(--primary))" }} />
-        <h2 className="font-semibold" style={{ fontFamily: "var(--font-display)" }}>Maschinen-Zuschläge</h2>
+      <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
+        <div className="flex items-center gap-2">
+          <DollarSign className="h-5 w-5" style={{ color: "hsl(var(--primary))" }} />
+          <h2 className="font-semibold" style={{ fontFamily: "var(--font-display)" }}>Stundensätze</h2>
+        </div>
+        <Button size="sm" variant="outline" onClick={() => setShowNewForm((v) => !v)} data-testid="button-neue-zeile">
+          {showNewForm ? "Abbrechen" : "+ Neue Zeile"}
+        </Button>
       </div>
       <p className="text-xs text-muted-foreground mb-4">
-        Für <strong>Werkstatt</strong>: Grundsatz (Std.-Satz Werkstatt) + Maschinen-Zuschlag = Total verrechnet dem Kunden.
-        Für <strong>Avor / Montage</strong>: Fixer Stundensatz ohne Zuschlag.
+        <strong>Ort/Bereich</strong> ist frei wählbar (z.B. "Werkstatt", "Büro", "Garten", "Aussendienst").
+        Der optionale <strong>Grundsatz</strong> wird für Werkstatt/Maschinen-Kombinationen verwendet und mit dem Zuschlag addiert.
+        Für einfache Positionen ohne Maschine: nur den fixen Stundensatz eintragen.
       </p>
+      {showNewForm && (
+        <div className="mb-4 p-3 rounded-lg border-2 border-dashed border-primary/40 bg-primary/5 space-y-2">
+          <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
+            <div>
+              <Label className="text-xs">Ort / Bereich *</Label>
+              <Input value={newRow.ort} onChange={(e) => setNewRow({ ...newRow, ort: e.target.value })} placeholder="z.B. Werkstatt" className="h-8 text-sm" data-testid="input-neuer-ort" />
+            </div>
+            <div>
+              <Label className="text-xs">Maschinenpark (opt.)</Label>
+              <Input value={newRow.maschinenpark} onChange={(e) => setNewRow({ ...newRow, maschinenpark: e.target.value })} placeholder="z.B. CNC" className="h-8 text-sm" data-testid="input-neuer-maschinenpark" />
+            </div>
+            <div>
+              <Label className="text-xs">Bezeichnung</Label>
+              <Input value={newRow.bezeichnung} onChange={(e) => setNewRow({ ...newRow, bezeichnung: e.target.value })} placeholder="Anzeigename" className="h-8 text-sm" data-testid="input-neue-bezeichnung" />
+            </div>
+            <div>
+              <Label className="text-xs">Grundsatz CHF/h</Label>
+              <Input type="number" min="0" step="0.5" value={newRow.grundsatz} onChange={(e) => setNewRow({ ...newRow, grundsatz: e.target.value })} placeholder="opt." className="h-8 text-sm" data-testid="input-neuer-grundsatz" />
+            </div>
+            <div>
+              <Label className="text-xs">Satz / Zuschlag CHF/h *</Label>
+              <Input type="number" min="0" step="0.5" value={newRow.satz} onChange={(e) => setNewRow({ ...newRow, satz: e.target.value })} placeholder="z.B. 90" className="h-8 text-sm" data-testid="input-neuer-satz" />
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <Button size="sm" onClick={saveNew} disabled={createMut.isPending} data-testid="button-neue-zeile-speichern">
+              <Save className="h-3.5 w-3.5 mr-1" />Hinzufügen
+            </Button>
+          </div>
+        </div>
+      )}
       {isLoading ? (
         <Skeleton className="h-32" />
       ) : (
@@ -537,15 +611,29 @@ function StundensaetzeTab() {
                           </div>
                         </div>
                       )}
-                      <div className="shrink-0 mt-4">
+                      <div className="shrink-0 mt-4 flex gap-1">
                         <Button
                           size="sm"
                           variant="outline"
                           onClick={() => save(s)}
                           disabled={updateMut.isPending}
                           className="h-8"
+                          data-testid={`button-save-${s.id}`}
                         >
                           <Save className="h-3.5 w-3.5 mr-1" />Speichern
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            if (confirm(`Zeile "${s.bezeichnung || s.ort}" wirklich löschen?`)) deleteMut.mutate(s.id);
+                          }}
+                          disabled={deleteMut.isPending}
+                          className="h-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                          data-testid={`button-delete-${s.id}`}
+                          title="Löschen"
+                        >
+                          <Trash className="h-3.5 w-3.5" />
                         </Button>
                       </div>
                     </div>
