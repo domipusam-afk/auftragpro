@@ -11,6 +11,7 @@ export interface AppUser {
   benutzername: string;
   rolle: Rolle;
   berechtigungen: string | null;
+  ist_super_admin?: boolean;
 }
 
 interface AuthContextType {

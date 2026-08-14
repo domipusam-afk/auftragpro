@@ -25,6 +25,7 @@ import {
 import { getDefaultTenantId } from "./tenant-context";
 import { berechneAuftragIstKosten, ladeFinanzenUebersichtZeilen, stundensatzFuer, zurichKalenderjahr } from "./deckungsbeitrag";
 import { berechneAuftragVorkalkulation } from "./vorkalkulation";
+import { registerSuperAdminRoutes } from "./super-admin/routes";
 
 // Tenant logos are stored as data URLs in the tenant-scoped settings table.
 // Only image data URLs are decoded for native PDF rendering; hosted URLs are used by
@@ -221,6 +222,8 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
 
+  registerSuperAdminRoutes(app);
+
   // ============= AUTH =============
 
   // ─── Login-Sperre (Brute-Force Schutz) ──────────────────────────────────
@@ -390,7 +393,7 @@ export async function registerRoutes(
         // grant access if auth.users and app_benutzer drifted during import.
         const { data: user, error: userError } = await serviceClient
           .from("app_benutzer")
-          .select("id, benutzername, rolle, berechtigungen")
+          .select("id, benutzername, rolle, berechtigungen, ist_super_admin")
           .eq("id", signInData.user.id)
           .eq("aktiv", true)
           .maybeSingle();
@@ -404,7 +407,7 @@ export async function registerRoutes(
         return res.json({
           ok: true,
           requires2fa: false,
-          user: { id: user.id, benutzername: user.benutzername, rolle: user.rolle, berechtigungen: user.berechtigungen || null },
+          user: { id: user.id, benutzername: user.benutzername, rolle: user.rolle, berechtigungen: user.berechtigungen || null, ist_super_admin: user.ist_super_admin === true },
           session: {
             access_token: signInData.session.access_token,
             refresh_token: signInData.session.refresh_token,
@@ -442,7 +445,7 @@ export async function registerRoutes(
           if (gueltig) {
             // Gerät bekannt → kein 2FA nötig
             setLegacySessionCookie(res, user.id);
-            return res.json({ ok: true, requires2fa: false, user: { id: user.id, benutzername: user.benutzername, rolle: user.rolle, berechtigungen: user.berechtigungen || null } });
+            return res.json({ ok: true, requires2fa: false, user: { id: user.id, benutzername: user.benutzername, rolle: user.rolle, berechtigungen: user.berechtigungen || null, ist_super_admin: user.ist_super_admin === true } });
           }
         }
         return res.json({ ok: true, requires2fa: true, userId: user.id });
@@ -452,7 +455,7 @@ export async function registerRoutes(
       return res.json({
         ok: true,
         requires2fa: false,
-        user: { id: user.id, benutzername: user.benutzername, rolle: user.rolle, berechtigungen: user.berechtigungen || null }
+        user: { id: user.id, benutzername: user.benutzername, rolle: user.rolle, berechtigungen: user.berechtigungen || null, ist_super_admin: user.ist_super_admin === true }
       });
     } catch (e) {
       return res.status(500).json({ ok: false, message: asError(e) });
@@ -613,7 +616,7 @@ export async function registerRoutes(
           .update({ backup_codes: user.backup_codes.filter((c: string) => c !== code.toUpperCase()) })
           .eq("id", userId);
         setLegacySessionCookie(res, user.id);
-        return res.json({ ok: true, user: { id: user.id, benutzername: user.benutzername, rolle: user.rolle, berechtigungen: user.berechtigungen || null } });
+        return res.json({ ok: true, user: { id: user.id, benutzername: user.benutzername, rolle: user.rolle, berechtigungen: user.berechtigungen || null, ist_super_admin: user.ist_super_admin === true } });
       }
 
       // Verify TOTP
@@ -641,7 +644,7 @@ export async function registerRoutes(
       setLegacySessionCookie(res, user.id);
       return res.json({
         ok: true,
-        user: { id: user.id, benutzername: user.benutzername, rolle: user.rolle, berechtigungen: user.berechtigungen || null },
+        user: { id: user.id, benutzername: user.benutzername, rolle: user.rolle, berechtigungen: user.berechtigungen || null, ist_super_admin: user.ist_super_admin === true },
         ...(neuerVertrauensToken ? { vertrauensToken: neuerVertrauensToken } : {})
       });
     } catch (e) {
