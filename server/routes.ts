@@ -2744,16 +2744,21 @@ export async function registerRoutes(
   // ─── Rechnung PDF (Vorlage aus DB) ──────────────────────────────────────────
   app.post("/api/auftraege/:id/rechnungen/:rid/pdf", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       const { id, rid } = req.params;
-      const { data: rechnung, error } = await supabase.from("rechnungen").select("*").eq("id", rid).single();
+      const { data: rechnung, error } = await identity.client
+        .from("rechnungen").select("*").eq("id", rid).eq("auftrag_id", id).eq("tenant_id", identity.tenantId).maybeSingle();
       if (error || !rechnung) return res.status(404).json({ message: "Rechnung nicht gefunden" });
-      const { data: auftrag } = await supabase.from("auftraege").select("*").eq("id", id).single();
+      const { data: auftrag } = await identity.client
+        .from("auftraege").select("*").eq("id", id).eq("tenant_id", identity.tenantId).maybeSingle();
+      if (!auftrag) return res.status(404).json({ message: "Auftrag nicht gefunden" });
 
       // Quelldaten: Offerte falls verlinkt
       let quelleOfferte: any = null;
       const offIdMatch = (rechnung.notiz || "").match(/offerte_id:([^|]+)/);
       if (offIdMatch) {
-        const { data: off } = await supabase.from("offerten").select("*").eq("id", offIdMatch[1]).single();
+        const { data: off } = await identity.client.from("offerten").select("*").eq("id", offIdMatch[1]).eq("tenant_id", identity.tenantId).maybeSingle();
         if (off) quelleOfferte = off;
       }
 
@@ -2768,9 +2773,10 @@ export async function registerRoutes(
       let kundePlzOrt  = quelleOfferte?.empfaenger_plz_ort  || "";
       // Falls Offerte keine Adresse hat: Kundendatenbank abfragen
       if ((!kundeStrasse || !kundePlzOrt) && kundeName) {
-        const { data: kunden } = await supabase.from("kunden")
+        const { data: kunden } = await identity.client.from("kunden")
           .select("adresse,plz,ort,vorname,nachname,firma")
           .or(`firma.ilike.%${kundeName}%,nachname.ilike.%${kundeName}%`)
+          .eq("tenant_id", identity.tenantId)
           .limit(1);
         const k = kunden?.[0];
         if (k) {
@@ -4735,18 +4741,21 @@ export async function registerRoutes(
   // ─── Mahnung PDF (Vorlage aus DB) ────────────────────────────────────────────
   app.post("/api/mahnungen/:id/pdf", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       const { id } = req.params;
-      const { data: mahnung, error: mErr } = await supabase.from("mahnungen").select("*").eq("id", id).single();
+      const { data: mahnung, error: mErr } = await identity.client
+        .from("mahnungen").select("*").eq("id", id).eq("tenant_id", identity.tenantId).maybeSingle();
       if (mErr || !mahnung) throw new Error("Mahnung nicht gefunden");
 
       // Verknüpfte Rechnung laden
       let rechnung: any = null;
       let auftrag: any = null;
       if (mahnung.rechnung_id) {
-        const { data: r } = await supabase.from("rechnungen").select("*").eq("id", mahnung.rechnung_id).single();
+        const { data: r } = await identity.client.from("rechnungen").select("*").eq("id", mahnung.rechnung_id).eq("tenant_id", identity.tenantId).maybeSingle();
         if (r) rechnung = r;
         if (r?.auftrag_id) {
-          const { data: a } = await supabase.from("auftraege").select("*").eq("id", r.auftrag_id).single();
+          const { data: a } = await identity.client.from("auftraege").select("*").eq("id", r.auftrag_id).eq("tenant_id", identity.tenantId).maybeSingle();
           if (a) auftrag = a;
         }
       }
@@ -5163,10 +5172,12 @@ export async function registerRoutes(
   // ─── Offerte PDF (Vorlage aus DB) ─────────────────────────────────────────────
   app.post("/api/offerten/:id/pdf", async (req, res) => {
     try {
-      const { data: offerte, error } = await supabase.from("offerten").select("*").eq("id", req.params.id).single();
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { data: offerte, error } = await identity.client.from("offerten").select("*").eq("id", req.params.id).eq("tenant_id", identity.tenantId).maybeSingle();
       if (error || !offerte) return res.status(404).json({ message: "Offerte nicht gefunden" });
       const { data: auftrag } = offerte.auftrag_id
-        ? await supabase.from("auftraege").select("*").eq("id", offerte.auftrag_id).single()
+        ? await identity.client.from("auftraege").select("*").eq("id", offerte.auftrag_id).eq("tenant_id", identity.tenantId).maybeSingle()
         : { data: null };
       const { ansprechpersonIntern: bodyIntern, ansprechpersonExtern: bodyExtern } = req.body || {};
 
@@ -5235,7 +5246,9 @@ export async function registerRoutes(
   // PDF-Export für Offerte (GET) — nutzt buildPdfHtml() mit gespeicherter Vorlage
   app.get("/api/offerten/:id/pdf", async (req, res) => {
     try {
-      const { data: offerte, error } = await supabase.from("offerten").select("*").eq("id", req.params.id).single();
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { data: offerte, error } = await identity.client.from("offerten").select("*").eq("id", req.params.id).eq("tenant_id", identity.tenantId).maybeSingle();
       if (error || !offerte) return res.status(404).json({ message: "Offerte nicht gefunden" });
       const { data: auftrag } = offerte.auftrag_id
         ? await supabase.from("auftraege").select("*").eq("id", offerte.auftrag_id).single()
@@ -5859,16 +5872,19 @@ export async function registerRoutes(
 
   app.post("/api/auftraege/:id/kalkulation-pdf", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       const { id } = req.params;
       const typ = (req.query.typ as string) || "vorkalkulation";
       const isVK = typ === "vorkalkulation";
 
       // Load auftrag
-      const { data: auftrag } = await supabase
+      const { data: auftrag } = await identity.client
         .from("auftraege")
         .select("*")
         .eq("id", id)
-        .single();
+        .eq("tenant_id", identity.tenantId)
+        .maybeSingle();
 
       if (!auftrag) return res.status(404).json({ message: "Auftrag nicht gefunden" });
 
@@ -7301,8 +7317,10 @@ export async function registerRoutes(
   // ─── Lieferschein PDF (Vorlage aus DB) ─────────────────────────────────────────
   app.post("/api/auftraege/:id/lieferschein-pdf", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       const { id } = req.params;
-      const { data: auftrag, error: aErr } = await supabase.from("auftraege").select("*").eq("id", id).single();
+      const { data: auftrag, error: aErr } = await identity.client.from("auftraege").select("*").eq("id", id).eq("tenant_id", identity.tenantId).maybeSingle();
       if (aErr || !auftrag) throw new Error("Auftrag nicht gefunden");
 
       const { data: settingsArr } = await supabase.from("einstellungen").select("schluessel,wert");
@@ -7312,7 +7330,7 @@ export async function registerRoutes(
       // Positionen laden — zuerst Offerte, dann Rechnung als Fallback (JSONB-Spalten)
       let positionen: any[] = [];
       // Zuerst Offerte des Auftrags laden (hat vollständige Positionen mit Titel)
-      const { data: offerten } = await supabase.from("offerten").select("positionen").eq("auftrag_id", id).order("erstellt", { ascending: false }).limit(1);
+      const { data: offerten } = await identity.client.from("offerten").select("positionen").eq("auftrag_id", id).eq("tenant_id", identity.tenantId).order("erstellt", { ascending: false }).limit(1);
       if (offerten && offerten.length > 0 && Array.isArray(offerten[0].positionen) && offerten[0].positionen.length > 0) {
         positionen = offerten[0].positionen.map((p: any) => ({
           titel: p.titel || p.beschreibung || "",
@@ -7324,7 +7342,7 @@ export async function registerRoutes(
         }));
       } else {
         // Fallback: Rechnungs-Positionen (JSONB)
-        const { data: rechnungen } = await supabase.from("rechnungen").select("positionen").eq("auftrag_id", id).order("erstellt", { ascending: false }).limit(1);
+        const { data: rechnungen } = await identity.client.from("rechnungen").select("positionen").eq("auftrag_id", id).eq("tenant_id", identity.tenantId).order("erstellt", { ascending: false }).limit(1);
         if (rechnungen && rechnungen.length > 0 && Array.isArray(rechnungen[0].positionen) && rechnungen[0].positionen.length > 0) {
           positionen = rechnungen[0].positionen.map((p: any) => ({
             titel: p.beschreibung || "",
@@ -7386,8 +7404,10 @@ export async function registerRoutes(
   // ─── Auftragsbestätigung PDF (Vorlage aus DB) ──────────────────────────────────
   app.post("/api/auftraege/:id/auftragsbestaetigung-pdf", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       const { id } = req.params;
-      const { data: auftrag, error: aErr } = await supabase.from("auftraege").select("*").eq("id", id).single();
+      const { data: auftrag, error: aErr } = await identity.client.from("auftraege").select("*").eq("id", id).eq("tenant_id", identity.tenantId).maybeSingle();
       if (aErr || !auftrag) throw new Error("Auftrag nicht gefunden");
 
       const { data: settingsArr } = await supabase.from("einstellungen").select("schluessel,wert");
@@ -7397,11 +7417,11 @@ export async function registerRoutes(
       // Positionen aus verknüpfter Offerte oder Auftragspositionen
       let positionen: any[] = [];
       if (auftrag.offerte_id) {
-        const { data: off } = await supabase.from("offerten").select("*").eq("id", auftrag.offerte_id).single();
+        const { data: off } = await identity.client.from("offerten").select("*").eq("id", auftrag.offerte_id).eq("tenant_id", identity.tenantId).maybeSingle();
         if (off?.positionen && Array.isArray(off.positionen)) positionen = off.positionen;
       }
       if (positionen.length === 0) {
-        const { data: rechnungen } = await supabase.from("rechnungen").select("*").eq("auftrag_id", id).limit(1);
+        const { data: rechnungen } = await identity.client.from("rechnungen").select("*").eq("auftrag_id", id).eq("tenant_id", identity.tenantId).limit(1);
         if (rechnungen && rechnungen.length > 0 && Array.isArray(rechnungen[0].positionen)) {
           positionen = rechnungen[0].positionen;
         }
@@ -7451,11 +7471,13 @@ export async function registerRoutes(
   // ─── Abnahmeprotokoll PDF ─────────────────────────────────────────────────────
   app.post("/api/auftraege/:id/abnahme-pdf", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       const { id } = req.params;
-      const { data: auftrag, error: aErr } = await supabase.from("auftraege").select("*").eq("id", id).single();
+      const { data: auftrag, error: aErr } = await identity.client.from("auftraege").select("*").eq("id", id).eq("tenant_id", identity.tenantId).maybeSingle();
       if (aErr || !auftrag) throw new Error("Auftrag nicht gefunden");
 
-      const { data: garantien } = await supabase.from("garantien").select("*").eq("auftrag_id", id);
+      const { data: garantien } = await identity.client.from("garantien").select("*").eq("auftrag_id", id).eq("tenant_id", identity.tenantId);
 
       const pdfDoc = await PDFDocument.create();
       const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
