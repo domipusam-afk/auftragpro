@@ -953,11 +953,14 @@ export async function registerRoutes(
   });
 
   // ============= STATS =============
-  app.get("/api/stats", async (_req, res) => {
+  app.get("/api/stats", async (req, res) => {
     try {
-      const { data, error } = await supabase
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { data, error } = await identity.client
         .from("auftraege")
-        .select("status");
+        .select("status")
+        .eq("tenant_id", identity.tenantId);
       if (error) throw error;
       const rows = data || [];
       // Gesamt folgt derselben Definition wie das Dashboard-Dropdown.
@@ -1010,8 +1013,11 @@ export async function registerRoutes(
   // Rechnungsbetrag und Zahlungsstatus je Auftrag direkt aus der Tabelle "rechnungen"
   // ableiten. Jede Ansicht, die einen Auftrag ausliefert, muss das hierüber tun — sonst
   // zeigt sie das gespiegelte auftraege.rechnungs_betrag, das veraltet sein kann.
-  const rechnungsStatusJeAuftrag = async (auftragIds?: string[]) => {
-    let query = supabase.from("rechnungen").select("auftrag_id, betrag, bezahlt_am");
+  const rechnungsStatusJeAuftrag = async (identity: DashboardPreferenceIdentity, auftragIds?: string[]) => {
+    let query = identity.client
+      .from("rechnungen")
+      .select("auftrag_id, betrag, bezahlt_am")
+      .eq("tenant_id", identity.tenantId);
     if (auftragIds) query = query.in("auftrag_id", auftragIds);
     const { data, error } = await query;
     if (error) throw error;
@@ -1044,11 +1050,13 @@ export async function registerRoutes(
     };
   };
 
-  app.get("/api/auftraege", async (_req, res) => {
+  app.get("/api/auftraege", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       const [{ data, error }, rechnungsStatus, mwstSatz] = await Promise.all([
-        supabase.from("auftraege").select("*").order("erstellt", { ascending: false }),
-        rechnungsStatusJeAuftrag(),
+        identity.client.from("auftraege").select("*").eq("tenant_id", identity.tenantId).order("erstellt", { ascending: false }),
+        rechnungsStatusJeAuftrag(identity),
         ladeMwstSatz(),
       ]);
       if (error) throw error;
@@ -1060,6 +1068,8 @@ export async function registerRoutes(
 
   app.post("/api/auftraege", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       const body = req.body || {};
       if (!body.titel || !String(body.titel).trim()) {
         return res.status(400).json({ message: "Titel ist erforderlich" });
@@ -1068,9 +1078,10 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Kunde ist erforderlich" });
       }
       // gen nr
-      const { data: allRows } = await supabase
+      const { data: allRows } = await identity.client
         .from("auftraege")
-        .select("nr");
+        .select("nr")
+        .eq("tenant_id", identity.tenantId);
       const nr = nextNr("A", allRows || []);
       const id = uid();
       const now = new Date().toISOString();
@@ -1102,21 +1113,23 @@ export async function registerRoutes(
         verantwortlicher: body.verantwortlicher || null,
         erstellt: now,
         aktualisiert: now,
+        tenant_id: identity.tenantId,
       };
-      const { data, error } = await supabase
+      const { data, error } = await identity.client
         .from("auftraege")
         .insert(row)
         .select()
         .single();
       if (error) throw error;
       // initial verlauf
-      await supabase.from("verlauf").insert({
+      await identity.client.from("verlauf").insert({
         id: uid(),
         auftrag_id: id,
         status: row.status,
         kommentar: "Auftrag erstellt",
         von: body.verantwortlicher || null,
         datum: now,
+        tenant_id: identity.tenantId,
       });
       res.json(data);
     } catch (e) {
@@ -1126,30 +1139,37 @@ export async function registerRoutes(
 
   app.get("/api/auftraege/:id", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       const { id } = req.params;
-      const { data: auftrag, error } = await supabase
+      const { data: auftrag, error } = await identity.client
         .from("auftraege")
         .select("*")
         .eq("id", id)
-        .single();
+        .eq("tenant_id", identity.tenantId)
+        .maybeSingle();
       if (error) throw error;
-      const { data: verlauf } = await supabase
+      if (!auftrag) return res.status(404).json({ message: "Auftrag nicht gefunden." });
+      const { data: verlauf } = await identity.client
         .from("verlauf")
         .select("*")
         .eq("auftrag_id", id)
+        .eq("tenant_id", identity.tenantId)
         .order("datum", { ascending: false });
-      const { data: notizen } = await supabase
+      const { data: notizen } = await identity.client
         .from("notizen")
         .select("*")
         .eq("auftrag_id", id)
+        .eq("tenant_id", identity.tenantId)
         .order("datum", { ascending: false });
-      const { data: dokumente } = await supabase
+      const { data: dokumente } = await identity.client
         .from("dokumente")
         .select("id, auftrag_id, name, mime, size_bytes, kat, beschreibung, storage_path, datum")
         .eq("auftrag_id", id)
+        .eq("tenant_id", identity.tenantId)
         .order("datum", { ascending: false });
       res.json({
-        ...mitRechnungsStatus(auftrag, await rechnungsStatusJeAuftrag([id]), await ladeMwstSatz()),
+        ...mitRechnungsStatus(auftrag, await rechnungsStatusJeAuftrag(identity, [id]), await ladeMwstSatz()),
         verlauf: verlauf || [],
         notizen: notizen || [],
         dokumente: dokumente || [],
@@ -1161,6 +1181,8 @@ export async function registerRoutes(
 
   app.patch("/api/auftraege/:id", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       const { id } = req.params;
       const body = req.body || {};
       const allowed: Record<string, any> = {};
@@ -1202,8 +1224,8 @@ export async function registerRoutes(
       // Sperre würden Spalte "Angebot" und tatsächliche Offerte auseinanderlaufen.
       let offerteHatVorrang = false;
       if ("angebots_betrag" in allowed) {
-        const { data: offerten } = await supabase
-          .from("offerten").select("id").eq("auftrag_id", id).limit(1);
+        const { data: offerten } = await identity.client
+          .from("offerten").select("id").eq("auftrag_id", id).eq("tenant_id", identity.tenantId).limit(1);
         if (offerten && offerten.length > 0) {
           delete allowed.angebots_betrag;
           offerteHatVorrang = true;
@@ -1211,17 +1233,19 @@ export async function registerRoutes(
       }
 
       allowed.aktualisiert = new Date().toISOString();
-      const { data, error } = await supabase
+      const { data, error } = await identity.client
         .from("auftraege")
         .update(allowed)
         .eq("id", id)
+        .eq("tenant_id", identity.tenantId)
         .select()
-        .single();
+        .maybeSingle();
       if (error) throw error;
+      if (!data) return res.status(404).json({ message: "Auftrag nicht gefunden." });
       if (offerteHatVorrang) {
         await syncAngebotsBetrag(id);
-        const { data: frisch } = await supabase
-          .from("auftraege").select("*").eq("id", id).single();
+        const { data: frisch } = await identity.client
+          .from("auftraege").select("*").eq("id", id).eq("tenant_id", identity.tenantId).maybeSingle();
         return res.json({ ...(frisch || data), angebots_betrag_aus_offerte: true });
       }
       res.json(data);
@@ -1232,24 +1256,29 @@ export async function registerRoutes(
 
   app.patch("/api/auftraege/:id/status", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       const { id } = req.params;
       const { status, kommentar, von } = req.body || {};
       if (!status) return res.status(400).json({ message: "status required" });
       const now = new Date().toISOString();
-      const { data, error } = await supabase
+      const { data, error } = await identity.client
         .from("auftraege")
         .update({ status, aktualisiert: now })
         .eq("id", id)
+        .eq("tenant_id", identity.tenantId)
         .select()
-        .single();
+        .maybeSingle();
       if (error) throw error;
-      await supabase.from("verlauf").insert({
+      if (!data) return res.status(404).json({ message: "Auftrag nicht gefunden." });
+      await identity.client.from("verlauf").insert({
         id: uid(),
         auftrag_id: id,
         status,
         kommentar: kommentar || `Status geändert zu ${status}`,
         von: von || null,
         datum: now,
+        tenant_id: identity.tenantId,
       });
       res.json(data);
     } catch (e) {
@@ -1259,7 +1288,12 @@ export async function registerRoutes(
 
   app.delete("/api/auftraege/:id", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       const { id } = req.params;
+      if (!(await auftragGehoertZuTenant(identity, id))) {
+        return res.status(404).json({ message: "Auftrag nicht gefunden." });
+      }
       // best-effort cascade
       await supabase.from("dokument_daten").delete().in(
         "dokument_id",
@@ -1270,7 +1304,7 @@ export async function registerRoutes(
       await supabase.from("dokumente").delete().eq("auftrag_id", id);
       await supabase.from("notizen").delete().eq("auftrag_id", id);
       await supabase.from("verlauf").delete().eq("auftrag_id", id);
-      await supabase.from("rechnungen").delete().eq("auftrag_id", id);
+      await identity.client.from("rechnungen").delete().eq("auftrag_id", id).eq("tenant_id", identity.tenantId);
 
       // Schritt-Fotos: zuerst Storage-Dateien löschen, dann DB-Zeilen
       const { data: fotosZuLoeschen } = await supabase
@@ -1317,7 +1351,11 @@ export async function registerRoutes(
       await supabase.from("tagesrapporte").delete().eq("auftrag_id", id);
       await supabase.from("reklamationen").delete().eq("auftrag_id", id);
 
-      const { error } = await supabase.from("auftraege").delete().eq("id", id);
+      const { error } = await identity.client
+        .from("auftraege")
+        .delete()
+        .eq("id", id)
+        .eq("tenant_id", identity.tenantId);
       if (error) throw error;
       res.json({ ok: true });
     } catch (e) {
@@ -1563,12 +1601,15 @@ export async function registerRoutes(
   // auftraege.rechnungs_betrag ist ein reiner Spiegel der Tabelle "rechnungen" — diese
   // Funktion ist der EINZIGE Schreiber. Wer eine Rechnung anlegt, ändert oder löscht,
   // MUSS sie aufrufen, sonst zeigen Auftragsliste und Finanzen-Übersicht veraltete Werte.
-  async function syncRechnungsBetrag(auftragId: string) {
+  async function syncRechnungsBetrag(auftragId: string, identity?: DashboardPreferenceIdentity) {
     if (!auftragId) return;
-    const { data: alleRechnungen, error: leseFehler } = await supabase
+    const client = identity?.client || supabase;
+    let rechnungenQuery = client
       .from("rechnungen")
       .select("betrag")
       .eq("auftrag_id", auftragId);
+    if (identity) rechnungenQuery = rechnungenQuery.eq("tenant_id", identity.tenantId);
+    const { data: alleRechnungen, error: leseFehler } = await rechnungenQuery;
     if (leseFehler) throw leseFehler;
     const nettoSumme = (alleRechnungen || []).reduce((s: number, r: any) => s + (Number(r.betrag) || 0), 0);
     // Ohne Rechnung muss NULL stehen, nicht 0 — sonst ist "keine Rechnung" nicht mehr
@@ -1576,20 +1617,28 @@ export async function registerRoutes(
     const bruttoSumme = (alleRechnungen || []).length === 0
       ? null
       : Math.round(nettoSumme * (1 + (await ladeMwstSatz()) / 100) * 100) / 100;
-    const { error: schreibFehler } = await supabase
+    let auftragQuery = client
       .from("auftraege")
       .update({ rechnungs_betrag: bruttoSumme })
       .eq("id", auftragId);
+    if (identity) auftragQuery = auftragQuery.eq("tenant_id", identity.tenantId);
+    const { error: schreibFehler } = await auftragQuery;
     if (schreibFehler) throw schreibFehler;
     return bruttoSumme;
   }
 
   app.get("/api/auftraege/:id/rechnungen", async (req, res) => {
     try {
-      const { data, error } = await supabase
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      if (!(await auftragGehoertZuTenant(identity, req.params.id))) {
+        return res.status(404).json({ message: "Auftrag nicht gefunden." });
+      }
+      const { data, error } = await identity.client
         .from("rechnungen")
         .select("*")
         .eq("auftrag_id", req.params.id)
+        .eq("tenant_id", identity.tenantId)
         .order("erstellt", { ascending: false });
       if (error) throw error;
       res.json(data || []);
@@ -1600,14 +1649,17 @@ export async function registerRoutes(
 
   app.post("/api/auftraege/:id/rechnungen", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       const { id } = req.params;
       const body = req.body || {};
 
       // Auftrag-Existenz + tenant_id laden
-      const { data: auftrag, error: aErr } = await supabase
+      const { data: auftrag, error: aErr } = await identity.client
         .from("auftraege")
         .select("id, nr, tenant_id")
         .eq("id", id)
+        .eq("tenant_id", identity.tenantId)
         .maybeSingle();
       if (aErr) throw aErr;
       if (!auftrag) return res.status(404).json({ message: "Auftrag nicht gefunden" });
@@ -1642,7 +1694,8 @@ export async function registerRoutes(
       if (!nr) {
         const auftragsNr = (auftrag.nr || "").replace(/^A/, "");
         const baseNr = "R" + auftragsNr;
-        const { data: existingR } = await supabase.from("rechnungen").select("nr").eq("auftrag_id", id);
+        const { data: existingR } = await identity.client
+          .from("rechnungen").select("nr").eq("auftrag_id", id).eq("tenant_id", identity.tenantId);
         const countR = (existingR || []).length;
         nr = countR === 0 ? baseNr : baseNr + "_" + (countR + 1);
       }
@@ -1657,15 +1710,14 @@ export async function registerRoutes(
         faellig_datum: body.faellig_datum || null,
         erstellt: new Date().toISOString(),
       };
-      // tenant_id vom Auftrag übernehmen (Multi-Tenant-Sicherheit)
-      if (auftrag.tenant_id) row.tenant_id = auftrag.tenant_id;
-      const { data, error } = await supabase
+      row.tenant_id = identity.tenantId;
+      const { data, error } = await identity.client
         .from("rechnungen")
         .insert(row)
         .select()
         .single();
       if (error) throw error;
-      await syncRechnungsBetrag(id);
+      await syncRechnungsBetrag(id, identity);
       res.json(data);
     } catch (e) {
       res.status(500).json({ message: asError(e) });
@@ -8304,7 +8356,14 @@ export async function registerRoutes(
   // ─── WIEDERKEHRENDE AUFTRÄGE ─────────────────────────────────────────────────
   app.post("/api/auftraege/:id/wiederholen", async (req, res) => {
     try {
-      const { data: orig, error } = await supabase.from("auftraege").select("*").eq("id", req.params.id).single();
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { data: orig, error } = await identity.client
+        .from("auftraege")
+        .select("*")
+        .eq("id", req.params.id)
+        .eq("tenant_id", identity.tenantId)
+        .maybeSingle();
       if (error || !orig) return res.status(404).json({ message: "Nicht gefunden" });
       
       // Interval → nächstes Datum berechnen
@@ -8319,7 +8378,10 @@ export async function registerRoutes(
       else if (interval === "jaehrlich") nextDate.setFullYear(now.getFullYear() + 1);
       
       // Neue Auftragsnummer generieren
-      const { data: allNrW } = await supabase.from("auftraege").select("nr");
+      const { data: allNrW } = await identity.client
+        .from("auftraege")
+        .select("nr")
+        .eq("tenant_id", identity.tenantId);
       const yyW = String(new Date().getFullYear()).slice(-2);
       const maxW = (allNrW || []).reduce((mx: number, a: any) => {
         const nr = String(a.nr || "");
@@ -8332,7 +8394,7 @@ export async function registerRoutes(
       const newNr = `A${yyW}${String(maxW + 1).padStart(4, "0")}`;
       
       // Neuen Auftrag erstellen (gleiche Daten, neue Nr + aktuelles Datum)
-      const { data: newAuftrag, error: err2 } = await supabase.from("auftraege").insert({
+      const { data: newAuftrag, error: err2 } = await identity.client.from("auftraege").insert({
         nr: newNr,
         titel: orig.titel,
         kunde: orig.kunde,
@@ -8349,12 +8411,17 @@ export async function registerRoutes(
         verantwortlicher: orig.verantwortlicher,
         wiederkehrend_interval: orig.wiederkehrend_interval,
         naechste_faelligkeit: nextDate.toISOString().slice(0, 10),
+        tenant_id: identity.tenantId,
       }).select().single();
       
       if (err2) return res.status(500).json({ message: err2.message });
       
       // Original: naechste_faelligkeit aktualisieren
-      await supabase.from("auftraege").update({ naechste_faelligkeit: nextDate.toISOString().slice(0, 10) }).eq("id", req.params.id);
+      await identity.client
+        .from("auftraege")
+        .update({ naechste_faelligkeit: nextDate.toISOString().slice(0, 10) })
+        .eq("id", req.params.id)
+        .eq("tenant_id", identity.tenantId);
       
       res.json(newAuftrag);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -8429,7 +8496,7 @@ export async function registerRoutes(
   app.get("/api/public/auftrag/:token", async (req, res) => {
     try {
       const { data, error } = await supabase.from("auftraege")
-        .select("id,nr,titel,status,beschreibung,start_datum,end_datum,public_token,kunden_nachricht")
+        .select("id,nr,titel,status,beschreibung,start_datum,end_datum,public_token,kunden_nachricht,tenant_id")
         .eq("public_token", req.params.token)
         .single();
       if (error || !data) return res.status(404).json({ message: "Nicht gefunden" });
@@ -8443,7 +8510,7 @@ export async function registerRoutes(
       }
       // Arbeitsschritte inkl. Fotos laden
       const { data: schritte } = await supabase.from("auftrag_schritte")
-        .select("id,titel,status,reihenfolge,erledigt_am").eq("auftrag_id", data.id)
+        .select("id,titel,status,reihenfolge,erledigt_am").eq("auftrag_id", data.id).eq("tenant_id", data.tenant_id)
         .order("reihenfolge", { ascending: true });
       // Fotos für alle Schritte laden
       const schrittIds = (schritte || []).map((s: any) => s.id);
@@ -8452,6 +8519,7 @@ export async function registerRoutes(
         const { data: fotos } = await supabase.from("auftrag_schritt_fotos")
           .select("id,schritt_id,url,dateiname,erstellt_am")
           .in("schritt_id", schrittIds)
+          .eq("tenant_id", data.tenant_id)
           .order("erstellt_am", { ascending: true });
         for (const f of (fotos || [])) {
           if (!fotosMap[f.schritt_id]) fotosMap[f.schritt_id] = [];
@@ -8459,14 +8527,23 @@ export async function registerRoutes(
         }
       }
       const schritteMitFotos = (schritte || []).map((s: any) => ({ ...s, fotos: fotosMap[s.id] || [] }));
-      res.json({ ...data, schritte: schritteMitFotos });
+      const { tenant_id: _tenantId, ...publicAuftrag } = data;
+      res.json({ ...publicAuftrag, schritte: schritteMitFotos });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
   app.post("/api/auftraege/:id/generate-token", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       // Lesbarer Slug: Auftragsnummer + Titel, z.B. "a-2026-0001-liege"
-      const { data: auftrag } = await supabase.from("auftraege").select("nr,titel").eq("id", req.params.id).single();
+      const { data: auftrag } = await identity.client
+        .from("auftraege")
+        .select("nr,titel")
+        .eq("id", req.params.id)
+        .eq("tenant_id", identity.tenantId)
+        .maybeSingle();
+      if (!auftrag) return res.status(404).json({ message: "Auftrag nicht gefunden." });
       // Slug: Auftragsnr (uppercase) + Titel-slug, z.B. A260001-liege
       const nrRaw = (auftrag?.nr || "").toUpperCase().replace(/[^A-Z0-9]+/g, "");
       const titelSlug = (auftrag?.titel || "").toLowerCase()
@@ -8476,17 +8553,36 @@ export async function registerRoutes(
       const slug = (nrRaw && titelSlug) ? nrRaw + "-" + titelSlug
                  : nrRaw || titelSlug || uid();
       // Eindeutigkeit sicherstellen: pruefen ob slug schon vergeben
-      const { data: existing } = await supabase.from("auftraege").select("id").eq("public_token", slug).maybeSingle();
+      const { data: existing } = await identity.client
+        .from("auftraege")
+        .select("id")
+        .eq("public_token", slug)
+        .eq("tenant_id", identity.tenantId)
+        .maybeSingle();
       const finalToken = existing && existing.id !== req.params.id ? `${slug}-${uid().slice(0, 4)}` : slug;
-      const { data, error } = await supabase.from("auftraege").update({ public_token: finalToken }).eq("id", req.params.id).select("public_token").single();
+      const { data, error } = await identity.client
+        .from("auftraege")
+        .update({ public_token: finalToken })
+        .eq("id", req.params.id)
+        .eq("tenant_id", identity.tenantId)
+        .select("public_token")
+        .maybeSingle();
       if (error) return res.status(500).json({ message: error.message });
+      if (!data) return res.status(404).json({ message: "Auftrag nicht gefunden." });
       res.json({ token: data.public_token });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
   app.delete("/api/auftraege/:id/generate-token", async (req, res) => {
     try {
-      await supabase.from("auftraege").update({ public_token: null }).eq("id", req.params.id);
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { error } = await identity.client
+        .from("auftraege")
+        .update({ public_token: null })
+        .eq("id", req.params.id)
+        .eq("tenant_id", identity.tenantId);
+      if (error) throw error;
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
