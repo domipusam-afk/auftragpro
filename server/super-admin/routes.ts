@@ -298,6 +298,7 @@ export function registerSuperAdminRoutes(app: Express): void {
       const { data: tenant, error: tenantError } = await client.from("tenants").insert({ name: name.trim(), slug: resolvedSlug, status: "aktiv" }).select("id, name, slug, status, erstellt_am, aktualisiert_am").single();
       if (tenantError) throw tenantError;
       tenantId = tenant.id;
+      const adminPasswortHash = await bcrypt.hash(adminPasswort, 12);
       const [{ error: settingsError }, { error: userError }, { error: membershipError }] = await Promise.all([
         client.from("einstellungen").insert([
           { tenant_id: tenant.id, schluessel: "firmenname", wert: name.trim() },
@@ -305,7 +306,7 @@ export function registerSuperAdminRoutes(app: Express): void {
           { tenant_id: tenant.id, schluessel: "farbe_primaer", wert: "#01696F" },
           { tenant_id: tenant.id, schluessel: "produktname", wert: "AuftragsPro" },
         ]),
-        client.from("app_benutzer").insert({ id: authUserId, benutzername: email, rolle: "admin", tenant_id: tenant.id, aktiv: true }),
+        client.from("app_benutzer").insert({ id: authUserId, benutzername: email, passwort_hash: adminPasswortHash, rolle: "admin", tenant_id: tenant.id, aktiv: true }),
         client.from("tenant_memberships").insert({ user_id: authUserId, tenant_id: tenant.id, rolle: "admin", aktiv: true, berechtigungen: {} }),
       ]);
       if (settingsError || userError || membershipError) throw new Error(settingsError?.message || userError?.message || membershipError?.message);
@@ -314,7 +315,12 @@ export function registerSuperAdminRoutes(app: Express): void {
       return res.status(201).json({ tenant, admin: { email, benutzerId: authUserId } });
     } catch (error) {
       const client = getServiceRoleClient();
-      if (tenantId) await client.from("tenants").delete().eq("id", tenantId);
+      if (tenantId) {
+        await client.from("app_benutzer").delete().eq("tenant_id", tenantId);
+        await client.from("tenant_memberships").delete().eq("tenant_id", tenantId);
+        await client.from("einstellungen").delete().eq("tenant_id", tenantId);
+        await client.from("tenants").delete().eq("id", tenantId);
+      }
       if (authUserId) await client.auth.admin.deleteUser(authUserId);
       return res.status(500).json({ message: `Firma konnte nicht vollständig angelegt werden: ${message(error)}` });
     }
@@ -387,8 +393,9 @@ export function registerSuperAdminRoutes(app: Express): void {
       const { data: authCreated, error: authError } = await client.auth.admin.createUser({ email, password: passwort, email_confirm: true, user_metadata: { name: name.trim() } });
       if (authError || !authCreated.user) return res.status(400).json({ message: `Benutzer konnte nicht angelegt werden: ${authError?.message || "unbekannter Fehler"}` });
       authUserId = authCreated.user.id;
+      const passwortHash = await bcrypt.hash(passwort, 12);
       const [{ error: userError }, { error: membershipError }] = await Promise.all([
-        client.from("app_benutzer").insert({ id: authUserId, benutzername: email, rolle: rolle as TenantRole, tenant_id: tenant.id, aktiv: true }),
+        client.from("app_benutzer").insert({ id: authUserId, benutzername: email, passwort_hash: passwortHash, rolle: rolle as TenantRole, tenant_id: tenant.id, aktiv: true }),
         client.from("tenant_memberships").insert({ user_id: authUserId, tenant_id: tenant.id, rolle: rolle as TenantRole, aktiv: true, berechtigungen: {} }),
       ]);
       if (userError || membershipError) throw new Error(userError?.message || membershipError?.message);
@@ -444,6 +451,9 @@ export function registerSuperAdminRoutes(app: Express): void {
       if (!user) return res.status(404).json({ message: "Benutzer nicht gefunden." });
       const { error: authError } = await client.auth.admin.updateUserById(user.id, { password: neuesPasswort });
       if (authError) throw authError;
+      const neuesPasswortHash = await bcrypt.hash(neuesPasswort, 12);
+      const { error: hashError } = await client.from("app_benutzer").update({ passwort_hash: neuesPasswortHash, aktualisiert: new Date().toISOString() }).eq("id", user.id);
+      if (hashError) throw hashError;
       await logAuditEvent(req, "user.reset_password", `Passwort für '${user.benutzername}' zurückgesetzt`, { tenantId: tenant.id, betroffeneEntitaet: "user", entitaetId: user.id });
       return res.json({ ok: true, temporaeresPasswort: neuesPasswort });
     } catch (error) { return res.status(500).json({ message: message(error) }); }
