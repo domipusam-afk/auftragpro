@@ -42,7 +42,7 @@ export function installApiAuthInterceptor(): void {
     if (token && isProtectedApiUrl(requestUrl(input))) headers.set("Authorization", `Bearer ${token}`);
 
     const response = await nativeFetch!(input, { ...init, headers });
-    if (response.status === 401 && isProtectedApiUrl(requestUrl(input))) {
+    if (response.status === 401 && isProtectedApiUrl(requestUrl(input)) && !requestUrl(input).includes("/api/super-admin/")) {
       clearAccessToken();
       window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
     }

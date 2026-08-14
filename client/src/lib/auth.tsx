@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from "react
 import { apiRequest, API_BASE } from "./queryClient";
 import { lsGet, lsSet } from "./storage";
 import { clearAccessToken, onApiUnauthorized, setAccessToken } from "./api-auth";
+import { clearAdminSessionToken } from "./super-admin-api";
 import { hatZugriff as checkZugriff, BerechtigungKey } from "./permissions";
 
 export type Rolle = "admin" | "mitarbeiter";
@@ -78,11 +79,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = () => {
     clearAccessToken();
+    clearAdminSessionToken();
     setUser(null);
   };
 
   useEffect(() => onApiUnauthorized(() => {
     clearAccessToken();
+    clearAdminSessionToken();
     setUser(null);
   }), []);
 

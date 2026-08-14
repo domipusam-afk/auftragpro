@@ -2,10 +2,18 @@ import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
 export const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
 
+export class ApiRequestError extends Error {
+  constructor(public readonly status: number, public readonly body: any, fallback: string) {
+    super(`${status}: ${body?.message || fallback}`);
+  }
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
-    throw new Error(`${res.status}: ${text}`);
+    let body: any = null;
+    try { body = JSON.parse(text); } catch { /* non-JSON endpoint */ }
+    throw new ApiRequestError(res.status, body, text);
   }
 }
 
@@ -13,10 +21,11 @@ export async function apiRequest(
   method: string,
   url: string,
   data?: unknown | undefined,
+  options?: { headers?: Record<string, string> },
 ): Promise<Response> {
   const res = await fetch(`${API_BASE}${url}`, {
     method,
-    headers: data ? { "Content-Type": "application/json" } : {},
+    headers: { ...(data ? { "Content-Type": "application/json" } : {}), ...(options?.headers || {}) },
     body: data ? JSON.stringify(data) : undefined,
   });
 

@@ -36,6 +36,7 @@ import {
   FolderOpen,
   LogOut,
   ShieldCheck,
+  Shield,
   FilePlus,
   Banknote,
   Umbrella,
@@ -799,6 +800,10 @@ export default function Layout({ children }: { children: ReactNode }) {
           {(isAdmin || hatZugriff("einstellungen")) && BOTTOM_NAV.map((item) => (
             <NavItem key={item.href} {...item} collapsed={!show} />
           ))}
+
+          {user?.ist_super_admin === true && (
+            <NavItem href="/super-admin" label="System-Verwaltung" icon={Shield} collapsed={!show} />
+          )}
 
           {/* Eingeloggter Benutzer */}
           {show && user && (

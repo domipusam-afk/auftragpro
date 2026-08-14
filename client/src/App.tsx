@@ -48,6 +48,7 @@ import NachkalkulationDetail from "@/pages/NachkalkulationDetail";
 import VorkalkulationUebersicht from "@/pages/VorkalkulationUebersicht";
 import NachkalkulationUebersicht from "@/pages/NachkalkulationUebersicht";
 import Aufgaben from "@/pages/Aufgaben";
+import SuperAdminIndex from "@/pages/super-admin/SuperAdminIndex";
 
 import Lagerverwaltung from "@/pages/Lagerverwaltung";
 
@@ -74,6 +75,7 @@ function AppRouter() {
       <Route path="/rechnungen">{() => <Geschuetzt modul="rechnungen" label="Rechnungen"><Rechnungen /></Geschuetzt>}</Route>
       <Route path="/zeiterfassung">{() => <Geschuetzt modul="zeiterfassung" label="Zeiterfassung"><Zeiterfassung /></Geschuetzt>}</Route>
       <Route path="/einstellungen">{() => <Geschuetzt modul="einstellungen" label="Einstellungen"><Einstellungen /></Geschuetzt>}</Route>
+      <Route path="/super-admin" component={SuperAdminIndex} />
       <Route path="/benutzerverwaltung">{() => <Geschuetzt modul="benutzerverwaltung" label="Benutzerverwaltung"><Benutzerverwaltung /></Geschuetzt>}</Route>
       <Route path="/2fa" component={ZweiFA} />
       <Route path="/mahnwesen">{() => <Geschuetzt modul="finanzmanagement_mahnwesen" label="Mahnwesen"><Mahnwesen /></Geschuetzt>}</Route>
