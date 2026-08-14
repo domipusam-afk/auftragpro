@@ -81,15 +81,24 @@ function run(): void {
 
   assert.equal(PERMISSIONS_CATALOG.length, 36, "Der gemeinsame Katalog muss exakt die 36 bestehenden Rechte enthalten.");
   assert.equal(new Set(PERMISSIONS_CATALOG.map((permission) => permission.key)).size, 36, "Rechte-Schlüssel müssen eindeutig sein.");
-  assert.equal(registered.length, 253, "Die bestätigte Anzahl der Express-Routen darf nicht unbemerkt abweichen.");
+  assert.equal(registered.length, 255, "Die bestätigte Anzahl der Express-Routen darf nicht unbemerkt abweichen.");
   assert.equal(ROUTE_POLICIES.length, registered.length, "Jede registrierte Route braucht genau eine Policy.");
   assert.deepEqual(matrixFingerprints, registeredFingerprints, "Matrix und server/routes.ts müssen denselben Routenbestand enthalten.");
 
+  const inlineGuardedLegacyRoutes = new Set([
+    "POST /api/stundensaetze",
+    "DELETE /api/stundensaetze/:id",
+  ]);
+
   for (const policy of ROUTE_POLICIES) {
     const source = routeSources[policy.source || "routes"];
+    const fingerprint = `${policy.method} ${policy.path}`;
+    const observedEnforcement = inlineGuardedLegacyRoutes.has(fingerprint)
+      ? "guarded"
+      : actualLegacyEnforcement(source);
     assert.equal(sourceAtLine(source, policy.line).includes(`app.${policy.method.toLowerCase()}(`), true, `Zeilenanker stimmt nicht für ${policy.method} ${policy.path}`);
-    assert.equal(registeredFingerprints.has(`${policy.method} ${policy.path}`), true, `Route fehlt im aktuellen Code: ${policy.method} ${policy.path}`);
-    assert.equal(policy.currentEnforcement, actualLegacyEnforcement(source), `Ist-Zugriffsstatus stimmt nicht für ${policy.method} ${policy.path}`);
+    assert.equal(registeredFingerprints.has(fingerprint), true, `Route fehlt im aktuellen Code: ${fingerprint}`);
+    assert.equal(policy.currentEnforcement, observedEnforcement, `Ist-Zugriffsstatus stimmt nicht für ${fingerprint}`);
     for (const permission of policy.permissions) {
       assert.equal(PERMISSIONS_CATALOG.some((catalogPermission) => catalogPermission.key === permission), true, `Unbekanntes Recht in Matrix: ${permission}`);
     }

@@ -4228,6 +4228,41 @@ export async function registerRoutes(
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
+  app.post("/api/stundensaetze", async (req, res) => {
+    try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      if (!isAdminIdentity(identity)) return res.status(403).json({ message: "Nur Administratoren." });
+      const { ort, maschinenpark, satz, bezeichnung, grundsatz } = req.body || {};
+      if (typeof ort !== "string" || !ort.trim()) return res.status(400).json({ message: "Ort ist erforderlich." });
+      const insertData: Record<string, unknown> = {
+        ort: ort.trim(),
+        maschinenpark: (typeof maschinenpark === "string" && maschinenpark.trim()) ? maschinenpark.trim() : null,
+        satz: Number(satz) || 0,
+        bezeichnung: (typeof bezeichnung === "string") ? bezeichnung : "",
+        tenant_id: identity.tenantId,
+        aktualisiert: new Date().toISOString(),
+      };
+      if (grundsatz !== undefined && grundsatz !== null && grundsatz !== "") {
+        insertData.grundsatz = Number(grundsatz);
+      }
+      const { data, error } = await identity.client.from("stundensaetze").insert(insertData).select().single();
+      if (error) throw error;
+      res.status(201).json(data);
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+  app.delete("/api/stundensaetze/:id", async (req, res) => {
+    try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      if (!isAdminIdentity(identity)) return res.status(403).json({ message: "Nur Administratoren." });
+      const { error } = await identity.client.from("stundensaetze").delete().eq("id", req.params.id).eq("tenant_id", identity.tenantId);
+      if (error) throw error;
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
     // ─── Kunden Auto-Sync: beim Auftrag speichern ────────────────────────────────
   app.post("/api/kunden/sync-from-auftrag", async (req, res) => {
     try {
@@ -5533,6 +5568,12 @@ export async function registerRoutes(
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
+  // Helper: tenant_id für einen Auftrag holen (für tenant-safe VK/NK Inserts)
+  async function getAuftragTenantId(auftragId: string): Promise<string | null> {
+    const { data } = await supabase.from("auftraege").select("tenant_id").eq("id", auftragId).maybeSingle();
+    return (data as any)?.tenant_id ?? null;
+  }
+
   // ============= VORKALKULATION =============
 
   // GET stunden (Soll-Stunden pro Ort/Maschine)
@@ -5554,6 +5595,8 @@ export async function registerRoutes(
     try {
       const { id } = req.params;
       const rows: any[] = Array.isArray(req.body) ? req.body : [];
+      const tenantId = await getAuftragTenantId(id);
+      if (!tenantId) return res.status(404).json({ message: "Auftrag nicht gefunden oder ohne Firma-Zuweisung." });
 
       // Delete all existing rows for this auftrag
       const { error: delErr } = await supabase
@@ -5568,6 +5611,7 @@ export async function registerRoutes(
       const toInsert = rows.map((r: any) => ({
         id: r.id || uid(),
         auftrag_id: id,
+        tenant_id: tenantId,
         ort: r.ort,
         maschinenpark: r.maschinenpark ?? r._maschinenpark ?? null,
         soll_stunden: Number(r.soll_stunden) || 0,
@@ -5588,9 +5632,12 @@ export async function registerRoutes(
     try {
       const { id } = req.params;
       const b = req.body;
+      const tenantId = await getAuftragTenantId(id);
+      if (!tenantId) return res.status(404).json({ message: "Auftrag nicht gefunden oder ohne Firma-Zuweisung." });
       const row = {
         id: uid(),
         auftrag_id: id,
+        tenant_id: tenantId,
         ort: String(b.ort || "Avor"),
         maschinenpark: b.maschinenpark ?? null,
         bereich: b.bereich ?? null,
@@ -5641,9 +5688,12 @@ export async function registerRoutes(
     try {
       const { id } = req.params;
       const b = req.body;
+      const tenantId = await getAuftragTenantId(id);
+      if (!tenantId) return res.status(404).json({ message: "Auftrag nicht gefunden oder ohne Firma-Zuweisung." });
       const row = {
         id: uid(),
         auftrag_id: id,
+        tenant_id: tenantId,
         pos: Number(b.pos) || 1,
         profil: String(b.profil || ""),
         bemerkung: String(b.bemerkung || ""),
@@ -5722,9 +5772,12 @@ export async function registerRoutes(
     try {
       const { id } = req.params;
       const b = req.body;
+      const tenantId = await getAuftragTenantId(id);
+      if (!tenantId) return res.status(404).json({ message: "Auftrag nicht gefunden oder ohne Firma-Zuweisung." });
       const row = {
         id: uid(),
         auftrag_id: id,
+        tenant_id: tenantId,
         bezeichnung: String(b.bezeichnung || ""),
         anzahl: Number(b.anzahl) || 1,
         einheit: String(b.einheit || "Stk."),
@@ -5789,9 +5842,12 @@ export async function registerRoutes(
     try {
       const { id } = req.params;
       const b = req.body;
+      const tenantId = await getAuftragTenantId(id);
+      if (!tenantId) return res.status(404).json({ message: "Auftrag nicht gefunden oder ohne Firma-Zuweisung." });
       const row = {
         id: uid(),
         auftrag_id: id,
+        tenant_id: tenantId,
         bezeichnung: String(b.bezeichnung || ""),
         anzahl: Number(b.anzahl) || 1,
         einheit: String(b.einheit || "Stk."),
@@ -5864,6 +5920,8 @@ export async function registerRoutes(
     try {
       const { id } = req.params;
       const b = req.body;
+      const tenantId = await getAuftragTenantId(id);
+      if (!tenantId) return res.status(404).json({ message: "Auftrag nicht gefunden oder ohne Firma-Zuweisung." });
 
       // Check if config exists
       const { data: existing } = await supabase
@@ -5874,6 +5932,7 @@ export async function registerRoutes(
 
       const payload = {
         auftrag_id: id,
+        tenant_id: tenantId,
         risiko_gewinn_prozent: Number(b.risiko_gewinn_prozent) ?? 10,
         rabatt_prozent: Number(b.rabatt_prozent) ?? 0,
         skonto_prozent: Number(b.skonto_prozent) ?? 0,
@@ -6827,7 +6886,9 @@ export async function registerRoutes(
   });
   app.post("/api/kalkulation/:auftragsId/hilfsmaterial", async (req, res) => {
     const { auftragsId } = req.params;
-    const { data, error } = await supabase.from("vorkalkulation_hilfsmaterial").insert({ ...req.body, auftrag_id: auftragsId }).select().single();
+    const tenantId = await getAuftragTenantId(auftragsId);
+    if (!tenantId) return res.status(404).json({ message: "Auftrag nicht gefunden oder ohne Firma-Zuweisung." });
+    const { data, error } = await supabase.from("vorkalkulation_hilfsmaterial").insert({ ...req.body, auftrag_id: auftragsId, tenant_id: tenantId }).select().single();
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
   });
@@ -6853,7 +6914,9 @@ export async function registerRoutes(
   });
   app.post("/api/kalkulation/:auftragsId/hauptmaterial-flaeche", async (req, res) => {
     const { auftragsId } = req.params;
-    const { data, error } = await supabase.from("vorkalkulation_hauptmaterial_flaeche").insert({ ...req.body, auftrag_id: auftragsId }).select().single();
+    const tenantId = await getAuftragTenantId(auftragsId);
+    if (!tenantId) return res.status(404).json({ message: "Auftrag nicht gefunden oder ohne Firma-Zuweisung." });
+    const { data, error } = await supabase.from("vorkalkulation_hauptmaterial_flaeche").insert({ ...req.body, auftrag_id: auftragsId, tenant_id: tenantId }).select().single();
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
   });
@@ -9076,6 +9139,8 @@ export async function registerRoutes(
     try {
       const { id } = req.params;
       const { modus } = req.body; // "merge" | "replace" (default: replace)
+      const tenantId = await getAuftragTenantId(id);
+      if (!tenantId) return res.status(404).json({ message: "Auftrag nicht gefunden oder ohne Firma-Zuweisung." });
 
       // 1. Positionen laden
       const { data: positionen, error: posErr } = await supabase
@@ -9115,6 +9180,7 @@ export async function registerRoutes(
         const row = {
           id: uid(),
           auftrag_id: id,
+          tenant_id: tenantId,
           pos: p.position,
           profil: p.bezeichnung,
           bemerkung: p.beschreibung || "",
@@ -9135,6 +9201,7 @@ export async function registerRoutes(
         const row = {
           id: uid(),
           auftrag_id: id,
+          tenant_id: tenantId,
           bezeichnung: p.bezeichnung,
           anzahl: p.menge,
           einheit: p.einheit,
@@ -9178,6 +9245,7 @@ export async function registerRoutes(
         const { error } = await supabase.from("vorkalkulation_stunden").insert({
           id: uid(),
           auftrag_id: id,
+          tenant_id: tenantId,
           ort: b.ort,
           maschinenpark: b.maschinenpark,
           bereich: b.bereich,
