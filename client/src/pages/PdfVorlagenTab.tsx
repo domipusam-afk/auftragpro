@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useBranding } from "@/lib/branding";
 import { useToast } from "@/hooks/use-toast";
 import { FileText, Upload, X, Save, Eye } from "lucide-react";
 
@@ -84,7 +85,7 @@ const WATERMARK_POSITIONS = [
   { value: "full", label: "Ganzes Blatt" },
 ];
 
-const DEFAULT_VORLAGE = (doc_typ: string): PdfVorlage => ({
+const DEFAULT_VORLAGE = (doc_typ: string, firmenname = "AuftragsPro"): PdfVorlage => ({
   doc_typ,
   design: "A",
   slogan: "Qualität & Verlässlichkeit",
@@ -94,7 +95,7 @@ const DEFAULT_VORLAGE = (doc_typ: string): PdfVorlage => ({
   zahlungsfrist: "30",
   mahngebuehr: "30.00",
   einleitung: "Sehr geehrte Damen und Herren,\n\nvielen Dank für Ihr Vertrauen.",
-  schluss: "Wir freuen uns auf Ihre Rückmeldung.\n\nMit freundlichen Grüssen\nSchneggenburger GmbH",
+  schluss: `Wir freuen uns auf Ihre Rückmeldung.\n\nMit freundlichen Grüssen\n${firmenname}`,
   fusstext: "",
   show_contact: true,
   show_page_num: true,
@@ -376,6 +377,7 @@ function DesignCard({ id, title, description, selected, onClick, previewContent 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function PdfVorlagenTab() {
+  const branding = useBranding();
   const { toast } = useToast();
 
   const [activeDoc, setActiveDoc] = useState<string>("offerte");
@@ -394,7 +396,7 @@ export default function PdfVorlagenTab() {
 
   const [vorlagen, setVorlagen] = useState<Record<string, PdfVorlage>>(() => {
     const init: Record<string, PdfVorlage> = {};
-    DOC_TYPES.forEach(({ key }) => { init[key] = DEFAULT_VORLAGE(key); });
+    DOC_TYPES.forEach(({ key }) => { init[key] = DEFAULT_VORLAGE(key, branding.firmenname); });
     return init;
   });
 
@@ -416,14 +418,14 @@ export default function PdfVorlagenTab() {
     setVorlagen((prev) => {
       const next = { ...prev };
       fetchedVorlagen.forEach((v) => {
-        if (v.doc_typ) next[v.doc_typ] = { ...DEFAULT_VORLAGE(v.doc_typ), ...v };
+        if (v.doc_typ) next[v.doc_typ] = { ...DEFAULT_VORLAGE(v.doc_typ, branding.firmenname), ...v };
       });
       return next;
     });
     setSavedVorlagen((prev) => {
       const next = { ...prev };
       fetchedVorlagen.forEach((v) => {
-        if (v.doc_typ) next[v.doc_typ] = { ...DEFAULT_VORLAGE(v.doc_typ), ...v };
+        if (v.doc_typ) next[v.doc_typ] = { ...DEFAULT_VORLAGE(v.doc_typ, branding.firmenname), ...v };
       });
       return next;
     });
@@ -446,7 +448,7 @@ export default function PdfVorlagenTab() {
     },
   });
 
-  const vorlage = vorlagen[activeDoc] ?? DEFAULT_VORLAGE(activeDoc);
+  const vorlage = vorlagen[activeDoc] ?? DEFAULT_VORLAGE(activeDoc, branding.firmenname);
 
   const updateVorlage = useCallback((updates: Partial<PdfVorlage>) => {
     setVorlagen((prev) => ({
@@ -593,7 +595,7 @@ export default function PdfVorlagenTab() {
       previewContent: (
         <div style={{ padding: "4px 6px", height: "100%", display: "flex", flexDirection: "column", background: "white" }}>
           <div style={{ borderTop: `2px solid ${vorlage.header_color}`, paddingTop: 3 }}>
-            <div style={{ fontSize: 6.5, color: "#333", fontWeight: 600 }}>Schneggenburger GmbH</div>
+            <div style={{ fontSize: 6.5, color: "#333", fontWeight: 600 }}>{branding.firmenname}</div>
             <div style={{ fontSize: 5.5, color: "#888" }}>Hefenhoferstr. 7 · 8580 Sommeri</div>
           </div>
           <div style={{ margin: "3px 0", borderBottom: "0.5px solid #ddd" }} />

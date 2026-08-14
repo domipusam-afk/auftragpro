@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { useBranding } from "@/lib/branding";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +26,7 @@ const QUARTAL_LABELS: Record<string, string> = {
 };
 
 export default function MwstAuswertung() {
+  const branding = useBranding();
   const currentYear = new Date().getFullYear();
   const currentQ = String(Math.floor(new Date().getMonth() / 3) + 1);
 
@@ -44,7 +46,7 @@ export default function MwstAuswertung() {
   const handlePdfExport = () => {
     if (!data) return;
     const lines = [
-      `MWST-Abrechnung Schneggenburger GmbH`,
+      `MWST-Abrechnung ${branding.firmenname}`,
       `Quartal: ${QUARTAL_LABELS[quartal]} ${jahr}`,
       `Zeitraum: ${data.von} bis ${data.bis}`,
       `MWST-Satz: ${data.mwstSatz}%`,

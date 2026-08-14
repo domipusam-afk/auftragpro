@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useBranding } from "@/lib/branding";
 import { cn } from "@/lib/utils";
 import type { Rechnung, Auftrag } from "@shared/schema";
 import { rechnungBruttoBetrag } from "@shared/schema";
@@ -67,6 +68,7 @@ function statusBadge(r: Rechnung) {
 }
 
 export default function Rechnungen() {
+  const branding = useBranding();
   const { confirm: confirmDel, ConfirmDialog: RechnungConfirmDialog } = useConfirm();
   const { toast } = useToast();
   const [exportZeitraum, setExportZeitraum] = useState("jahr");
@@ -455,7 +457,7 @@ export default function Rechnungen() {
 erbeiliegend senden wir Ihnen Ihre Rechnung ${r.nr} über CHF ${rechnungBruttoBetrag(r.betrag).toFixed(2)}.
 
 Freundliche Grüsse
-Schneggenburger GmbH`,
+${branding.firmenname}`,
                               refId: r.id,
                             })}
                           >

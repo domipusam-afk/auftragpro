@@ -26,31 +26,13 @@ import { getDefaultTenantId } from "./tenant-context";
 import { berechneAuftragIstKosten, ladeFinanzenUebersichtZeilen, stundensatzFuer, zurichKalenderjahr } from "./deckungsbeitrag";
 import { berechneAuftragVorkalkulation } from "./vorkalkulation";
 
-// Robust logo path resolution: works in both ESM (dev) and CJS (production build)
-function getLogoPath(): string {
-  // Try __dirname first (CJS / compiled output)
-  if (typeof __dirname !== "undefined") {
-    const p1 = path.join(__dirname, "schneggenburger-logo.jpg");
-    if (fs.existsSync(p1)) return p1;
-  }
-  // Try import.meta.url (ESM dev)
-  try {
-    const metaUrl = import.meta?.url;
-    if (metaUrl) {
-      const p2 = path.join(path.dirname(fileURLToPath(metaUrl)), "schneggenburger-logo.jpg");
-      if (fs.existsSync(p2)) return p2;
-    }
-  } catch {}
-  // Fallback: search common locations relative to cwd
-  const candidates = [
-    path.join(process.cwd(), "server", "schneggenburger-logo.jpg"),
-    path.join(process.cwd(), "dist", "schneggenburger-logo.jpg"),
-    path.join(process.cwd(), "schneggenburger-logo.jpg"),
-  ];
-  for (const c of candidates) {
-    if (fs.existsSync(c)) return c;
-  }
-  return candidates[0]; // best guess
+// Tenant logos are stored as data URLs in the tenant-scoped settings table.
+// Only image data URLs are decoded for native PDF rendering; hosted URLs are used by
+// HTML PDFs directly and deliberately never fetched server-side.
+function logoBytesFromDataUrl(value: string | null | undefined): Uint8Array | null {
+  if (!value || !/^data:image\/(?:png|jpe?g);base64,/i.test(value)) return null;
+  const encoded = value.slice(value.indexOf(",") + 1);
+  try { return new Uint8Array(Buffer.from(encoded, "base64")); } catch { return null; }
 }
 
 function getFuhrwerkPath(): string {
@@ -287,6 +269,28 @@ export async function registerRoutes(
     ...Array.from(SENSITIVE_SETTING_KEYS),
     "smtp_host", "smtp_port", "smtp_user", "smtp_ssl", "smtp_von",
   ]);
+  // Branding is readable within the tenant so the whole UI can render it, but only
+  // administrators may change it via the regular settings endpoint.
+  const BRANDING_SETTING_KEYS = new Set<string>([
+    "firmenname", "firmenlogo", "farbe_primaer", "produktname",
+  ]);
+
+  async function ladeTenantEinstellungen(identity: DashboardPreferenceIdentity): Promise<Array<{ schluessel: string; wert: string | null }>> {
+    const { data, error } = await identity.client
+      .from("einstellungen")
+      .select("schluessel,wert")
+      .eq("tenant_id", identity.tenantId);
+    if (error) throw error;
+    return (data || []) as Array<{ schluessel: string; wert: string | null }> ;
+  }
+
+  function einstellungenMap(rows: Array<{ schluessel: string; wert: string | null }>): Record<string, string> {
+    return Object.fromEntries(rows.map((row) => [row.schluessel, row.wert || ""]));
+  }
+
+  function firmennameAusSettings(settings: Record<string, string>): string {
+    return settings.firmenname?.trim() || "AuftragsPro";
+  }
   const PUBLIC_SETTING_KEYS = new Set<string>([
     "login_hintergrund",
   ]);
@@ -1008,10 +1012,15 @@ export async function registerRoutes(
 
   // Aktuellen MWST-Satz aus den Einstellungen lesen (Default 8.1%, falls nicht gesetzt).
   // Zentrale Stelle, damit der Satz nirgends mehr hardcodiert ist.
-  const ladeMwstSatz = async (): Promise<number> => {
-    const { data: settingsArr } = await supabase.from("einstellungen").select("schluessel,wert").eq("schluessel", "mwst_satz");
-    const wert = settingsArr?.[0]?.wert;
-    return parseFloat(wert || "8.1");
+  const ladeMwstSatz = async (identity: DashboardPreferenceIdentity): Promise<number> => {
+    const { data: settingsArr, error } = await identity.client
+      .from("einstellungen")
+      .select("wert")
+      .eq("tenant_id", identity.tenantId)
+      .eq("schluessel", "mwst_satz")
+      .maybeSingle();
+    if (error) throw error;
+    return parseFloat(settingsArr?.wert || "8.1");
   };
 
   // Rechnungsbetrag und Zahlungsstatus je Auftrag direkt aus der Tabelle "rechnungen"
@@ -1061,7 +1070,7 @@ export async function registerRoutes(
       const [{ data, error }, rechnungsStatus, mwstSatz] = await Promise.all([
         identity.client.from("auftraege").select("*").eq("tenant_id", identity.tenantId).order("erstellt", { ascending: false }),
         rechnungsStatusJeAuftrag(identity),
-        ladeMwstSatz(),
+        ladeMwstSatz(identity),
       ]);
       if (error) throw error;
       res.json((data || []).map((a: any) => mitRechnungsStatus(a, rechnungsStatus, mwstSatz)));
@@ -1173,7 +1182,7 @@ export async function registerRoutes(
         .eq("tenant_id", identity.tenantId)
         .order("datum", { ascending: false });
       res.json({
-        ...mitRechnungsStatus(auftrag, await rechnungsStatusJeAuftrag(identity, [id]), await ladeMwstSatz()),
+        ...mitRechnungsStatus(auftrag, await rechnungsStatusJeAuftrag(identity, [id]), await ladeMwstSatz(identity)),
         verlauf: verlauf || [],
         notizen: notizen || [],
         dokumente: dokumente || [],
@@ -1620,7 +1629,7 @@ export async function registerRoutes(
     // von "Rechnung über 0.00" unterscheidbar und die Liste zeigt 0.00 statt "—".
     const bruttoSumme = (alleRechnungen || []).length === 0
       ? null
-      : Math.round(nettoSumme * (1 + (await ladeMwstSatz()) / 100) * 100) / 100;
+      : Math.round(nettoSumme * (1 + (identity ? await ladeMwstSatz(identity) / 100 : 0.081)) * 100) / 100;
     let auftragQuery = client
       .from("auftraege")
       .update({ rechnungs_betrag: bruttoSumme })
@@ -1748,6 +1757,8 @@ export async function registerRoutes(
     firmaTel: string;
     firmaEmail: string;
     firmaUid?: string;
+    firmenlogo?: string;
+    farbePrimaer?: string;
     positionen: any[];
     subtotal: number;
     rabattPct?: number;
@@ -1799,11 +1810,11 @@ export async function registerRoutes(
         console.log(`[PDF] Logo-Fallback aus Offerte-Vorlage verwendet für doc_typ=${docTyp}`);
       }
     }
-    const hc  = v.header_color   || "#6b4c2a";
+    const hc  = v.header_color   || data.farbePrimaer || "#44546a";
     const fc  = v.footer_color   || "#1a3a6b";
     const design     = v.design       || "A";
     const logoScale  = v.logo_scale   || 100;
-    const logoUrl    = v.logo_data_url || null;
+    const logoUrl    = v.logo_data_url || data.firmenlogo || null;
     const slogan     = v.slogan       || "Ihr Partner für Metallbau & Schreinerei";
     const logoPos    = v.logo_pos     || "links";
     // Freie Logo-Positionierung im Header (0-100%, ersetzt Links/Rechts-Umschalter).
@@ -2645,13 +2656,13 @@ export async function registerRoutes(
         const iidNum = parseInt(ibanClean.substring(4, 9));
         const isQrIban = iidNum >= 30000 && iidNum <= 31999;
 
-        function genQrRef(nr: string): string {
+        const genQrRef = (nr: string): string => {
           const digits = nr.replace(/\D/g, "").padStart(26, "0").slice(0, 26);
           const table = [0,9,4,6,8,2,7,1,3,5];
           let carry = 0;
           for (const d of digits) carry = table[(carry + parseInt(d)) % 10];
           return digits + ((10 - carry) % 10);
-        }
+        };
 
         const qrRef = isQrIban ? genQrRef(rechnungsNr) : undefined;
 
@@ -2660,7 +2671,7 @@ export async function registerRoutes(
           amount: totalInkl,
           creditor: {
             account: ibanClean,
-            name: sMap.firmenname || "Schneggenburger GmbH",
+            name: firmennameAusSettings(sMap),
             address: sMap.adresse || "Hefenhoferstrasse 7",
             zip: firmaPlz,
             city: firmaOrt,
@@ -2689,7 +2700,7 @@ export async function registerRoutes(
       }
     }
 
-    const firmaName = sMap.firmenname || "Schneggenburger GmbH";
+    const firmaName = firmennameAusSettings(sMap);
     const firmaAdr  = sMap.adresse    || "Hefenhoferstrasse 7";
     const ibanFormatted = ibanClean.replace(/(.{4})/g, "$1 ").trim();
 
@@ -2763,9 +2774,7 @@ export async function registerRoutes(
       }
 
       // Firmendaten
-      const { data: settingsArr } = await supabase.from("einstellungen").select("schluessel,wert");
-      const sMap: Record<string, string> = {};
-      for (const s of (settingsArr || [])) sMap[s.schluessel] = s.wert;
+      const sMap = einstellungenMap(await ladeTenantEinstellungen(identity));
 
       // Kundenadresse Priorität: 1) Offerte 2) Kundendatenbank 3) Auftrag
       const kundeName = quelleOfferte?.empfaenger_name || auftrag?.kunde || rechnung.kunde_name || "";
@@ -2830,7 +2839,9 @@ export async function registerRoutes(
         empfaenger,
         empfaengerStrasse: empStrasse,
         empfaengerPlzOrt: empPlzOrt,
-        firma:        sMap.firmenname || "Schneggenburger GmbH",
+        firma:        firmennameAusSettings(sMap),
+        firmenlogo:   sMap.firmenlogo || "",
+        farbePrimaer: sMap.farbe_primaer || "#44546a",
         firmaAdresse: sMap.adresse    || "Hefenhoferstrasse 7",
         firmaPlzOrt:  sMap.plz_ort   || "8580 Sommeri",
         firmaTel:     sMap.telefon   || "071 411 16 87",
@@ -3037,7 +3048,7 @@ export async function registerRoutes(
       if (error) throw error;
 
       // Auftraege für Kundennamen laden
-      const auftragIds = [...new Set((rechnungen || []).map((r: any) => r.auftrag_id).filter(Boolean))];
+      const auftragIds = Array.from(new Set((rechnungen || []).map((r: any) => r.auftrag_id).filter(Boolean)));
       let auftraegeMap: Record<string, any> = {};
       if (auftragIds.length > 0) {
         const auftraegeQuery = supabase.from("auftraege").select("id,nr,titel,kunde").in("id", auftragIds);
@@ -3049,6 +3060,10 @@ export async function registerRoutes(
       }
 
       const mwstSatz = MWST_SATZ_RECHNUNG;
+      const exportSettingsRows = tenantId
+        ? await supabase.from("einstellungen").select("schluessel,wert").eq("tenant_id", tenantId)
+        : { data: [] as Array<{ schluessel: string; wert: string | null }> };
+      const sMap = einstellungenMap(exportSettingsRows.data || []);
 
       // Banana Buchhaltung Format:
       // Datum (DD.MM.YYYY) ; BelegNr ; Beschreibung ; Konto ; Gegenkonto ; Betrag Netto CHF ; MwSt-Satz % ; MwSt-Betrag CHF ; Betrag Brutto CHF
@@ -3059,7 +3074,7 @@ export async function registerRoutes(
       const csvLines: string[] = [];
 
       // Header-Info (Kommentarzeilen für Banana)
-      csvLines.push(`Buchhaltungsexport Schneggenburger GmbH`);
+      csvLines.push(`Buchhaltungsexport ${firmennameAusSettings(sMap)}`);
       csvLines.push(`Zeitraum: ${datumVon} bis ${datumBis}`);
       csvLines.push(`Exportiert am: ${new Date().toLocaleDateString("de-CH")}`);
       csvLines.push(``);
@@ -4152,7 +4167,7 @@ export async function registerRoutes(
       const identity = dashboardPreferenceIdentity(req);
       if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       const key = req.params.key;
-      if (ADMIN_ONLY_SETTING_KEYS.has(key) && !isAdminIdentity(identity)) {
+      if ((ADMIN_ONLY_SETTING_KEYS.has(key) || BRANDING_SETTING_KEYS.has(key)) && !isAdminIdentity(identity)) {
         return res.status(403).json({ message: "Nur Administratoren." });
       }
       const { wert } = req.body ?? {};
@@ -4763,9 +4778,7 @@ export async function registerRoutes(
         }
       }
 
-      const { data: settingsArr } = await supabase.from("einstellungen").select("schluessel,wert");
-      const sMap: Record<string, string> = {};
-      for (const s of (settingsArr || [])) sMap[s.schluessel] = s.wert;
+      const sMap = einstellungenMap(await ladeTenantEinstellungen(identity));
 
       const positionen: any[] = rechnung?.positionen && Array.isArray(rechnung.positionen) ? rechnung.positionen : [];
       const subtotal   = positionen.reduce((s: number, p: any) => s + Number(p.total ?? (Number(p.menge||0)*Number(p.einzelpreis||0))), 0);
@@ -4793,7 +4806,9 @@ export async function registerRoutes(
           const sp = splitAdresse(rawStrasse);
           return { empfaengerStrasse: sp.strasse, empfaengerPlzOrt: sp.plzOrt };
         })(),
-        firma:        sMap.firmenname || "Schneggenburger GmbH",
+        firma:        firmennameAusSettings(sMap),
+        firmenlogo:   sMap.firmenlogo || "",
+        farbePrimaer: sMap.farbe_primaer || "#44546a",
         firmaAdresse: sMap.adresse    || "Hefenhoferstrasse 7",
         firmaPlzOrt:  sMap.plz_ort   || "8580 Sommeri",
         firmaTel:     sMap.telefon   || "071 411 16 87",
@@ -5197,9 +5212,7 @@ export async function registerRoutes(
         : { data: null };
       const { ansprechpersonIntern: bodyIntern, ansprechpersonExtern: bodyExtern } = req.body || {};
 
-      const { data: settingsArr } = await supabase.from("einstellungen").select("schluessel,wert");
-      const sMap: Record<string, string> = {};
-      for (const s of (settingsArr || [])) sMap[s.schluessel] = s.wert;
+      const sMap = einstellungenMap(await ladeTenantEinstellungen(identity));
 
       const positionen: any[] = Array.isArray(offerte.positionen) ? offerte.positionen : [];
       const subtotal     = positionen.reduce((s: number, p: any) => s + Number(p.total ?? (Number(p.menge||0)*Number(p.einzelpreis||0))), 0);
@@ -5233,7 +5246,9 @@ export async function registerRoutes(
         empfaenger: (offerte.empfaenger_name || offerte.anrede || "").replace(/  +/g, " ").trim(),
         empfaengerStrasse: (() => { const s = splitAdresse(offerte.empfaenger_strasse || ""); return offerte.empfaenger_plz_ort ? (offerte.empfaenger_strasse || "") : s.strasse; })(),
         empfaengerPlzOrt: offerte.empfaenger_plz_ort || splitAdresse(offerte.empfaenger_strasse || "").plzOrt,
-        firma:        sMap.firmenname || "Schneggenburger GmbH",
+        firma:        firmennameAusSettings(sMap),
+        firmenlogo:   sMap.firmenlogo || "",
+        farbePrimaer: sMap.farbe_primaer || "#44546a",
         firmaAdresse: sMap.adresse    || "Hefenhoferstrasse 7",
         firmaPlzOrt:  sMap.plz_ort   || "8580 Sommeri",
         firmaTel:     sMap.telefon   || "071 411 16 87",
@@ -5270,9 +5285,7 @@ export async function registerRoutes(
         ? await supabase.from("auftraege").select("*").eq("id", offerte.auftrag_id).single()
         : { data: null };
 
-      const { data: settingsArr } = await supabase.from("einstellungen").select("schluessel,wert");
-      const sMap: Record<string, string> = {};
-      for (const s of (settingsArr || [])) sMap[s.schluessel] = s.wert;
+      const sMap = einstellungenMap(await ladeTenantEinstellungen(identity));
 
       const positionen: any[] = Array.isArray(offerte.positionen) ? offerte.positionen : (typeof offerte.positionen === "string" ? JSON.parse(offerte.positionen) : []);
       const subtotal     = positionen.reduce((s: number, p: any) => s + Number(p.total ?? (Number(p.menge||0)*Number(p.einzelpreis||0))), 0);
@@ -5306,7 +5319,9 @@ export async function registerRoutes(
         empfaenger: (offerte.empfaenger_name || offerte.anrede || offerte.kunde || "").replace(/  +/g, " ").trim(),
         empfaengerStrasse: (() => { const s = splitAdresse(offerte.empfaenger_strasse || ""); return offerte.empfaenger_plz_ort ? (offerte.empfaenger_strasse || "") : s.strasse; })(),
         empfaengerPlzOrt: offerte.empfaenger_plz_ort || splitAdresse(offerte.empfaenger_strasse || "").plzOrt,
-        firma:        sMap.firmenname || "Schneggenburger GmbH",
+        firma:        firmennameAusSettings(sMap),
+        firmenlogo:   sMap.firmenlogo || "",
+        farbePrimaer: sMap.farbe_primaer || "#44546a",
         firmaAdresse: sMap.adresse    || "Hefenhoferstrasse 7",
         firmaPlzOrt:  sMap.plz_ort   || "8580 Sommeri",
         firmaTel:     sMap.telefon   || "071 411 16 87",
@@ -5338,6 +5353,8 @@ export async function registerRoutes(
 
   app.post("/api/lohnabrechnung/pdf", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       const { mitarbeiter_name, monat, jahr, stundenansatz, inkl_dreizehnter, dreizehnter_ml, abzuege_total, nettolohn } = req.body;
       if (!mitarbeiter_name || !monat || !jahr)
         return res.status(400).json({ message: "Mitarbeiter, Monat und Jahr erforderlich" });
@@ -5348,14 +5365,13 @@ export async function registerRoutes(
 
       const { data: eintraege, error } = await supabase
         .from("zeiteintraege").select("*")
+        .eq("tenant_id", identity.tenantId)
         .eq("mitarbeiter", mitarbeiter_name)
         .gte("datum", startDt).lte("datum", endDt)
         .order("datum", { ascending: true });
       if (error) throw error;
 
-      const { data: settingsArr } = await supabase.from("einstellungen").select("schluessel,wert");
-      const sMap: Record<string, string> = {};
-      for (const s of (settingsArr || [])) sMap[s.schluessel] = s.wert;
+      const sMap = einstellungenMap(await ladeTenantEinstellungen(identity));
 
       const rows: any[] = eintraege || [];
       const totalMin   = rows.reduce((s: number, r: any) => s + (r.dauer_minuten || 0), 0);
@@ -5412,7 +5428,9 @@ export async function registerRoutes(
         empfaenger: mitarbeiter_name,
         empfaengerStrasse: "",
         empfaengerPlzOrt: "",
-        firma:        sMap.firmenname || "Schneggenburger GmbH",
+        firma:        firmennameAusSettings(sMap),
+        firmenlogo:   sMap.firmenlogo || "",
+        farbePrimaer: sMap.farbe_primaer || "#44546a",
         firmaAdresse: sMap.adresse    || "Hefenhoferstrasse 7",
         firmaPlzOrt:  sMap.plz_ort   || "8580 Sommeri",
         firmaTel:     sMap.telefon   || "071 411 16 87",
@@ -5437,11 +5455,11 @@ export async function registerRoutes(
   // ─── Stundenabrechnung PDF (Vorlage aus DB) ─────────────────────────────────
   app.post("/api/stundenabrechnung/pdf", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       const { mitarbeiter_name, monat, jahr, von_datum, bis_datum } = req.body;
 
-      const { data: settingsArr } = await supabase.from("einstellungen").select("schluessel,wert");
-      const sMap: Record<string, string> = {};
-      for (const s of (settingsArr || [])) sMap[s.schluessel] = s.wert;
+      const sMap = einstellungenMap(await ladeTenantEinstellungen(identity));
 
       // Datum-Range bestimmen
       let startDt: string, endDt: string;
@@ -5458,7 +5476,7 @@ export async function registerRoutes(
         endDt   = new Date(now.getFullYear(), now.getMonth()+1, 0).toISOString().slice(0,10);
       }
 
-      let query = supabase.from("zeiteintraege").select("*").gte("datum", startDt).lte("datum", endDt).order("datum", { ascending: true });
+      let query = identity.client.from("zeiteintraege").select("*").eq("tenant_id", identity.tenantId).gte("datum", startDt).lte("datum", endDt).order("datum", { ascending: true });
       if (mitarbeiter_name) query = query.eq("mitarbeiter", mitarbeiter_name);
 
       const { data: eintraege, error } = await query;
@@ -5491,7 +5509,9 @@ export async function registerRoutes(
         empfaenger: mitarbeiter_name || "Alle Mitarbeiter",
         empfaengerStrasse: "",
         empfaengerPlzOrt: "",
-        firma:        sMap.firmenname || "Schneggenburger GmbH",
+        firma:        firmennameAusSettings(sMap),
+        firmenlogo:   sMap.firmenlogo || "",
+        farbePrimaer: sMap.farbe_primaer || "#44546a",
         firmaAdresse: sMap.adresse    || "Hefenhoferstrasse 7",
         firmaPlzOrt:  sMap.plz_ort   || "8580 Sommeri",
         firmaTel:     sMap.telefon   || "071 411 16 87",
@@ -5905,31 +5925,29 @@ export async function registerRoutes(
       if (!auftrag) return res.status(404).json({ message: "Auftrag nicht gefunden" });
 
       // Load Firmendaten
-      const { data: offSettingsArr2 } = await supabase.from("einstellungen").select("schluessel,wert");
-      const offSMap: Record<string, string> = {};
-      for (const s of (offSettingsArr2 || [])) offSMap[s.schluessel] = s.wert;
+      const offSMap = einstellungenMap(await ladeTenantEinstellungen(identity));
 
       // Load PDF-Vorlage (aus Einstellungen)
       const docTyp = typ === "vorkalkulation" ? "vorkalkulation" : "nachkalkulation";
-      const { data: pdfVorlageRaw } = await supabase.from("pdf_vorlagen").select("*").eq("doc_typ", docTyp).single();
+      const { data: pdfVorlageRaw } = await identity.client.from("pdf_vorlagen").select("*").eq("tenant_id", identity.tenantId).eq("doc_typ", docTyp).maybeSingle();
       const pdfVorlage = pdfVorlageRaw || {};
 
       // Load stundensaetze
-      const { data: saetze = [] } = await supabase
+      const { data: saetze = [] } = await identity.client
         .from("stundensaetze")
-        .select("*");
+        .select("*")
+        .eq("tenant_id", identity.tenantId);
 
-      function getOrtSatz(ort: string, maschine: string | null): number {
+      const getOrtSatz = (ort: string, maschine: string | null): number => {
         const match = (saetze as any[]).find((s: any) => {
           if (ort === "Werkstatt") return s.ort === "Werkstatt" && s.maschinenpark === maschine;
           return s.ort === ort && !s.maschinenpark;
         });
         return match ? Number(match.satz) : 0;
-      }
+      };
 
-      // Load logo
-      let logoBytes: Uint8Array | null = null;
-      try { logoBytes = new Uint8Array(fs.readFileSync(getLogoPath())); } catch {}
+      // Tenant logo (data URL) for the native calculation PDF.
+      const logoBytes = logoBytesFromDataUrl(offSMap.firmenlogo);
 
       // PDF Setup
       const pdfDoc = await PDFDocument.create();
@@ -5944,18 +5962,47 @@ export async function registerRoutes(
       const black = rgb(0, 0, 0);
       const grey  = rgb(0.45, 0.45, 0.45);
       // Use colors from pdf_vorlagen if set
-      const hexToRgb = (hex: string) => {
-        const r = parseInt(hex.slice(1,3),16)/255, g=parseInt(hex.slice(3,5),16)/255, b=parseInt(hex.slice(5,7),16)/255;
-        return rgb(r,g,b);
+      const cssColorToRgb = (value: string, fallback = rgb(0.27, 0.33, 0.42)) => {
+        const color = value.trim();
+        const hex = color.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i)?.[1];
+        if (hex) {
+          const normalized = hex.length === 3 ? hex.split("").map((part) => part + part).join("") : hex;
+          return rgb(
+            parseInt(normalized.slice(0, 2), 16) / 255,
+            parseInt(normalized.slice(2, 4), 16) / 255,
+            parseInt(normalized.slice(4, 6), 16) / 255,
+          );
+        }
+
+        const hsl = color.match(/^hsl\(\s*([+-]?\d*\.?\d+)(?:deg)?[\s,]+([+-]?\d*\.?\d+)%[\s,]+([+-]?\d*\.?\d+)%(?:\s*\/\s*[\d.]+%?)?\s*\)$/i);
+        if (!hsl) return fallback;
+        const hue = ((Number(hsl[1]) % 360) + 360) % 360 / 360;
+        const saturation = Math.max(0, Math.min(100, Number(hsl[2]))) / 100;
+        const lightness = Math.max(0, Math.min(100, Number(hsl[3]))) / 100;
+        const hueToRgb = (p: number, q: number, t: number) => {
+          let channel = t;
+          if (channel < 0) channel += 1;
+          if (channel > 1) channel -= 1;
+          if (channel < 1 / 6) return p + (q - p) * 6 * channel;
+          if (channel < 1 / 2) return q;
+          if (channel < 2 / 3) return p + (q - p) * (2 / 3 - channel) * 6;
+          return p;
+        };
+        if (saturation === 0) return rgb(lightness, lightness, lightness);
+        const q = lightness < 0.5 ? lightness * (1 + saturation) : lightness + saturation - lightness * saturation;
+        const p = 2 * lightness - q;
+        return rgb(hueToRgb(p, q, hue + 1 / 3), hueToRgb(p, q, hue), hueToRgb(p, q, hue - 1 / 3));
       };
-      const brown = pdfVorlage.header_color ? hexToRgb(pdfVorlage.header_color) : rgb(0.35, 0.20, 0.10);
+      const brown = pdfVorlage.header_color
+        ? cssColorToRgb(pdfVorlage.header_color)
+        : cssColorToRgb(offSMap.farbe_primaer || "", rgb(0.27, 0.33, 0.42));
       const lgrey = rgb(0.92, 0.92, 0.92);
-      const orange = pdfVorlage.footer_color ? hexToRgb(pdfVorlage.footer_color) : rgb(0.91, 0.38, 0.04);
+      const orange = pdfVorlage.footer_color ? cssColorToRgb(pdfVorlage.footer_color, rgb(0.91, 0.38, 0.04)) : rgb(0.91, 0.38, 0.04);
 
       // currentPage state — mutable so checkPageBreak can swap it
-      let currentPageCtx: ReturnType<typeof addPage> | null = null;
+      let currentPageCtx: any = null;
 
-      function addPage() {
+      const addPage = () => {
         const pg = pdfDoc.addPage([W, H]);
         const d = (t: string, x: number, y: number, sz: number, bold: boolean, col: any = black) =>
           pg.drawText(String(t), { x, y, size: sz, font: bold ? fontB : font, color: col });
@@ -5986,7 +6033,7 @@ export async function registerRoutes(
         let curY = H - 55;
         d(`${auftrag.kunde || "-"}`.trim().replace(/  +/g, " "), mL, curY, 8.5, true, grey);
         curY -= 10;
-        d((offSMap.firmenname||"Schneggenburger GmbH")+" | "+(offSMap.adresse||"Hefenhoferstrasse 7")+" | "+(offSMap.plz_ort||"8580 Sommeri"), mL, curY, 7.5, false, rgb(0.6, 0.6, 0.6));
+        d((firmennameAusSettings(offSMap))+" | "+(offSMap.adresse||"Hefenhoferstrasse 7")+" | "+(offSMap.plz_ort||"8580 Sommeri"), mL, curY, 7.5, false, rgb(0.6, 0.6, 0.6));
         curY -= 4;
         ln(mL, curY, W - mR, curY, 0.5, grey);
         curY -= 10;
@@ -5994,18 +6041,18 @@ export async function registerRoutes(
         const ctx = { pg, d, ln, rect, curY: () => curY, setY: (ny: number) => { curY = ny; }, decY: (n: number) => { curY -= n; } };
         currentPageCtx = ctx;
         return ctx;
-      }
+      };
 
       // checkPageBreak: if y < threshold, flush footer on current page and start new page
       // returns new y (top of new page content area)
-      function checkPageBreak(y: number, threshold = 80): number {
+      const checkPageBreak = (y: number, threshold = 80): number => {
         if (y > threshold) return y;
         // Footer on current page
         const curPages = pdfDoc.getPages();
         const lastPg = curPages[curPages.length - 1];
         lastPg.drawRectangle({ x: 0, y: 0, width: W, height: 22, color: brown });
         const wh = rgb(1,1,1);
-        const firmaFull = (offSMap.firmenname||"Schneggenburger GmbH")+" · "+(offSMap.adresse||"Hefenhoferstrasse 7")+" · "+(offSMap.plz_ort||"8580 Sommeri");
+        const firmaFull = (firmennameAusSettings(offSMap))+" · "+(offSMap.adresse||"Hefenhoferstrasse 7")+" · "+(offSMap.plz_ort||"8580 Sommeri");
         lastPg.drawText(firmaFull, { x: mL, y: 7, size: 6.5, font, color: wh });
         const pn = curPages.length;
         const pnStr = `Seite ${pn}`;
@@ -6014,7 +6061,7 @@ export async function registerRoutes(
         // Start new page
         const np = addPage();
         return np.curY();
-      }
+      };
 
       if (isVK) {
         // ─── VORKALKULATION PDF ────────────────────────────────────────────────
@@ -6270,7 +6317,7 @@ export async function registerRoutes(
         const white2 = rgb(1, 1, 1);
         for (const pg2 of pdfDoc.getPages()) {
           pg2.drawRectangle({ x: 0, y: 0, width: W, height: 22, color: brown });
-          const firmaFull = (offSMap.firmenname||"Schneggenburger GmbH")+" · "+(offSMap.adresse||"Hefenhoferstrasse 7")+" · "+(offSMap.plz_ort||"8580 Sommeri")+" · "+(offSMap.telefon||"071 411 16 87");
+          const firmaFull = (firmennameAusSettings(offSMap))+" · "+(offSMap.adresse||"Hefenhoferstrasse 7")+" · "+(offSMap.plz_ort||"8580 Sommeri")+" · "+(offSMap.telefon||"071 411 16 87");
           pg2.drawText(firmaFull, { x: mL, y: 7, size: 6.5, font, color: white2 });
           const totalPages = pdfDoc.getPageCount();
           const pgIdx = pdfDoc.getPages().indexOf(pg2) + 1;
@@ -6361,7 +6408,7 @@ export async function registerRoutes(
         currentPageCtx!.d("Abweichung", cAbwR - abwHdrW, y, 8, true, grey);
         y -= 18; currentPageCtx!.ln(mL, y, W - mR, y, 0.4, grey); y -= 4;
 
-        function siRow(lbl: string, soll: number, ist: number, isCHF: boolean, bold: boolean) {
+        const siRow = (lbl: string, soll: number, ist: number, isCHF: boolean, bold: boolean) => {
           y = checkPageBreak(y);
           const abw = ist - soll;
           const sollStr = isCHF ? fmt(soll) : fmtH(soll * 60);
@@ -6377,7 +6424,7 @@ export async function registerRoutes(
           currentPageCtx!.d(istStr, cIstR - sw2, y, 9, bold);
           currentPageCtx!.d(abwStr, cAbwR - sw3, y, 9, false, col);
           y -= 14;
-        }
+        };
 
         // VK Soll-Stunden as hours
         const vkSollStunden = (vkStunden as any[]).reduce((s, r) => s + Number(r.soll_stunden), 0);
@@ -6456,7 +6503,7 @@ export async function registerRoutes(
           const pg2 = allPages[pi];
           pg2.drawRectangle({ x: 0, y: 0, width: W, height: 22, color: brown });
           const wh2 = rgb(1, 1, 1);
-          const firmaFull2 = (offSMap.firmenname||"Schneggenburger GmbH")+" · "+(offSMap.adresse||"Hefenhoferstrasse 7")+" · "+(offSMap.plz_ort||"8580 Sommeri");
+          const firmaFull2 = (firmennameAusSettings(offSMap))+" · "+(offSMap.adresse||"Hefenhoferstrasse 7")+" · "+(offSMap.plz_ort||"8580 Sommeri");
           pg2.drawText(firmaFull2, { x: mL, y: 7, size: 6.5, font, color: wh2 });
           const pgStr = `Seite ${pi + 1}/${totalPages} | Erstellt: ${new Date().toLocaleDateString("de-CH")}`;
           const pgW = font.widthOfTextAtSize(pgStr, 6.5);
@@ -7241,7 +7288,7 @@ export async function registerRoutes(
         nettoJeAuftrag.set(r.auftrag_id, (nettoJeAuftrag.get(r.auftrag_id) || 0) + (Number(r.betrag) || 0));
         anzahlJeAuftrag.set(r.auftrag_id, (anzahlJeAuftrag.get(r.auftrag_id) || 0) + 1);
       }
-      const mwstFaktor = 1 + (await ladeMwstSatz()) / 100;
+      const mwstFaktor = 1 + (await ladeMwstSatz(identity)) / 100;
 
       const korrigiert: any[] = [];
       const uebersprungen: any[] = [];
@@ -7353,9 +7400,7 @@ export async function registerRoutes(
       const { data: auftrag, error: aErr } = await identity.client.from("auftraege").select("*").eq("id", id).eq("tenant_id", identity.tenantId).maybeSingle();
       if (aErr || !auftrag) throw new Error("Auftrag nicht gefunden");
 
-      const { data: settingsArr } = await supabase.from("einstellungen").select("schluessel,wert");
-      const sMap: Record<string, string> = {};
-      for (const s of (settingsArr || [])) sMap[s.schluessel] = s.wert;
+      const sMap = einstellungenMap(await ladeTenantEinstellungen(identity));
 
       // Positionen laden — zuerst Offerte, dann Rechnung als Fallback (JSONB-Spalten)
       let positionen: any[] = [];
@@ -7409,7 +7454,9 @@ export async function registerRoutes(
         datum: datumStr,
         empfaenger: auftrag.kunde_name || auftrag.kunde || "",
         ...(() => { const s = splitAdresse(auftrag.kunde_adresse || ""); return { empfaengerStrasse: s.strasse, empfaengerPlzOrt: s.plzOrt }; })(),
-        firma:        sMap.firmenname || "Schneggenburger GmbH",
+        firma:        firmennameAusSettings(sMap),
+        firmenlogo:   sMap.firmenlogo || "",
+        farbePrimaer: sMap.farbe_primaer || "#44546a",
         firmaAdresse: sMap.adresse    || "Hefenhoferstrasse 7",
         firmaPlzOrt:  sMap.plz_ort   || "8580 Sommeri",
         firmaTel:     sMap.telefon   || "071 411 16 87",
@@ -7440,9 +7487,7 @@ export async function registerRoutes(
       const { data: auftrag, error: aErr } = await identity.client.from("auftraege").select("*").eq("id", id).eq("tenant_id", identity.tenantId).maybeSingle();
       if (aErr || !auftrag) throw new Error("Auftrag nicht gefunden");
 
-      const { data: settingsArr } = await supabase.from("einstellungen").select("schluessel,wert");
-      const sMap: Record<string, string> = {};
-      for (const s of (settingsArr || [])) sMap[s.schluessel] = s.wert;
+      const sMap = einstellungenMap(await ladeTenantEinstellungen(identity));
 
       // Positionen aus verknüpfter Offerte oder Auftragspositionen
       let positionen: any[] = [];
@@ -7475,7 +7520,9 @@ export async function registerRoutes(
         faelligDatum: lieferDatum,
         empfaenger: auftrag.kunde_name || auftrag.kunde || "",
         ...(() => { const s = splitAdresse(auftrag.kunde_adresse || ""); return { empfaengerStrasse: s.strasse, empfaengerPlzOrt: s.plzOrt }; })(),
-        firma:        sMap.firmenname || "Schneggenburger GmbH",
+        firma:        firmennameAusSettings(sMap),
+        firmenlogo:   sMap.firmenlogo || "",
+        farbePrimaer: sMap.farbe_primaer || "#44546a",
         firmaAdresse: sMap.adresse    || "Hefenhoferstrasse 7",
         firmaPlzOrt:  sMap.plz_ort   || "8580 Sommeri",
         firmaTel:     sMap.telefon   || "071 411 16 87",
@@ -7485,7 +7532,7 @@ export async function registerRoutes(
         subtotal, mwstPct, mwstBetrag, total: totalInkl,
         showTotals: positionen.length > 0,
         einleitung: `Wir best\u00e4tigen Ihnen hiermit den Auftrag ${auftrag.nr || ""} mit folgendem Inhalt:`,
-        schluss: "Wir danken Ihnen fuer Ihren Auftrag und stehen fuer Rueckfragen gerne zur Verfuegung.\n\nFreundliche Gruesse\nSchneggenburger GmbH",
+        schluss: `Wir danken Ihnen fuer Ihren Auftrag und stehen fuer Rueckfragen gerne zur Verfuegung.\n\nFreundliche Gruesse\n${firmennameAusSettings(sMap)}`,
         ansprechpersonIntern: ansprechpersonInternAB,
         kundenNr: await getKundenNr(auftrag.kunde_name || auftrag.kunde || ""),
         anrede: await getKundenAnrede(auftrag.kunde_name || auftrag.kunde || ""),
@@ -7508,6 +7555,7 @@ export async function registerRoutes(
       if (aErr || !auftrag) throw new Error("Auftrag nicht gefunden");
 
       const { data: garantien } = await identity.client.from("garantien").select("*").eq("auftrag_id", id).eq("tenant_id", identity.tenantId);
+      const sMap = einstellungenMap(await ladeTenantEinstellungen(identity));
 
       const pdfDoc = await PDFDocument.create();
       const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
@@ -7525,10 +7573,11 @@ export async function registerRoutes(
 
       let logoImage: any = null;
       try {
-        const logoPath = getLogoPath();
-        if (fs.existsSync(logoPath)) {
-          const logoBytes = fs.readFileSync(logoPath);
-          logoImage = await pdfDoc.embedJpg(logoBytes);
+        const logoBytes = logoBytesFromDataUrl(sMap.firmenlogo);
+        if (logoBytes) {
+          logoImage = /^data:image\/png/i.test(sMap.firmenlogo || "")
+            ? await pdfDoc.embedPng(logoBytes)
+            : await pdfDoc.embedJpg(logoBytes);
         }
       } catch (_) {}
 
@@ -7593,7 +7642,7 @@ export async function registerRoutes(
       page.drawText("Datum / Unterschrift", { x: mL, y, size: 7.5, font, color: grey });
       page.drawText("Datum / Unterschrift", { x: W/2 + 20, y, size: 7.5, font, color: grey });
 
-      page.drawText(`Abnahmeprotokoll ${auftrag.nr || ""} – Schneggenburger GmbH`, { x: mL, y: 25, size: 7.5, font, color: grey });
+      page.drawText(`Abnahmeprotokoll ${auftrag.nr || ""} – ${firmennameAusSettings(sMap)}`, { x: mL, y: 25, size: 7.5, font, color: grey });
       page.drawText(`Erstellt: ${new Date().toLocaleDateString("de-CH")}`, { x: W - mR - 80, y: 25, size: 7.5, font, color: grey });
 
       const bytes = await pdfDoc.save();
@@ -7616,29 +7665,30 @@ export async function registerRoutes(
         .eq("tenant_id", identity.tenantId)
         .order("doc_typ");
       if (error) return res.status(500).json({ message: error.message });
+      const sMap = einstellungenMap(await ladeTenantEinstellungen(identity));
       
       // Falls noch keine Vorlagen existieren, defaults zurückgeben
       const docTypes = ["offerte", "rechnung", "mahnung", "lieferschein", "auftragsbestaetigung", "lohnabrechnung", "stundenabrechnung", "vorkalkulation", "nachkalkulation"];
       const defaultTexts: Record<string, { einleitung: string; schluss: string }> = {
         offerte: {
           einleitung: "Sehr geehrte Damen und Herren\n\nGerne unterbreiten wir Ihnen für die besprochenen Arbeiten folgende Offerte:",
-          schluss: "Diese Offerte ist 30 Tage gültig. Wir freuen uns auf Ihren Auftrag.\n\nFreundliche Grüsse\nSchneggenburger GmbH"
+          schluss: `Diese Offerte ist 30 Tage gültig. Wir freuen uns auf Ihren Auftrag.\n\nFreundliche Grüsse\n${firmennameAusSettings(sMap)}`
         },
         rechnung: {
           einleitung: "Sehr geehrte Damen und Herren\n\nFür die ausgeführten Arbeiten erlauben wir uns, Ihnen folgenden Betrag in Rechnung zu stellen:",
-          schluss: "Wir danken Ihnen für Ihren Auftrag und die termingerechte Zahlung.\n\nFreundliche Grüsse\nSchneggenburger GmbH"
+          schluss: `Wir danken Ihnen für Ihren Auftrag und die termingerechte Zahlung.\n\nFreundliche Grüsse\n${firmennameAusSettings(sMap)}`
         },
         mahnung: {
           einleitung: "Sehr geehrte Damen und Herren\n\nTrotz unserer Rechnung konnten wir bisher keinen Zahlungseingang feststellen. Wir bitten Sie höflich, den offenen Betrag innert 10 Tagen zu begleichen.",
-          schluss: "Sollte sich Ihre Zahlung mit dieser Mahnung gekreuzt haben, betrachten Sie dieses Schreiben bitte als gegenstandslos.\n\nFreundliche Grüsse\nSchneggenburger GmbH"
+          schluss: `Sollte sich Ihre Zahlung mit dieser Mahnung gekreuzt haben, betrachten Sie dieses Schreiben bitte als gegenstandslos.\n\nFreundliche Grüsse\n${firmennameAusSettings(sMap)}`
         },
         lieferschein: {
           einleitung: "Sehr geehrte Damen und Herren\n\nWir liefern Ihnen folgende Positionen gemäss Auftrag:",
-          schluss: "Bitte prüfen Sie die Lieferung und bestätigen Sie den Erhalt mit Ihrer Unterschrift.\n\nFreundliche Grüsse\nSchneggenburger GmbH"
+          schluss: `Bitte prüfen Sie die Lieferung und bestätigen Sie den Erhalt mit Ihrer Unterschrift.\n\nFreundliche Grüsse\n${firmennameAusSettings(sMap)}`
         },
         auftragsbestaetigung: {
           einleitung: "Sehr geehrte Damen und Herren\n\nWir bestätigen Ihnen hiermit den erteilten Auftrag mit folgenden Positionen:",
-          schluss: "Wir freuen uns auf die Zusammenarbeit und werden den Auftrag termingerecht ausführen.\n\nFreundliche Grüsse\nSchneggenburger GmbH"
+          schluss: `Wir freuen uns auf die Zusammenarbeit und werden den Auftrag termingerecht ausführen.\n\nFreundliche Grüsse\n${firmennameAusSettings(sMap)}`
         }
       };
       
@@ -7649,7 +7699,7 @@ export async function registerRoutes(
           doc_typ: dt,
           design: "A",
           slogan: "Ihr Partner für Metallbau & Schreinerei",
-          header_color: "#6b4c2a",
+          header_color: sMap.farbe_primaer || "#44546a",
           footer_color: "#1a3a6b",
           logo_pos: "links",
           zahlungsfrist: dt === "mahnung" ? "10" : "30",
@@ -7658,7 +7708,7 @@ export async function registerRoutes(
           schluss: defaultTexts[dt]?.schluss || "",
           show_contact: true,
           show_page_num: true,
-          logo_data_url: null,
+          logo_data_url: sMap.firmenlogo || null,
           logo_scale: 100,
           logo_offset_x: 100,
           logo_offset_y: 0,
@@ -7754,14 +7804,14 @@ export async function registerRoutes(
   // <iframe> per Object-URL an (kein JPEG-Zwischenschritt mehr).
   app.post("/api/pdf-vorlagen/vorschau", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       const { vorlage, doc_typ = "rechnung" } = req.body as { vorlage: any; doc_typ?: string };
       if (!vorlage) return res.status(400).json({ message: "vorlage fehlt" });
 
       // Firmen-Einstellungen für Musterdaten — SELBE Keys wie bei echter Rechnungs-/Offerten-Erzeugung
       // (firmenname / adresse / plz_ort / telefon / email — NICHT firma_name/firma_adresse/...)
-      const { data: einArr } = await supabase.from("einstellungen").select("schluessel,wert");
-      const sMap: Record<string, string> = {};
-      for (const e of (einArr || [])) sMap[e.schluessel] = e.wert;
+      const sMap = einstellungenMap(await ladeTenantEinstellungen(identity));
 
       // Musterpositionen
       const musterpositionen = [
@@ -7777,7 +7827,7 @@ export async function registerRoutes(
       let total = subtotal + mwstBetrag;
 
       // Firma-Daten aus Einstellungen — identische Keys wie in den echten PDF-Routen
-      const firma       = sMap.firmenname || "Schneggenburger GmbH";
+      const firma       = firmennameAusSettings(sMap);
       const firmaAdr    = sMap.adresse    || "Hefenhoferstrasse 7";
       const firmaPlzOrt = sMap.plz_ort    || "8580 Sommeri";
       const firmaTel    = sMap.telefon    || "071 411 16 87";
@@ -7791,8 +7841,8 @@ export async function registerRoutes(
       // die Original-Vorlage nur lesend, mergen die Vorschau-Overrides rein
       // Arbeitsspeicher und übergeben das Ergebnis direkt an buildPdfHtml.
       // Die Datenbank wird dabei zu keinem Zeitpunkt beschrieben.
-      const { data: originalVorlage } = await supabase
-        .from("pdf_vorlagen").select("*").eq("doc_typ", doc_typ).single();
+      const { data: originalVorlage } = await identity.client
+        .from("pdf_vorlagen").select("*").eq("tenant_id", identity.tenantId).eq("doc_typ", doc_typ).maybeSingle();
 
       const previewVorlage = { ...(originalVorlage || {}), ...vorlage, doc_typ };
 
@@ -7893,7 +7943,8 @@ export async function registerRoutes(
         empfaenger: musterEmpfaenger,
         empfaengerStrasse: musterEmpStrasse,
         empfaengerPlzOrt: musterEmpPlzOrt,
-        firma, firmaAdresse: firmaAdr, firmaPlzOrt, firmaTel, firmaEmail, firmaUid,
+        firma, firmenlogo: sMap.firmenlogo || "", farbePrimaer: sMap.farbe_primaer || "#44546a",
+        firmaAdresse: firmaAdr, firmaPlzOrt, firmaTel, firmaEmail, firmaUid,
         positionen: musterpositionen,
         subtotal,
         mwstPct,
@@ -8249,6 +8300,8 @@ export async function registerRoutes(
   // ─── MWST-AUSWERTUNG ─────────────────────────────────────────────────────────
   app.get("/api/mwst/auswertung", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       const { jahr, quartal } = req.query as Record<string, string>;
       const y = parseInt(jahr) || new Date().getFullYear();
       const q = parseInt(quartal) || Math.floor(new Date().getMonth() / 3) + 1;
@@ -8258,31 +8311,31 @@ export async function registerRoutes(
       const von = vonDate.toISOString().slice(0, 10);
       const bis = bisDate.toISOString().slice(0, 10);
 
-      const { data: settingsArr } = await supabase.from("einstellungen").select("schluessel,wert");
-      const sMap: Record<string, string> = {};
-      for (const s of (settingsArr || [])) sMap[s.schluessel] = s.wert;
+      const sMap = einstellungenMap(await ladeTenantEinstellungen(identity));
       const mwstSatz = parseFloat(sMap.mwst_satz || "8.1");
 
       // Ausgangsrechnungen — nur bezahlte (vereinnahmte Entgelte)
-      const { data: ausgang } = await supabase
+      const { data: ausgang } = await identity.client
         .from("rechnungen")
         .select("nr,betrag,bezahlt_am,auftrag_id")
+        .eq("tenant_id", identity.tenantId)
         .not("bezahlt_am", "is", null)
         .gte("bezahlt_am", von)
         .lte("bezahlt_am", bis)
         .order("bezahlt_am");
 
-      const auftragIds = [...new Set((ausgang || []).map((r: any) => r.auftrag_id).filter(Boolean))];
+      const auftragIds = Array.from(new Set((ausgang || []).map((r: any) => r.auftrag_id).filter(Boolean)));
       let auftraegeMap: Record<string, any> = {};
       if (auftragIds.length > 0) {
-        const { data: auftraege } = await supabase.from("auftraege").select("id,nr,kunde").in("id", auftragIds);
+        const { data: auftraege } = await identity.client.from("auftraege").select("id,nr,kunde").eq("tenant_id", identity.tenantId).in("id", auftragIds);
         for (const a of (auftraege || [])) auftraegeMap[a.id] = a;
       }
 
       // Eingangsrechnungen — alle im Quartal (Vorsteuer nach Belegdatum)
-      const { data: eingang } = await supabase
+      const { data: eingang } = await identity.client
         .from("eingangsrechnungen")
         .select("nr,betrag,datum,lieferant,mwst_betrag,mwst_prozent,status")
+        .eq("tenant_id", identity.tenantId)
         .gte("datum", von)
         .lte("datum", bis)
         .order("datum");
@@ -8604,6 +8657,7 @@ export async function registerRoutes(
           backup[tabelle] = [];
         }
       }
+      const sMap = einstellungenMap(await ladeTenantEinstellungen(identity));
       const now = new Date().toISOString().slice(0, 10);
       res.setHeader("Content-Type", "application/json");
       res.setHeader("Content-Disposition", `attachment; filename="auftragspro-backup-${now}.json"`);
@@ -8611,7 +8665,7 @@ export async function registerRoutes(
         erstellt_am: new Date().toISOString(),
         version: "1.1",
         tenant_id: identity.tenantId,
-        firma: "Schneggenburger GmbH",
+        firma: firmennameAusSettings(sMap),
         daten: backup,
       });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -8652,8 +8706,26 @@ export async function registerRoutes(
         }
       }
       const schritteMitFotos = (schritte || []).map((s: any) => ({ ...s, fotos: fotosMap[s.id] || [] }));
+      const { data: brandingRows } = await supabase
+        .from("einstellungen")
+        .select("schluessel,wert")
+        .eq("tenant_id", data.tenant_id)
+        .in("schluessel", ["firmenname", "firmenlogo", "farbe_primaer", "produktname", "adresse", "plz_ort", "telefon"]);
+      const brandingSettings = einstellungenMap((brandingRows || []) as Array<{ schluessel: string; wert: string | null }>);
       const { tenant_id: _tenantId, ...publicAuftrag } = data;
-      res.json({ ...publicAuftrag, schritte: schritteMitFotos });
+      res.json({
+        ...publicAuftrag,
+        schritte: schritteMitFotos,
+        branding: {
+          firmenname: firmennameAusSettings(brandingSettings),
+          firmenlogo: brandingSettings.firmenlogo || "",
+          farbe_primaer: brandingSettings.farbe_primaer || "#44546a",
+          produktname: brandingSettings.produktname || "AuftragsPro",
+          adresse: brandingSettings.adresse || "",
+          plz_ort: brandingSettings.plz_ort || "",
+          telefon: brandingSettings.telefon || "",
+        },
+      });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 

@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Trash, Mail, FileDown, ArrowRight, CheckCircle2 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useBranding } from "@/lib/branding";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirm } from "@/hooks/use-confirm";
 import type { Offerte, OffertePosition, Auftrag } from "@shared/schema";
@@ -28,6 +29,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default function Offerten() {
+  const branding = useBranding();
   const { confirm: confirmDel, ConfirmDialog: OffertConfirmDialog } = useConfirm();
   const { toast } = useToast();
   const [emailModal, setEmailModal] = useState<{ open: boolean; to: string; subject: string; body: string; refId: string } | null>(null);
@@ -230,7 +232,7 @@ export default function Offerten() {
 erbeiliegend senden wir Ihnen unsere Offerte ${o.nr}.
 
 Freundliche Grüsse
-Schneggenburger GmbH`,
+${branding.firmenname}`,
                             refId: o.id,
                           });
                         }}

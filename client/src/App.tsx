@@ -8,6 +8,7 @@ import NotFound from "@/pages/not-found";
 import Layout from "@/components/Layout";
 import { ThemeProvider } from "@/lib/theme";
 import { AuthProvider, useAuth } from "@/lib/auth";
+import { BrandingProvider } from "@/lib/branding";
 import { useState } from "react";
 import { useIdleTimer } from "@/hooks/use-idle-timer";
 import { IdleWarningDialog } from "@/components/IdleWarningDialog";
@@ -82,8 +83,8 @@ function AppRouter() {
       <Route path="/auftraege/:id/kalkulation">{() => <Geschuetzt modul="kalkulation_vorkalkulation" label="Kalkulation"><Vorkalkulation /></Geschuetzt>}</Route>
       <Route path="/eingangsrechnungen">{() => <Geschuetzt modul="finanzmanagement_eingangsrechnungen" label="Eingangsrechnungen"><Eingangsrechnungen /></Geschuetzt>}</Route>
       <Route path="/nachkalkulation">{() => <Geschuetzt modul="kalkulation_nachkalkulation" label="Nachkalkulation"><NachkalkulationUebersicht /></Geschuetzt>}</Route>
-      <Route path="/vorkalkulation/:id">{(p) => <Geschuetzt modul="kalkulation_vorkalkulation" label="Vorkalkulation"><VorkalkulationDetail {...p} /></Geschuetzt>}</Route>
-      <Route path="/nachkalkulation/:id">{(p) => <Geschuetzt modul="kalkulation_nachkalkulation" label="Nachkalkulation"><NachkalkulationDetail {...p} /></Geschuetzt>}</Route>
+      <Route path="/vorkalkulation/:id">{() => <Geschuetzt modul="kalkulation_vorkalkulation" label="Vorkalkulation"><VorkalkulationDetail /></Geschuetzt>}</Route>
+      <Route path="/nachkalkulation/:id">{() => <Geschuetzt modul="kalkulation_nachkalkulation" label="Nachkalkulation"><NachkalkulationDetail /></Geschuetzt>}</Route>
       <Route path="/mitarbeiter">{() => <Geschuetzt modul="ressourcen_mitarbeiterakte" label="Mitarbeiterakte"><Mitarbeiterakte /></Geschuetzt>}</Route>
       <Route path="/termine">{() => <Geschuetzt modul="ressourcen_planung_termine" label="Planung & Termine"><Termine /></Geschuetzt>}</Route>
       <Route path="/kalender">{() => <Geschuetzt modul="ressourcen_kalender" label="Kalender"><Kalender /></Geschuetzt>}</Route>
@@ -166,10 +167,12 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <AuthProvider>
-          <TooltipProvider>
-            <Toaster />
-            <AuthGuard />
-          </TooltipProvider>
+          <BrandingProvider>
+            <TooltipProvider>
+              <Toaster />
+              <AuthGuard />
+            </TooltipProvider>
+          </BrandingProvider>
         </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>

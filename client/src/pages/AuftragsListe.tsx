@@ -157,7 +157,7 @@ export default function AuftragsListe() {
       return true;
     })
     // Neueste zuerst
-    .sort((a, b) => new Date(b.erstellt).getTime() - new Date(a.erstellt).getTime());
+    .sort((a, b) => new Date(b.erstellt || 0).getTime() - new Date(a.erstellt || 0).getTime());
 
   // Status-Filter-Optionen: nur aktive Status anzeigen (abgeschlossen im Archiv)
   const activeStatusOptions = STATUS_ORDER.filter((s) => !DONE_STATUSES.includes(s));

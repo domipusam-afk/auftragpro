@@ -38,6 +38,15 @@ function formatDate(d: string): string {
 }
 
 const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
+const NEUTRALES_BRANDING = {
+  firmenname: "AuftragsPro",
+  firmenlogo: "",
+  farbe_primaer: "#44546a",
+  produktname: "AuftragsPro",
+  adresse: "",
+  plz_ort: "",
+  telefon: "",
+};
 
 export default function ProjektStatus({ token }: { token: string }) {
   const { data, isLoading, isError, error } = useQuery<any, any>({
@@ -62,21 +71,22 @@ export default function ProjektStatus({ token }: { token: string }) {
 
   const statusCfg = data ? (STATUS_MAP[data.status] || { label: data.status, color: "bg-gray-100 text-gray-600", icon: Clock }) : null;
   const schritte: any[] = data?.schritte || [];
+  const branding = { ...NEUTRALES_BRANDING, ...(data?.branding || {}) };
   const total = schritte.length;
   const erledigt = schritte.filter((s: any) => s.status === "erledigt").length;
   const fortschritt = total > 0 ? Math.round((erledigt / total) * 100) : 0;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#f5f0e8] to-[#e8e0d0] flex items-start justify-center p-4 py-8">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-start justify-center p-4 py-8">
       <div className="w-full max-w-lg">
         {/* Header */}
         <div className="text-center mb-6">
           <div className="flex items-center justify-center gap-3 mb-3">
-            <div className="h-12 w-12 rounded-xl bg-[#6b4c2a] flex items-center justify-center">
-              <Hammer className="h-7 w-7 text-white" />
+            <div className="h-12 w-12 rounded-xl flex items-center justify-center overflow-hidden" style={{ background: branding.farbe_primaer }}>
+              {branding.firmenlogo ? <img src={branding.firmenlogo} alt="" className="h-full w-full object-contain" /> : <Hammer className="h-7 w-7 text-white" />}
             </div>
           </div>
-          <h1 className="text-xl font-bold text-[#6b4c2a]">Schneggenburger GmbH</h1>
+          <h1 className="text-xl font-bold" style={{ color: branding.farbe_primaer }}>{branding.firmenname}</h1>
           <p className="text-sm text-gray-500">Projektstatus-Übersicht</p>
         </div>
 
@@ -98,8 +108,7 @@ export default function ProjektStatus({ token }: { token: string }) {
                 {abgelaufenDatum ? <> (<span className="font-medium">{formatDate(abgelaufenDatum)}</span>)</> : ""}.
               </p>
               <p className="text-xs text-muted-foreground mt-3">
-                Bei Fragen wenden Sie sich bitte direkt an Schneggenburger GmbH.<br />
-                Tel: 071 411 16 87
+                Bei Fragen wenden Sie sich bitte direkt an den ausführenden Betrieb.
               </p>
             </div>
           ) : isError || !data ? (
@@ -115,7 +124,7 @@ export default function ProjektStatus({ token }: { token: string }) {
               {/* Auftragsnummer + Titel */}
               <div>
                 <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">Auftragsnummer</p>
-                <p className="font-mono font-bold text-lg text-[#6b4c2a]">{normalizeNr(data.nr || "")}</p>
+                <p className="font-mono font-bold text-lg" style={{ color: branding.farbe_primaer }}>{normalizeNr(data.nr || "")}</p>
               </div>
 
               <div>
@@ -145,12 +154,12 @@ export default function ProjektStatus({ token }: { token: string }) {
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Fortschritt</p>
-                    <span className="text-sm font-semibold text-[#6b4c2a]">{fortschritt}%</span>
+                    <span className="text-sm font-semibold" style={{ color: branding.farbe_primaer }}>{fortschritt}%</span>
                   </div>
                   <div className="h-2.5 bg-gray-200 rounded-full overflow-hidden">
                     <div
                       className="h-full rounded-full transition-all duration-700"
-                      style={{ width: `${fortschritt}%`, background: "linear-gradient(90deg, #8b6234, #6b4c2a)" }}
+                      style={{ width: `${fortschritt}%`, background: branding.farbe_primaer }}
                     />
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">{erledigt} von {total} Schritten abgeschlossen</p>
@@ -212,10 +221,10 @@ export default function ProjektStatus({ token }: { token: string }) {
 
               {/* Kunden-Nachricht */}
               {data.kunden_nachricht && (
-                <div className="bg-[#6b4c2a]/8 border border-[#6b4c2a]/20 rounded-xl p-4">
+                <div className="rounded-xl p-4" style={{ background: `${branding.farbe_primaer}14`, border: `1px solid ${branding.farbe_primaer}33` }}>
                   <div className="flex items-center gap-2 mb-2">
-                    <MessageSquare className="h-4 w-4 text-[#6b4c2a]" />
-                    <p className="text-xs font-semibold text-[#6b4c2a] uppercase tracking-wider">Mitteilung</p>
+                    <MessageSquare className="h-4 w-4" style={{ color: branding.farbe_primaer }} />
+                    <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: branding.farbe_primaer }}>Mitteilung</p>
                   </div>
                   <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">{data.kunden_nachricht}</p>
                 </div>
@@ -233,7 +242,7 @@ export default function ProjektStatus({ token }: { token: string }) {
                   {data.end_datum && (
                     <div>
                       <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">Voraussichtliche Fertigstellung</p>
-                      <p className="text-sm font-semibold text-[#6b4c2a]">{formatDate(data.end_datum)}</p>
+                      <p className="text-sm font-semibold" style={{ color: branding.farbe_primaer }}>{formatDate(data.end_datum)}</p>
                     </div>
                   )}
                 </div>
@@ -241,8 +250,10 @@ export default function ProjektStatus({ token }: { token: string }) {
 
               <div className="border-t pt-4">
                 <p className="text-xs text-center text-muted-foreground">
-                  Schneggenburger GmbH · Hefenhoferstrasse 7 · 8580 Sommeri<br />
-                  Tel: 071 411 16 87
+                  {branding.firmenname}
+                  {branding.adresse && <> · {branding.adresse}</>}
+                  {branding.plz_ort && <> · {branding.plz_ort}</>}
+                  {branding.telefon && <><br />Tel: {branding.telefon}</>}
                 </p>
               </div>
             </div>

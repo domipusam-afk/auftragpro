@@ -80,11 +80,10 @@ function AllgemeinTab({ settings }: { settings: EinstellungMap }) {
   const save = useSaveEinstellung();
 
   const [felder, setFelder] = useState({
-    firmenname:   settings.firmenname   || "Schneggenburger GmbH",
-    adresse:      settings.adresse      || "Hefenhoferstrasse 7",
-    plz_ort:      settings.plz_ort      || "8580 Sommeri",
-    telefon:      settings.telefon      || "071 411 16 87",
-    email:        settings.email        || "info@schneggenburger.ch",
+    adresse:      settings.adresse      || "",
+    plz_ort:      settings.plz_ort      || "",
+    telefon:      settings.telefon      || "",
+    email:        settings.email        || "",
     mwst_satz:    settings.mwst_satz    || "8.1",
     uid_nummer:   settings.uid_nummer   || "",
     bank_iban:    settings.bank_iban    || "",
@@ -97,18 +96,17 @@ function AllgemeinTab({ settings }: { settings: EinstellungMap }) {
   useEffect(() => {
     if (Object.keys(settings).length === 0) return;
     setFelder({
-      firmenname:   settings.firmenname   || "Schneggenburger GmbH",
-      adresse:      settings.adresse      || "Hefenhoferstrasse 7",
-      plz_ort:      settings.plz_ort      || "8580 Sommeri",
-      telefon:      settings.telefon      || "071 411 16 87",
-      email:        settings.email        || "info@schneggenburger.ch",
+      adresse:      settings.adresse      || "",
+      plz_ort:      settings.plz_ort      || "",
+      telefon:      settings.telefon      || "",
+      email:        settings.email        || "",
       mwst_satz:    settings.mwst_satz    || "8.1",
       uid_nummer:   settings.uid_nummer   || "",
       bank_iban:    settings.bank_iban    || "",
       bank_name:    settings.bank_name    || "",
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.firmenname, settings.adresse, settings.plz_ort, settings.telefon, settings.email, settings.mwst_satz, settings.uid_nummer, settings.bank_iban, settings.bank_name]);
+  }, [settings.adresse, settings.plz_ort, settings.telefon, settings.email, settings.mwst_satz, settings.uid_nummer, settings.bank_iban, settings.bank_name]);
 
   function handleChange(field: keyof typeof felder, val: string) {
     setFelder((p) => ({ ...p, [field]: val }));
@@ -147,7 +145,6 @@ function AllgemeinTab({ settings }: { settings: EinstellungMap }) {
           <h2 className="font-semibold" style={{ fontFamily: "var(--font-display)" }}>Firmendaten</h2>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {field("Firmenname", "firmenname", "Musterfirma GmbH")}
           {field("Adresse", "adresse", "Musterstrasse 1")}
           {field("PLZ / Ort", "plz_ort", "8000 Zürich")}
           {field("Telefon", "telefon", "071 000 00 00", "tel", <Phone className="h-4 w-4" />)}
@@ -174,6 +171,187 @@ function AllgemeinTab({ settings }: { settings: EinstellungMap }) {
         </div>
       </Card>
     </div>
+  );
+}
+
+// ─── Tab: Firmen-Branding ─────────────────────────────────────────────────────
+
+function FirmenBrandingTab({ settings }: { settings: EinstellungMap }) {
+  const { isAdmin } = useAuth();
+  const { toast } = useToast();
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const [felder, setFelder] = useState({
+    firmenname: settings.firmenname || "AuftragsPro",
+    produktname: settings.produktname || "AuftragsPro",
+    farbe_primaer: settings.farbe_primaer || "#44546a",
+    firmenlogo: settings.firmenlogo || "",
+  });
+
+  useEffect(() => {
+    if (Object.keys(settings).length === 0) return;
+    setFelder({
+      firmenname: settings.firmenname || "AuftragsPro",
+      produktname: settings.produktname || "AuftragsPro",
+      farbe_primaer: settings.farbe_primaer || "#44546a",
+      firmenlogo: settings.firmenlogo || "",
+    });
+  }, [settings.firmenname, settings.produktname, settings.farbe_primaer, settings.firmenlogo]);
+
+  const saveMut = useMutation({
+    mutationFn: async () => {
+      await Promise.all(
+        (Object.entries(felder) as [string, string][]).map(([key, wert]) =>
+          apiRequest("PUT", `/api/einstellungen/${key}`, { wert }),
+        ),
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/einstellungen"] });
+      toast({ title: "Firmen-Branding gespeichert ✓", description: "Logo, Name und Primärfarbe wurden aktualisiert." });
+    },
+    onError: () => toast({ title: "Fehler beim Speichern", variant: "destructive" }),
+  });
+
+  function setField(field: keyof typeof felder, value: string) {
+    setFelder((current) => ({ ...current, [field]: value }));
+  }
+
+  function handleLogoFile(file: File | undefined) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast({ title: "Bitte eine Bilddatei auswählen.", variant: "destructive" });
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: "Das Logo darf maximal 5 MB gross sein.", variant: "destructive" });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setField("firmenlogo", typeof reader.result === "string" ? reader.result : "");
+    reader.onerror = () => toast({ title: "Logo konnte nicht gelesen werden.", variant: "destructive" });
+    reader.readAsDataURL(file);
+  }
+
+  const validHex = /^#[0-9a-fA-F]{6}$/.test(felder.farbe_primaer);
+
+  return (
+    <Card className="p-6 bg-card">
+      <div className="flex items-start gap-3 mb-5">
+        <div className="h-10 w-10 shrink-0 rounded-lg flex items-center justify-center text-white" style={{ background: felder.farbe_primaer || "#44546a" }}>
+          <Building2 className="h-5 w-5" />
+        </div>
+        <div>
+          <h2 className="font-semibold" style={{ fontFamily: "var(--font-display)" }}>Firmen-Branding</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Dieses Branding wird nur für den aktuellen Mandanten angezeigt und in Dokumenten verwendet.
+          </p>
+        </div>
+      </div>
+
+      {!isAdmin ? (
+        <div className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2 font-medium text-foreground">
+            <Lock className="h-4 w-4" /> Nur Administratoren können das Firmen-Branding ändern.
+          </div>
+          <p className="mt-1">Aktuell: {felder.firmenname}</p>
+        </div>
+      ) : (
+        <div className="space-y-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Firmenname</Label>
+              <Input
+                value={felder.firmenname}
+                onChange={(event) => setField("firmenname", event.target.value)}
+                placeholder="Muster Sanitär & Heizung AG"
+                data-testid="input-branding-firmenname"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Produktname</Label>
+              <Input
+                value={felder.produktname}
+                onChange={(event) => setField("produktname", event.target.value)}
+                placeholder="AuftragsPro"
+                data-testid="input-branding-produktname"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">Firmenlogo</Label>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="h-20 w-20 rounded-lg border bg-muted/40 flex items-center justify-center overflow-hidden shrink-0">
+                {felder.firmenlogo ? (
+                  <img src={felder.firmenlogo} alt="Logo-Vorschau" className="h-full w-full object-contain" />
+                ) : (
+                  <Image className="h-7 w-7 text-muted-foreground" />
+                )}
+              </div>
+              <div className="flex-1 space-y-2">
+                <Input
+                  value={felder.firmenlogo}
+                  onChange={(event) => setField("firmenlogo", event.target.value)}
+                  placeholder="https://… oder Logo hochladen"
+                  data-testid="input-branding-logo-url"
+                />
+                <div className="flex flex-wrap gap-2">
+                  <input
+                    ref={logoInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(event) => handleLogoFile(event.target.files?.[0])}
+                  />
+                  <Button type="button" variant="outline" size="sm" onClick={() => logoInputRef.current?.click()} data-testid="button-upload-branding-logo">
+                    <Upload className="h-4 w-4 mr-1.5" /> Logo hochladen
+                  </Button>
+                  {felder.firmenlogo && (
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setField("firmenlogo", "")}>
+                      <X className="h-4 w-4 mr-1.5" /> Entfernen
+                    </Button>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">PNG, JPG, SVG oder WebP; Uploads werden als Daten-URL gespeichert (max. 5 MB).</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">Primärfarbe</Label>
+            <div className="flex items-center gap-2 max-w-sm">
+              <input
+                type="color"
+                value={validHex ? felder.farbe_primaer : "#44546a"}
+                onChange={(event) => setField("farbe_primaer", event.target.value)}
+                className="h-10 w-12 rounded border bg-background p-1 cursor-pointer"
+                aria-label="Primärfarbe auswählen"
+              />
+              <Input
+                value={felder.farbe_primaer}
+                onChange={(event) => setField("farbe_primaer", event.target.value)}
+                placeholder="#44546a oder hsl(…)"
+                data-testid="input-branding-farbe-primaer"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">Wird für Sidebar und Akzente verwendet. Hex oder HSL sind möglich.</p>
+          </div>
+
+          <div className="pt-4 border-t">
+            <Button
+              onClick={() => saveMut.mutate()}
+              disabled={saveMut.isPending || !felder.firmenname.trim()}
+              className="text-white"
+              style={{ background: felder.farbe_primaer || "#44546a" }}
+              data-testid="button-save-branding"
+            >
+              <Save className="h-4 w-4 mr-2" />
+              {saveMut.isPending ? "Speichert…" : "Firmen-Branding speichern"}
+            </Button>
+          </div>
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -1494,6 +1672,10 @@ export default function Einstellungen() {
             <Building2 className="h-4 w-4 shrink-0" />
             <span>Allgemein</span>
           </TabsTrigger>
+          <TabsTrigger value="branding" className="flex flex-col sm:flex-row items-center gap-1 text-xs p-2 sm:px-3 sm:py-1.5 h-auto">
+            <Image className="h-4 w-4 shrink-0" />
+            <span>Branding</span>
+          </TabsTrigger>
           <TabsTrigger value="arbeitszeit" className="flex flex-col sm:flex-row items-center gap-1 text-xs p-2 sm:px-3 sm:py-1.5 h-auto">
             <Clock className="h-4 w-4 shrink-0" />
             <span>Arbeitszeit</span>
@@ -1530,6 +1712,10 @@ export default function Einstellungen() {
 
         <TabsContent value="allgemein">
           <AllgemeinTab settings={settings} />
+        </TabsContent>
+
+        <TabsContent value="branding">
+          <FirmenBrandingTab settings={settings} />
         </TabsContent>
 
         <TabsContent value="arbeitszeit">
