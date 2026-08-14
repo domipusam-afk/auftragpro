@@ -210,11 +210,13 @@ function berechneGueltigBis(datum: string | null | undefined, gueltigkeit: strin
 // Setzt offene Offerten, deren Gültigkeit überschritten ist, automatisch auf
 // Status "abgelaufen". Wird beim Start und danach periodisch aufgerufen
 // (siehe server/index.ts) sowie einmalig bei jedem Aufruf von GET /api/offerten.
-export async function markiereAbgelaufeneOfferten(): Promise<number> {
-  const { data: offene, error } = await supabase
+export async function markiereAbgelaufeneOfferten(tenantId?: string): Promise<number> {
+  let offeneQuery = supabase
     .from("offerten")
     .select("id,datum,gueltigkeit")
     .eq("status", "offen");
+  if (tenantId) offeneQuery = offeneQuery.eq("tenant_id", tenantId);
+  const { data: offene, error } = await offeneQuery;
   if (error || !offene || offene.length === 0) return 0;
   const heute = new Date();
   const abgelaufeneIds: string[] = [];
@@ -225,7 +227,9 @@ export async function markiereAbgelaufeneOfferten(): Promise<number> {
     }
   }
   if (abgelaufeneIds.length === 0) return 0;
-  const { error: updErr } = await supabase.from("offerten").update({ status: "abgelaufen" }).in("id", abgelaufeneIds);
+  let updateQuery = supabase.from("offerten").update({ status: "abgelaufen" }).in("id", abgelaufeneIds);
+  if (tenantId) updateQuery = updateQuery.eq("tenant_id", tenantId);
+  const { error: updErr } = await updateQuery;
   if (updErr) return 0;
   return abgelaufeneIds.length;
 }
@@ -2851,13 +2855,13 @@ export async function registerRoutes(
 
   app.get("/api/rechnungen", async (req, res) => {
     try {
-      const tenantId = (req as any).tenantId as string | undefined;
-      let query = supabase
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { data, error } = await identity.client
         .from("rechnungen")
         .select("*")
+        .eq("tenant_id", identity.tenantId)
         .order("erstellt", { ascending: false });
-      if (tenantId) query = query.eq("tenant_id", tenantId);
-      const { data, error } = await query;
       if (error) throw error;
       res.json(data || []);
     } catch (e) {
@@ -2868,13 +2872,16 @@ export async function registerRoutes(
   // PATCH /api/rechnungen/:id — Zahlungsstatus setzen (bezahlt / offen)
   app.patch("/api/rechnungen/:id", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       const { id } = req.params;
       const { bezahlt_am } = req.body;
       // Existenz-Check
-      const { data: existing, error: existErr } = await supabase
+      const { data: existing, error: existErr } = await identity.client
         .from("rechnungen")
         .select("id")
         .eq("id", id)
+        .eq("tenant_id", identity.tenantId)
         .maybeSingle();
       if (existErr) throw existErr;
       if (!existing) return res.status(404).json({ message: "Rechnung nicht gefunden" });
@@ -2893,10 +2900,11 @@ export async function registerRoutes(
         }
         updates.bezahlt_am = bezahlt_am;
       }
-      const { data, error } = await supabase
+      const { data, error } = await identity.client
         .from("rechnungen")
         .update(updates)
         .eq("id", id)
+        .eq("tenant_id", identity.tenantId)
         .select()
         .single();
       if (error) throw error;
@@ -2908,11 +2916,23 @@ export async function registerRoutes(
 
   app.delete("/api/rechnungen/:id", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       const { id } = req.params;
-      const { data: existingR } = await supabase.from("rechnungen").select("auftrag_id").eq("id", id).maybeSingle();
-      const { error } = await supabase.from("rechnungen").delete().eq("id", id);
+      const { data: existingR } = await identity.client
+        .from("rechnungen")
+        .select("auftrag_id")
+        .eq("id", id)
+        .eq("tenant_id", identity.tenantId)
+        .maybeSingle();
+      if (!existingR) return res.status(404).json({ message: "Rechnung nicht gefunden." });
+      const { error } = await identity.client
+        .from("rechnungen")
+        .delete()
+        .eq("id", id)
+        .eq("tenant_id", identity.tenantId);
       if (error) throw error;
-      if (existingR?.auftrag_id) await syncRechnungsBetrag(existingR.auftrag_id);
+      if (existingR.auftrag_id) await syncRechnungsBetrag(existingR.auftrag_id, identity);
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
@@ -4627,11 +4647,14 @@ export async function registerRoutes(
   });
 
   // ─── Mahnwesen ───────────────────────────────────────────────────────────────
-  app.get("/api/mahnungen", async (_req, res) => {
+  app.get("/api/mahnungen", async (req, res) => {
     try {
-      const { data, error } = await supabase
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { data, error } = await identity.client
         .from("mahnungen")
         .select("*")
+        .eq("tenant_id", identity.tenantId)
         .order("erstellt", { ascending: false });
       if (error) throw error;
       // Map new DB fields (stufe/faellig_bis) to legacy frontend fields (mahnstufe/faellig_datum)
@@ -4646,9 +4669,15 @@ export async function registerRoutes(
 
   app.post("/api/mahnungen", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       const { auftrag_id, mahnstufe, betrag, faellig_datum, notiz } = req.body;
+      if (!(await auftragGehoertZuTenant(identity, auftrag_id))) {
+        return res.status(404).json({ message: "Auftrag nicht gefunden." });
+      }
       // Mahnungsnummer: M + YY + 4-stellig, z.B. M260001
-      const { data: allMahnNr } = await supabase.from("mahnungen").select("nr");
+      const { data: allMahnNr } = await identity.client
+        .from("mahnungen").select("nr").eq("tenant_id", identity.tenantId);
       const mahnNrYY = String(new Date().getFullYear()).slice(2);
       const mahnPrefix = "M" + mahnNrYY;
       const mahnMax = (allMahnNr || []).reduce((max: number, m: any) => {
@@ -4668,8 +4697,9 @@ export async function registerRoutes(
         notiz: notiz || "",
         status: "offen",
         erstellt: new Date().toISOString(),
+        tenant_id: identity.tenantId,
       };
-      const { data, error } = await supabase.from("mahnungen").insert(eintrag).select().single();
+      const { data, error } = await identity.client.from("mahnungen").insert(eintrag).select().single();
       if (error) throw error;
       res.json(data);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -4677,19 +4707,26 @@ export async function registerRoutes(
 
   app.patch("/api/mahnungen/:id", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       const updates: any = {};
       if (req.body.status) updates.status = req.body.status;
       if (req.body.status === "bezahlt") updates.bezahlt_datum = new Date().toISOString().slice(0, 10);
       if (req.body.status === "gesendet") updates.gesendet_datum = new Date().toISOString().slice(0, 10);
-      const { data, error } = await supabase.from("mahnungen").update(updates).eq("id", req.params.id).select().single();
+      const { data, error } = await identity.client
+        .from("mahnungen").update(updates).eq("id", req.params.id).eq("tenant_id", identity.tenantId).select().maybeSingle();
       if (error) throw error;
+      if (!data) return res.status(404).json({ message: "Mahnung nicht gefunden." });
       res.json(data);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
   app.delete("/api/mahnungen/:id", async (req, res) => {
     try {
-      const { error } = await supabase.from("mahnungen").delete().eq("id", req.params.id);
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { error } = await identity.client
+        .from("mahnungen").delete().eq("id", req.params.id).eq("tenant_id", identity.tenantId);
       if (error) throw error;
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
@@ -4882,10 +4919,12 @@ export async function registerRoutes(
   // laufen der aus der Vorkalkulation geschätzte Preis und der tatsächlich offerierte
   // Betrag auseinander. Ohne Offerte bleibt der Wert unangetastet (Vorkalkulation bzw.
   // manuelle Eingabe). Wer eine Offerte anlegt, ändert oder löscht, MUSS das hier aufrufen.
-  async function syncAngebotsBetrag(auftragId: string) {
+  async function syncAngebotsBetrag(auftragId: string, identity?: DashboardPreferenceIdentity) {
     if (!auftragId) return;
-    const { data: offerten, error } = await supabase
-      .from("offerten").select("*").eq("auftrag_id", auftragId);
+    const client = identity?.client || supabase;
+    let offertenQuery = client.from("offerten").select("*").eq("auftrag_id", auftragId);
+    if (identity) offertenQuery = offertenQuery.eq("tenant_id", identity.tenantId);
+    const { data: offerten, error } = await offertenQuery;
     if (error) throw error;
     if (!offerten || offerten.length === 0) return;
 
@@ -4898,30 +4937,40 @@ export async function registerRoutes(
     const massgeblich = neueste(angenommen) || neueste(offen) || neueste(offerten);
 
     const brutto = offerteBrutto(massgeblich);
-    const { error: schreibFehler } = await supabase
-      .from("auftraege").update({ angebots_betrag: brutto }).eq("id", auftragId);
+    let auftragQuery = client.from("auftraege").update({ angebots_betrag: brutto }).eq("id", auftragId);
+    if (identity) auftragQuery = auftragQuery.eq("tenant_id", identity.tenantId);
+    const { error: schreibFehler } = await auftragQuery;
     if (schreibFehler) throw schreibFehler;
     return brutto;
   }
 
   app.get("/api/auftraege/:auftr_id/offerten", async (req, res) => {
     try {
-      const { data, error } = await supabase
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      if (!(await auftragGehoertZuTenant(identity, req.params.auftr_id))) {
+        return res.status(404).json({ message: "Auftrag nicht gefunden." });
+      }
+      const { data, error } = await identity.client
         .from("offerten")
         .select("*")
         .eq("auftrag_id", req.params.auftr_id)
+        .eq("tenant_id", identity.tenantId)
         .order("erstellt", { ascending: false });
       if (error) throw error;
       res.json(data || []);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
-  app.get("/api/offerten", async (_req, res) => {
+  app.get("/api/offerten", async (req, res) => {
     try {
-      await markiereAbgelaufeneOfferten();
-      const { data, error } = await supabase
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      await markiereAbgelaufeneOfferten(identity.tenantId);
+      const { data, error } = await identity.client
         .from("offerten")
         .select("*")
+        .eq("tenant_id", identity.tenantId)
         .order("erstellt", { ascending: false });
       if (error) throw error;
       res.json(data || []);
@@ -4930,6 +4979,11 @@ export async function registerRoutes(
 
   app.post("/api/auftraege/:auftr_id/offerten", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      if (!(await auftragGehoertZuTenant(identity, req.params.auftr_id))) {
+        return res.status(404).json({ message: "Auftrag nicht gefunden." });
+      }
       const _pos = Array.isArray(req.body?.positionen) ? req.body.positionen : [];
       const _hatGueltigePos = _pos.some((p: any) => String(p?.titel || "").trim() !== "" && Number(p?.einzelpreis) > 0);
       if (!String(req.body?.empfaenger_name || "").trim()) {
@@ -4938,7 +4992,7 @@ export async function registerRoutes(
       if (!_hatGueltigePos) {
         return res.status(400).json({ message: "Mindestens eine Position mit Titel und Preis > 0 ist erforderlich." });
       }
-      const { data: allRows } = await supabase.from("offerten").select("nr");
+      const { data: allRows } = await identity.client.from("offerten").select("nr").eq("tenant_id", identity.tenantId);
       // Format: O + YY + 4-stellig laufend, z.B. O260001
       const yy = String(new Date().getFullYear()).slice(2);
       const prefix = "O" + yy;
@@ -4975,35 +5029,45 @@ export async function registerRoutes(
         schluss_text: body.schluss_text || null,
         datum: body.datum || new Date().toISOString().slice(0, 10),
         status: "offen",
+        tenant_id: identity.tenantId,
       };
-      const { data, error } = await supabase.from("offerten").insert(eintrag).select().single();
+      const { data, error } = await identity.client.from("offerten").insert(eintrag).select().single();
       if (error) throw error;
-      await syncAngebotsBetrag(req.params.auftr_id);
+      await syncAngebotsBetrag(req.params.auftr_id, identity);
       res.json(data);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
   app.patch("/api/offerten/:id", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
       const allowed = ["ansprechpartner","telefon","email","anrede","empfaenger_name",
         "empfaenger_strasse","empfaenger_plz_ort","projekt_beschreibung","intro_text",
         "positionen","rabatt_prozent","mwst_prozent","liefertermin","zahlungsbedingungen",
         "gueltigkeit","schluss_text","datum","status"];
       const upd: any = {};
       for (const f of allowed) if (f in req.body) upd[f] = req.body[f];
-      const { data, error } = await supabase.from("offerten").update(upd).eq("id", req.params.id).select().single();
+      const { data, error } = await identity.client
+        .from("offerten").update(upd).eq("id", req.params.id).eq("tenant_id", identity.tenantId).select().maybeSingle();
       if (error) throw error;
-      await syncAngebotsBetrag(data.auftrag_id);
+      if (!data) return res.status(404).json({ message: "Offerte nicht gefunden." });
+      await syncAngebotsBetrag(data.auftrag_id, identity);
       res.json(data);
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
   app.delete("/api/offerten/:id", async (req, res) => {
     try {
-      const { data: offerte } = await supabase.from("offerten").select("auftrag_id").eq("id", req.params.id).single();
-      const { error } = await supabase.from("offerten").delete().eq("id", req.params.id);
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { data: offerte } = await identity.client
+        .from("offerten").select("auftrag_id").eq("id", req.params.id).eq("tenant_id", identity.tenantId).maybeSingle();
+      if (!offerte) return res.status(404).json({ message: "Offerte nicht gefunden." });
+      const { error } = await identity.client
+        .from("offerten").delete().eq("id", req.params.id).eq("tenant_id", identity.tenantId);
       if (error) throw error;
-      if (offerte?.auftrag_id) await syncAngebotsBetrag(offerte.auftrag_id);
+      if (offerte.auftrag_id) await syncAngebotsBetrag(offerte.auftrag_id, identity);
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
@@ -7867,18 +7931,22 @@ export async function registerRoutes(
   // ─── OFFERTE → AUFTRAG WORKFLOW ───────────────────────────────────────────────
   app.post("/api/offerten/:id/zu-auftrag", async (req, res) => {
     try {
-      const { data: offerte, error: oErr } = await supabase
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { data: offerte, error: oErr } = await identity.client
         .from("offerten")
         .select("*")
         .eq("id", req.params.id)
-        .single();
+        .eq("tenant_id", identity.tenantId)
+        .maybeSingle();
       if (oErr || !offerte) return res.status(404).json({ message: "Offerte nicht gefunden" });
 
       // Bestehenden Auftrag laden für Nummernvergabe
-      const { data: auftraege } = await supabase.from("auftraege").select("nr");
+      const { data: auftraege } = await identity.client
+        .from("auftraege").select("nr").eq("tenant_id", identity.tenantId);
       const nr = nextNr("A", auftraege || []);
 
-      const { data: neuerAuftrag, error: aErr } = await supabase.from("auftraege").insert({
+      const { data: neuerAuftrag, error: aErr } = await identity.client.from("auftraege").insert({
         id: uid(),
         nr,
         titel: offerte.projekt_beschreibung || `Auftrag aus Offerte ${offerte.nr}`,
@@ -7888,16 +7956,21 @@ export async function registerRoutes(
         beschreibung: `Automatisch erstellt aus Offerte ${offerte.nr}`,
         adresse: [offerte.empfaenger_strasse, offerte.empfaenger_plz].filter(Boolean).join(", "),
         created_at: new Date().toISOString(),
+        tenant_id: identity.tenantId,
       }).select().single();
 
       if (aErr) return res.status(500).json({ message: aErr.message });
 
       // Offerte mit Auftrag verknüpfen
-      await supabase.from("offerten").update({ auftrag_id: neuerAuftrag.id, status: "angenommen" }).eq("id", req.params.id);
-      await syncAngebotsBetrag(neuerAuftrag.id);
+      await identity.client
+        .from("offerten")
+        .update({ auftrag_id: neuerAuftrag.id, status: "angenommen" })
+        .eq("id", req.params.id)
+        .eq("tenant_id", identity.tenantId);
+      await syncAngebotsBetrag(neuerAuftrag.id, identity);
       // Der frühere Auftrag verliert diese Offerte und braucht deshalb einen neuen Wert.
       if (offerte.auftrag_id && offerte.auftrag_id !== neuerAuftrag.id) {
-        await syncAngebotsBetrag(offerte.auftrag_id);
+        await syncAngebotsBetrag(offerte.auftrag_id, identity);
       }
 
       res.json(neuerAuftrag);
