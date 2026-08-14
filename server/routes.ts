@@ -3699,12 +3699,14 @@ export async function registerRoutes(
     try {
       const identity = dashboardPreferenceIdentity(req);
       if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
-      const { error } = await identity.client
+      const { data, error } = await identity.client
         .from("kunden")
         .delete()
         .eq("id", req.params.id)
-        .eq("tenant_id", identity.tenantId);
+        .eq("tenant_id", identity.tenantId)
+        .select("id");
       if (error) throw error;
+      if (!data || data.length === 0) return res.status(404).json({ message: "Kunde nicht gefunden." });
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
@@ -4731,9 +4733,10 @@ export async function registerRoutes(
     try {
       const identity = dashboardPreferenceIdentity(req);
       if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
-      const { error } = await identity.client
-        .from("mahnungen").delete().eq("id", req.params.id).eq("tenant_id", identity.tenantId);
+      const { data, error } = await identity.client
+        .from("mahnungen").delete().eq("id", req.params.id).eq("tenant_id", identity.tenantId).select("id");
       if (error) throw error;
+      if (!data || data.length === 0) return res.status(404).json({ message: "Mahnung nicht gefunden." });
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
@@ -4914,8 +4917,9 @@ export async function registerRoutes(
     try {
       const identity = dashboardPreferenceIdentity(req);
       if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
-      const { error } = await identity.client.from("eingangsrechnungen").delete().eq("id", req.params.id).eq("tenant_id", identity.tenantId);
+      const { data, error } = await identity.client.from("eingangsrechnungen").delete().eq("id", req.params.id).eq("tenant_id", identity.tenantId).select("id");
       if (error) throw error;
+      if (!data || data.length === 0) return res.status(404).json({ message: "Eingangsrechnung nicht gefunden." });
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
@@ -7333,8 +7337,9 @@ export async function registerRoutes(
     try {
       const identity = dashboardPreferenceIdentity(req);
       if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
-      const { error } = await identity.client.from("garantien").delete().eq("id", req.params.id).eq("tenant_id", identity.tenantId);
+      const { data, error } = await identity.client.from("garantien").delete().eq("id", req.params.id).eq("tenant_id", identity.tenantId).select("id");
       if (error) throw error;
+      if (!data || data.length === 0) return res.status(404).json({ message: "Garantie nicht gefunden." });
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
@@ -8697,12 +8702,14 @@ export async function registerRoutes(
     try {
       const identity = dashboardPreferenceIdentity(req);
       if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
-      const { error } = await identity.client
+      const { data, error } = await identity.client
         .from("auftraege")
         .update({ public_token: null })
         .eq("id", req.params.id)
-        .eq("tenant_id", identity.tenantId);
+        .eq("tenant_id", identity.tenantId)
+        .select("id");
       if (error) throw error;
+      if (!data || data.length === 0) return res.status(404).json({ message: "Auftrag nicht gefunden." });
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
