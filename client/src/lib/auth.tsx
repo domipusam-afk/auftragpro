@@ -1,9 +1,21 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import { apiRequest, API_BASE } from "./queryClient";
+import { apiRequest, API_BASE, queryClient } from "./queryClient";
 import { lsGet, lsSet } from "./storage";
 import { clearAccessToken, onApiUnauthorized, setAccessToken } from "./api-auth";
 import { clearAdminSessionToken } from "./super-admin-api";
 import { hatZugriff as checkZugriff, BerechtigungKey } from "./permissions";
+
+// Sicherheits-Grundregel: Bei JEDEM Wechsel der Identität (Login, Logout,
+// 2FA-Verifikation, 401-Unauthorized) MUSS der React-Query-Cache vollständig
+// entfernt werden. Ohne diesen Reset könnte ein zweiter Nutzer auf demselben
+// Gerät für den Bruchteil der ersten Render-Frames die Daten der vorigen
+// Firma sehen, weil useQuery synchron aus dem Cache liest, bevor der
+// erneute Fetch die neue Antwort liefert. Das ist der Kern des
+// "Benutzer-Wechsel-Bugs" bei Mandanten-Trennung.
+function resetClientCache() {
+  queryClient.cancelQueries();
+  queryClient.clear();
+}
 
 export type Rolle = "admin" | "mitarbeiter";
 
@@ -57,6 +69,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (data.requires2fa) return { ok: true, requires2fa: true, userId: data.userId };
       if (data.session?.access_token) setAccessToken(data.session.access_token);
       else clearAccessToken();
+      // Vor dem Setzen des neuen Users den Cache leeren, damit stale Daten
+      // eines zuvor eingeloggten Benutzers/Mandanten nicht sichtbar werden.
+      resetClientCache();
       setUser(data.user);
       return { ok: true };
     } catch { return { ok: false, message: "Verbindungsfehler" }; }
@@ -72,6 +87,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         lsSet(`ap_vt_${benutzername}`, data.vertrauensToken);
       }
       clearAccessToken();
+      // Nach erfolgreicher 2FA: Cache leeren, um Daten der vorigen Sitzung
+      // (falls jemand vor dem Login noch als anderer User aktiv war) zu
+      // verwerfen.
+      resetClientCache();
       setUser(data.user);
       return { ok: true };
     } catch { return { ok: false, message: "Verbindungsfehler" }; }
@@ -80,12 +99,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     clearAccessToken();
     clearAdminSessionToken();
+    resetClientCache();
     setUser(null);
   };
 
   useEffect(() => onApiUnauthorized(() => {
     clearAccessToken();
     clearAdminSessionToken();
+    resetClientCache();
     setUser(null);
   }), []);
 
