@@ -556,7 +556,7 @@ export default function PdfVorlagenTab() {
         <div style={{ padding: "4px 6px", height: "100%", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
             <div style={{ fontSize: 8, fontWeight: 700, color: vorlage.header_color }}>SG</div>
-            <div style={{ fontSize: 6, color: "#aaa" }}>Schneggenburger</div>
+            <div style={{ fontSize: 6, color: "#aaa" }}>Firma AG</div>
           </div>
           <div style={{ borderTop: "1px solid #ddd", paddingTop: 2 }}>
             <div style={{ fontSize: 7, fontWeight: 300, color: "#555", letterSpacing: 0.5 }}>RECHNUNG</div>

@@ -1136,7 +1136,7 @@ function OffertenTab({ id, auftrag, vorlage, onVorlageUebernommen, preiseSichtba
             </div>
             <div>
               <Label className="text-xs">Ansprechpartner</Label>
-              <Input value={ansprechpartner} onChange={e => setAnsprechpartner(e.target.value)} placeholder="Philipp Schneggenburger" />
+              <Input value={ansprechpartner} onChange={e => setAnsprechpartner(e.target.value)} placeholder="Max Muster" />
             </div>
             <div>
               <Label className="text-xs">Telefon</Label>
