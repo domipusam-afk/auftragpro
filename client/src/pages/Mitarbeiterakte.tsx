@@ -267,7 +267,7 @@ export default function Mitarbeiterakte() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">E-Mail geschäftlich <span className="text-[10px] text-orange-600">(für PDF)</span></Label>
-                <Input type="email" value={form.email_geschaeftlich} onChange={(e) => setForm({ ...form, email_geschaeftlich: e.target.value })} placeholder="name@schneggenburger.ch" />
+                <Input type="email" value={form.email_geschaeftlich} onChange={(e) => setForm({ ...form, email_geschaeftlich: e.target.value })} placeholder="max.muster@meinefirma.ch" />
               </div>
               <div>
                 <Label className="text-xs">Telefon Direkt <span className="text-[10px] text-orange-600">(für PDF)</span></Label>

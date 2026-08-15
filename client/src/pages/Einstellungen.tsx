@@ -779,7 +779,7 @@ function SmtpTab({ settings }: { settings: EinstellungMap }) {
     smtp_port:     settings.smtp_port     || "587",
     smtp_user:     settings.smtp_user     || "",
     smtp_passwort: settings.smtp_passwort || "",
-    smtp_von:      settings.smtp_von      || settings.email || "info@schneggenburger.ch",
+    smtp_von:      settings.smtp_von      || settings.email || "",
     smtp_ssl:      settings.smtp_ssl      || "starttls",
   });
   const [showSmtpPass, setShowSmtpPass] = useState(false);
@@ -820,7 +820,7 @@ function SmtpTab({ settings }: { settings: EinstellungMap }) {
         <div className="space-y-1 sm:col-span-2">
           <Label className="text-xs text-muted-foreground">SMTP Host</Label>
           <Input
-            placeholder="mail.schneggenburger.ch"
+            placeholder="mail.meinefirma.ch"
             value={felder.smtp_host}
             onChange={(e) => handleChange("smtp_host", e.target.value)}
             data-testid="input-smtp-host"
@@ -852,7 +852,7 @@ function SmtpTab({ settings }: { settings: EinstellungMap }) {
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">Benutzername / E-Mail</Label>
           <Input
-            placeholder="info@schneggenburger.ch"
+            placeholder="info@meinefirma.ch"
             value={felder.smtp_user}
             onChange={(e) => handleChange("smtp_user", e.target.value)}
             data-testid="input-smtp-user"
@@ -876,7 +876,7 @@ function SmtpTab({ settings }: { settings: EinstellungMap }) {
         <div className="space-y-1 sm:col-span-2">
           <Label className="text-xs text-muted-foreground">Absender-E-Mail (Von:)</Label>
           <Input
-            placeholder="info@schneggenburger.ch"
+            placeholder="info@meinefirma.ch"
             value={felder.smtp_von}
             onChange={(e) => handleChange("smtp_von", e.target.value)}
             data-testid="input-smtp-von"

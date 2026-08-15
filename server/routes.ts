@@ -2636,9 +2636,9 @@ export async function registerRoutes(
     const iban = ibanRaw || "CH00 0000 0000 0000 0000 0";
     const ibanClean = iban.replace(/\s/g, "");
     const betragFormatted = totalInkl.toFixed(2);
-    const firmaPlzOrtRaw = sMap.plz_ort || "8580 Sommeri";
+    const firmaPlzOrtRaw = sMap.plz_ort || "";
     const firmaPlzMatch = firmaPlzOrtRaw.match(/^(\d{4})\s+(.+)$/);
-    const firmaPlz  = firmaPlzMatch ? parseInt(firmaPlzMatch[1]) : 8580;
+    const firmaPlz  = firmaPlzMatch ? parseInt(firmaPlzMatch[1]) : 0;
     const firmaOrt  = firmaPlzMatch ? firmaPlzMatch[2] : firmaPlzOrtRaw;
 
     const empPlzMatch = empPlzOrt.match(/^(\d{4,5})\s+(.+)$/);
@@ -2675,7 +2675,7 @@ export async function registerRoutes(
           creditor: {
             account: ibanClean,
             name: firmennameAusSettings(sMap),
-            address: sMap.adresse || "Hefenhoferstrasse 7",
+            address: sMap.adresse || "",
             zip: firmaPlz,
             city: firmaOrt,
             country: "CH"
@@ -2704,7 +2704,7 @@ export async function registerRoutes(
     }
 
     const firmaName = firmennameAusSettings(sMap);
-    const firmaAdr  = sMap.adresse    || "Hefenhoferstrasse 7";
+    const firmaAdr  = sMap.adresse    || "";
     const ibanFormatted = ibanClean.replace(/(.{4})/g, "$1 ").trim();
 
     return `
@@ -2845,10 +2845,10 @@ export async function registerRoutes(
         firma:        firmennameAusSettings(sMap),
         firmenlogo:   sMap.firmenlogo || "",
         farbePrimaer: sMap.farbe_primaer || "#44546a",
-        firmaAdresse: sMap.adresse    || "Hefenhoferstrasse 7",
-        firmaPlzOrt:  sMap.plz_ort   || "8580 Sommeri",
-        firmaTel:     sMap.telefon   || "071 411 16 87",
-        firmaEmail:   sMap.email     || "info@schneggenburger.ch",
+        firmaAdresse: sMap.adresse    || "",
+        firmaPlzOrt:  sMap.plz_ort   || "",
+        firmaTel:     sMap.telefon   || "",
+        firmaEmail:   sMap.email     || "",
         firmaUid:     sMap.uid_nummer || "",
         positionen,
         subtotal, mwstPct, mwstBetrag, total: totalInkl,
@@ -3988,6 +3988,133 @@ export async function registerRoutes(
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
+  // ─── Onboarding (pro Mandant) ────────────────────────────────────────────────
+  // Neue Mandanten müssen ihre eigenen Absender- und Zahlungsdaten bestätigen,
+  // bevor Dokumente erzeugt werden. Es gibt bewusst keine fremden Defaultwerte.
+  const ONBOARDING_SETTING_KEYS = {
+    firmenname: "firmenname",
+    adresse: "adresse",
+    plz_ort: "plz_ort",
+    telefon: "telefon",
+    email: "email",
+    mwst_satz: "mwst_satz",
+    wochenstunden: "wochenstunden",
+    uid_nummer: "uid_nummer",
+    iban: "bank_iban",
+    bankname: "bank_name",
+    firmenlogo: "firmenlogo",
+  } as const;
+
+  type OnboardingField = keyof typeof ONBOARDING_SETTING_KEYS;
+
+  const hasOnboardingValue = (value: unknown): boolean =>
+    typeof value === "string" && value.trim().length > 0;
+
+  async function onboardingStatus(identity: DashboardPreferenceIdentity) {
+    const [{ data: tenant, error: tenantError }, settings] = await Promise.all([
+      getServiceRoleClient()
+        .from("tenants")
+        .select("onboarding_abgeschlossen")
+        .eq("id", identity.tenantId)
+        .maybeSingle(),
+      ladeTenantEinstellungen(identity),
+    ]);
+    if (tenantError) throw tenantError;
+
+    const settingsMap = einstellungenMap(settings);
+    const pflichtfelder = Object.fromEntries(
+      Object.entries(ONBOARDING_SETTING_KEYS).map(([field, settingKey]) => [
+        field,
+        hasOnboardingValue(settingsMap[settingKey]),
+      ]),
+    ) as Record<OnboardingField, boolean>;
+
+    return {
+      abgeschlossen: tenant?.onboarding_abgeschlossen === true,
+      pflichtfelder,
+    };
+  }
+
+  app.get("/api/onboarding/status", async (req, res) => {
+    try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+      res.json(await onboardingStatus(identity));
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+  app.post("/api/onboarding/complete", async (req, res) => {
+    try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      if (!isAdminIdentity(identity)) return res.status(403).json({ message: "Nur Administratoren können die Grundeinstellungen abschliessen." });
+
+      const values = Object.fromEntries(
+        Object.keys(ONBOARDING_SETTING_KEYS).map((field) => [
+          field,
+          typeof req.body?.[field] === "string" ? req.body[field].trim() : "",
+        ]),
+      ) as Record<OnboardingField, string>;
+      const fehlendeFelder = (Object.keys(ONBOARDING_SETTING_KEYS) as OnboardingField[])
+        .filter((field) => !hasOnboardingValue(values[field]));
+      if (fehlendeFelder.length > 0) {
+        return res.status(400).json({
+          ok: false,
+          message: "Bitte füllen Sie alle Pflichtfelder aus.",
+          fehlendeFelder,
+        });
+      }
+
+      const { error: settingsError } = await identity.client
+        .from("einstellungen")
+        .upsert(
+          (Object.keys(ONBOARDING_SETTING_KEYS) as OnboardingField[]).map((field) => ({
+            tenant_id: identity.tenantId,
+            schluessel: ONBOARDING_SETTING_KEYS[field],
+            wert: values[field],
+          })),
+          { onConflict: "tenant_id,schluessel" },
+        );
+      if (settingsError) throw settingsError;
+
+      const { error: tenantError } = await getServiceRoleClient()
+        .from("tenants")
+        .update({ onboarding_abgeschlossen: true })
+        .eq("id", identity.tenantId);
+      if (tenantError) throw tenantError;
+
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+  app.post("/api/onboarding/skip", async (req, res) => {
+    try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+
+      // Der Notfall-Bypass ist unabhängig von der Rolle im Request und prüft den
+      // aktuellen Benutzerdatensatz direkt, damit er weder per Client noch per
+      // veraltetem Session-Kontext erschlichen werden kann.
+      const { data: user, error: userError } = await getServiceRoleClient()
+        .from("app_benutzer")
+        .select("ist_super_admin,aktiv")
+        .eq("id", identity.userId)
+        .maybeSingle();
+      if (userError) throw userError;
+      if (!user || user.aktiv !== true || user.ist_super_admin !== true) {
+        return res.status(403).json({ message: "Nur Super-Administratoren dürfen das Onboarding überspringen." });
+      }
+
+      const { error: tenantError } = await getServiceRoleClient()
+        .from("tenants")
+        .update({ onboarding_abgeschlossen: true })
+        .eq("id", identity.tenantId);
+      if (tenantError) throw tenantError;
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
   // ─── Einstellungen (Key/Value Store) ─────────────────────────────────────────
   // Auth erforderlich, sensible Keys werden aus der Liste entfernt und durch
   // eine boolean-Flagge smtp_konfiguriert ersetzt, damit das Frontend nur weiss
@@ -4929,10 +5056,10 @@ export async function registerRoutes(
         firma:        firmennameAusSettings(sMap),
         firmenlogo:   sMap.firmenlogo || "",
         farbePrimaer: sMap.farbe_primaer || "#44546a",
-        firmaAdresse: sMap.adresse    || "Hefenhoferstrasse 7",
-        firmaPlzOrt:  sMap.plz_ort   || "8580 Sommeri",
-        firmaTel:     sMap.telefon   || "071 411 16 87",
-        firmaEmail:   sMap.email     || "info@schneggenburger.ch",
+        firmaAdresse: sMap.adresse    || "",
+        firmaPlzOrt:  sMap.plz_ort   || "",
+        firmaTel:     sMap.telefon   || "",
+        firmaEmail:   sMap.email     || "",
         firmaUid:     sMap.uid_nummer || "",
         positionen,
         subtotal, mwstPct, mwstBetrag,
@@ -5369,10 +5496,10 @@ export async function registerRoutes(
         firma:        firmennameAusSettings(sMap),
         firmenlogo:   sMap.firmenlogo || "",
         farbePrimaer: sMap.farbe_primaer || "#44546a",
-        firmaAdresse: sMap.adresse    || "Hefenhoferstrasse 7",
-        firmaPlzOrt:  sMap.plz_ort   || "8580 Sommeri",
-        firmaTel:     sMap.telefon   || "071 411 16 87",
-        firmaEmail:   sMap.email     || "info@schneggenburger.ch",
+        firmaAdresse: sMap.adresse    || "",
+        firmaPlzOrt:  sMap.plz_ort   || "",
+        firmaTel:     sMap.telefon   || "",
+        firmaEmail:   sMap.email     || "",
         firmaUid:     sMap.uid_nummer || "",
         positionen,
         subtotal, rabattPct, rabattBetrag, mwstPct, mwstBetrag, total: totalInkl,
@@ -5442,10 +5569,10 @@ export async function registerRoutes(
         firma:        firmennameAusSettings(sMap),
         firmenlogo:   sMap.firmenlogo || "",
         farbePrimaer: sMap.farbe_primaer || "#44546a",
-        firmaAdresse: sMap.adresse    || "Hefenhoferstrasse 7",
-        firmaPlzOrt:  sMap.plz_ort   || "8580 Sommeri",
-        firmaTel:     sMap.telefon   || "071 411 16 87",
-        firmaEmail:   sMap.email     || "info@schneggenburger.ch",
+        firmaAdresse: sMap.adresse    || "",
+        firmaPlzOrt:  sMap.plz_ort   || "",
+        firmaTel:     sMap.telefon   || "",
+        firmaEmail:   sMap.email     || "",
         firmaUid:     sMap.uid_nummer || "",
         positionen,
         subtotal, rabattPct, rabattBetrag, mwstPct, mwstBetrag, total: totalInkl,
@@ -5551,10 +5678,10 @@ export async function registerRoutes(
         firma:        firmennameAusSettings(sMap),
         firmenlogo:   sMap.firmenlogo || "",
         farbePrimaer: sMap.farbe_primaer || "#44546a",
-        firmaAdresse: sMap.adresse    || "Hefenhoferstrasse 7",
-        firmaPlzOrt:  sMap.plz_ort   || "8580 Sommeri",
-        firmaTel:     sMap.telefon   || "071 411 16 87",
-        firmaEmail:   sMap.email     || "info@schneggenburger.ch",
+        firmaAdresse: sMap.adresse    || "",
+        firmaPlzOrt:  sMap.plz_ort   || "",
+        firmaTel:     sMap.telefon   || "",
+        firmaEmail:   sMap.email     || "",
         firmaUid:     sMap.uid_nummer || "",
         positionen,
         subtotal: bruttoLohn,
@@ -5632,10 +5759,10 @@ export async function registerRoutes(
         firma:        firmennameAusSettings(sMap),
         firmenlogo:   sMap.firmenlogo || "",
         farbePrimaer: sMap.farbe_primaer || "#44546a",
-        firmaAdresse: sMap.adresse    || "Hefenhoferstrasse 7",
-        firmaPlzOrt:  sMap.plz_ort   || "8580 Sommeri",
-        firmaTel:     sMap.telefon   || "071 411 16 87",
-        firmaEmail:   sMap.email     || "info@schneggenburger.ch",
+        firmaAdresse: sMap.adresse    || "",
+        firmaPlzOrt:  sMap.plz_ort   || "",
+        firmaTel:     sMap.telefon   || "",
+        firmaEmail:   sMap.email     || "",
         firmaUid:     sMap.uid_nummer || "",
         positionen,
         subtotal: 0, mwstPct: 0, mwstBetrag: 0, total: 0,
@@ -6177,7 +6304,12 @@ export async function registerRoutes(
         let curY = H - 55;
         d(`${auftrag.kunde || "-"}`.trim().replace(/  +/g, " "), mL, curY, 8.5, true, grey);
         curY -= 10;
-        d((firmennameAusSettings(offSMap))+" | "+(offSMap.adresse||"Hefenhoferstrasse 7")+" | "+(offSMap.plz_ort||"8580 Sommeri"), mL, curY, 7.5, false, rgb(0.6, 0.6, 0.6));
+        const firmaHeader = [
+          firmennameAusSettings(offSMap),
+          offSMap.adresse || "",
+          offSMap.plz_ort || "",
+        ].filter((part) => part && part.trim()).join(" | ");
+        d(firmaHeader, mL, curY, 7.5, false, rgb(0.6, 0.6, 0.6));
         curY -= 4;
         ln(mL, curY, W - mR, curY, 0.5, grey);
         curY -= 10;
@@ -6196,7 +6328,11 @@ export async function registerRoutes(
         const lastPg = curPages[curPages.length - 1];
         lastPg.drawRectangle({ x: 0, y: 0, width: W, height: 22, color: brown });
         const wh = rgb(1,1,1);
-        const firmaFull = (firmennameAusSettings(offSMap))+" · "+(offSMap.adresse||"Hefenhoferstrasse 7")+" · "+(offSMap.plz_ort||"8580 Sommeri");
+        const firmaFull = [
+          firmennameAusSettings(offSMap),
+          offSMap.adresse || "",
+          offSMap.plz_ort || "",
+        ].filter((part) => part && part.trim()).join(" · ");
         lastPg.drawText(firmaFull, { x: mL, y: 7, size: 6.5, font, color: wh });
         const pn = curPages.length;
         const pnStr = `Seite ${pn}`;
@@ -6461,7 +6597,12 @@ export async function registerRoutes(
         const white2 = rgb(1, 1, 1);
         for (const pg2 of pdfDoc.getPages()) {
           pg2.drawRectangle({ x: 0, y: 0, width: W, height: 22, color: brown });
-          const firmaFull = (firmennameAusSettings(offSMap))+" · "+(offSMap.adresse||"Hefenhoferstrasse 7")+" · "+(offSMap.plz_ort||"8580 Sommeri")+" · "+(offSMap.telefon||"071 411 16 87");
+          const firmaFull = [
+            firmennameAusSettings(offSMap),
+            offSMap.adresse || "",
+            offSMap.plz_ort || "",
+            offSMap.telefon || "",
+          ].filter((part) => part && part.trim()).join(" · ");
           pg2.drawText(firmaFull, { x: mL, y: 7, size: 6.5, font, color: white2 });
           const totalPages = pdfDoc.getPageCount();
           const pgIdx = pdfDoc.getPages().indexOf(pg2) + 1;
@@ -6647,7 +6788,11 @@ export async function registerRoutes(
           const pg2 = allPages[pi];
           pg2.drawRectangle({ x: 0, y: 0, width: W, height: 22, color: brown });
           const wh2 = rgb(1, 1, 1);
-          const firmaFull2 = (firmennameAusSettings(offSMap))+" · "+(offSMap.adresse||"Hefenhoferstrasse 7")+" · "+(offSMap.plz_ort||"8580 Sommeri");
+          const firmaFull2 = [
+            firmennameAusSettings(offSMap),
+            offSMap.adresse || "",
+            offSMap.plz_ort || "",
+          ].filter((part) => part && part.trim()).join(" · ");
           pg2.drawText(firmaFull2, { x: mL, y: 7, size: 6.5, font, color: wh2 });
           const pgStr = `Seite ${pi + 1}/${totalPages} | Erstellt: ${new Date().toLocaleDateString("de-CH")}`;
           const pgW = font.widthOfTextAtSize(pgStr, 6.5);
@@ -7605,10 +7750,10 @@ export async function registerRoutes(
         firma:        firmennameAusSettings(sMap),
         firmenlogo:   sMap.firmenlogo || "",
         farbePrimaer: sMap.farbe_primaer || "#44546a",
-        firmaAdresse: sMap.adresse    || "Hefenhoferstrasse 7",
-        firmaPlzOrt:  sMap.plz_ort   || "8580 Sommeri",
-        firmaTel:     sMap.telefon   || "071 411 16 87",
-        firmaEmail:   sMap.email     || "info@schneggenburger.ch",
+        firmaAdresse: sMap.adresse    || "",
+        firmaPlzOrt:  sMap.plz_ort   || "",
+        firmaTel:     sMap.telefon   || "",
+        firmaEmail:   sMap.email     || "",
         firmaUid:     sMap.uid_nummer || "",
         positionen,
         subtotal: 0, mwstPct: 0, mwstBetrag: 0, total: 0,
@@ -7671,10 +7816,10 @@ export async function registerRoutes(
         firma:        firmennameAusSettings(sMap),
         firmenlogo:   sMap.firmenlogo || "",
         farbePrimaer: sMap.farbe_primaer || "#44546a",
-        firmaAdresse: sMap.adresse    || "Hefenhoferstrasse 7",
-        firmaPlzOrt:  sMap.plz_ort   || "8580 Sommeri",
-        firmaTel:     sMap.telefon   || "071 411 16 87",
-        firmaEmail:   sMap.email     || "info@schneggenburger.ch",
+        firmaAdresse: sMap.adresse    || "",
+        firmaPlzOrt:  sMap.plz_ort   || "",
+        firmaTel:     sMap.telefon   || "",
+        firmaEmail:   sMap.email     || "",
         firmaUid:     sMap.uid_nummer || "",
         positionen,
         subtotal, mwstPct, mwstBetrag, total: totalInkl,
@@ -7976,10 +8121,10 @@ export async function registerRoutes(
 
       // Firma-Daten aus Einstellungen — identische Keys wie in den echten PDF-Routen
       const firma       = firmennameAusSettings(sMap);
-      const firmaAdr    = sMap.adresse    || "Hefenhoferstrasse 7";
-      const firmaPlzOrt = sMap.plz_ort    || "8580 Sommeri";
-      const firmaTel    = sMap.telefon    || "071 411 16 87";
-      const firmaEmail  = sMap.email      || "info@schneggenburger.ch";
+      const firmaAdr    = sMap.adresse    || "";
+      const firmaPlzOrt = sMap.plz_ort    || "";
+      const firmaTel    = sMap.telefon    || "";
+      const firmaEmail  = sMap.email      || "";
       const firmaUid    = sMap.uid_nummer || "";
 
       // WICHTIG: Die echte gespeicherte Vorlage (Offerte/Rechnung) darf durch
@@ -8135,9 +8280,14 @@ export async function registerRoutes(
   // ─── E-Mail Versand ───────────────────────────────────────────────────────────
   app.post("/api/email/send", async (req, res) => {
     try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ ok: false, message: "Authentifizierung erforderlich." });
       const { to, subject, body, type, refId } = req.body;
       // SMTP-Config aus Key-Value-Tabelle laden (schluessel/wert)
-      const { data: einstellungenArr } = await supabase.from("einstellungen").select("schluessel,wert");
+      const { data: einstellungenArr } = await identity.client
+        .from("einstellungen")
+        .select("schluessel,wert")
+        .eq("tenant_id", identity.tenantId);
       const sm: Record<string, string> = {};
       for (const e of (einstellungenArr || [])) sm[e.schluessel] = e.wert;
 
@@ -8145,9 +8295,12 @@ export async function registerRoutes(
       const smtpPort = Number(sm.smtp_port) || 587;
       const smtpUser = sm.smtp_user || "";
       const smtpPass = sm.smtp_passwort || sm.smtp_pass || "";
-      const smtpFrom = sm.smtp_von || sm.smtp_from || smtpUser || sm.email || "info@schneggenburger.ch";
+      const smtpFrom = sm.smtp_von || sm.smtp_from || smtpUser || sm.email || "";
       const smtpSsl  = sm.smtp_ssl || "starttls";
 
+      if (!smtpFrom) {
+        return res.status(400).json({ ok: false, message: "SMTP-Absender fehlt. Bitte in Einstellungen → SMTP eintragen." });
+      }
       if (!smtpHost || !smtpUser || !smtpPass) {
         return res.json({ ok: false, message: "SMTP nicht konfiguriert. Bitte in Einstellungen > E-Mail ausfüllen (Host, Benutzer, Passwort)." });
       }

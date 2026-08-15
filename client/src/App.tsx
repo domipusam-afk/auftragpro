@@ -1,7 +1,7 @@
-import { Switch, Route, Router } from "wouter";
+import { Redirect, Switch, Route, Router, useLocation } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
-import { queryClient } from "./lib/queryClient";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "./lib/queryClient";
+import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
@@ -49,6 +49,7 @@ import VorkalkulationUebersicht from "@/pages/VorkalkulationUebersicht";
 import NachkalkulationUebersicht from "@/pages/NachkalkulationUebersicht";
 import Aufgaben from "@/pages/Aufgaben";
 import SuperAdminIndex from "@/pages/super-admin/SuperAdminIndex";
+import Onboarding from "@/pages/Onboarding";
 
 import Lagerverwaltung from "@/pages/Lagerverwaltung";
 
@@ -65,6 +66,7 @@ function Geschuetzt({ modul, children, label }: { modul: import('@/lib/permissio
 function AppRouter() {
   return (
     <Switch>
+      <Route path="/onboarding" component={Onboarding} />
       <Route path="/" component={Dashboard} />
       <Route path="/auftraege" component={AuftragsListe} />
       <Route path="/neu">{() => <AuftragForm />}</Route>
@@ -114,6 +116,61 @@ function AppRouter() {
   );
 }
 
+type OnboardingStatus = {
+  abgeschlossen: boolean;
+  pflichtfelder: Record<string, boolean>;
+};
+
+function MitarbeiterOnboardingHinweis() {
+  return (
+    <main className="mx-auto flex min-h-[60vh] w-full max-w-2xl items-center px-4 py-8">
+      <div className="w-full rounded-xl border bg-card p-7 text-center shadow-sm">
+        <h1 className="text-xl font-semibold">Grundeinstellungen fehlen noch</h1>
+        <p className="mt-3 text-muted-foreground">
+          Ihr Firmen-Admin muss zuerst die Grundeinstellungen ausfüllen. Bitte kontaktieren Sie ihn.
+        </p>
+      </div>
+    </main>
+  );
+}
+
+function OnboardingGate() {
+  const { user, isAdmin } = useAuth();
+  const [location] = useLocation();
+  const { data: onboarding, isLoading } = useQuery<OnboardingStatus>({
+    queryKey: ["/api/onboarding/status"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", "/api/onboarding/status");
+      return response.json();
+    },
+    enabled: !!user,
+  });
+
+  if (isLoading || !onboarding) {
+    return (
+      <Layout>
+        <main className="flex min-h-[50vh] items-center justify-center text-sm text-muted-foreground">
+          Grundeinstellungen werden geprüft …
+        </main>
+      </Layout>
+    );
+  }
+
+  const onboardingOffen = onboarding.abgeschlossen === false && user?.ist_super_admin !== true;
+  if (onboardingOffen && !isAdmin) {
+    return <Layout><MitarbeiterOnboardingHinweis /></Layout>;
+  }
+  if (onboardingOffen && location !== "/onboarding") {
+    return <Redirect to="/onboarding" />;
+  }
+
+  return (
+    <Layout>
+      <AppRouter />
+    </Layout>
+  );
+}
+
 function AuthGuard() {
   const { isLoggedIn, logout } = useAuth();
   const [warnOpen, setWarnOpen] = useState(false);
@@ -157,9 +214,7 @@ function AuthGuard() {
         secondsLeft={secondsLeft}
         onContinue={() => setWarnOpen(false)}
       />
-      <Layout>
-        <AppRouter />
-      </Layout>
+      <OnboardingGate />
     </Router>
   );
 }

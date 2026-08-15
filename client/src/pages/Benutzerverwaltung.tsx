@@ -467,12 +467,12 @@ export default function Benutzerverwaltung() {
             <div>
               <label className="text-sm font-medium mb-1 block">Benutzername</label>
               <Input
-                placeholder="vorname.nachname@schneggenburger.ch"
+                placeholder="max.muster@meinefirma.ch"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 data-testid="input-new-username"
               />
-              <p className="text-xs text-muted-foreground mt-1">Format: vorname.nachname@schneggenburger.ch</p>
+              <p className="text-xs text-muted-foreground mt-1">Format: max.muster@meinefirma.ch</p>
             </div>
             <div>
               <label className="text-sm font-medium mb-1 block">Passwort</label>
