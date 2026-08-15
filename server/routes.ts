@@ -7679,7 +7679,7 @@ export async function registerRoutes(
         positionen,
         subtotal, mwstPct, mwstBetrag, total: totalInkl,
         showTotals: positionen.length > 0,
-        einleitung: `Wir best\u00e4tigen Ihnen hiermit den Auftrag ${auftrag.nr || ""} mit folgendem Inhalt:`,
+        einleitung: `Wir bestätigen Ihnen hiermit den Auftrag ${auftrag.nr || ""} mit folgendem Inhalt:`,
         schluss: `Wir danken Ihnen fuer Ihren Auftrag und stehen fuer Rueckfragen gerne zur Verfuegung.\n\nFreundliche Gruesse\n${firmennameAusSettings(sMap)}`,
         ansprechpersonIntern: ansprechpersonInternAB,
         kundenNr: await getKundenNr(auftrag.kunde_name || auftrag.kunde || ""),

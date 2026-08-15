@@ -1666,10 +1666,10 @@ const FARB_OPTIONEN = [
   { value: "purple",  label: "Lila",     cls: "bg-purple-500" },
   { value: "yellow",  label: "Gelb",     cls: "bg-yellow-500" },
   { value: "indigo",  label: "Indigo",   cls: "bg-indigo-500" },
-  { value: "green",   label: "Gr\u00fcn",    cls: "bg-green-500" },
+  { value: "green",   label: "Grün",    cls: "bg-green-500" },
   { value: "red",     label: "Rot",      cls: "bg-red-500" },
   { value: "gray",    label: "Grau",     cls: "bg-gray-500" },
-  { value: "teal",    label: "T\u00fcrkis",   cls: "bg-teal-500" },
+  { value: "teal",    label: "Türkis",   cls: "bg-teal-500" },
   { value: "pink",    label: "Pink",     cls: "bg-pink-500" },
 ];
 
@@ -1696,7 +1696,7 @@ function StatusPipelineTab() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/einstellungen/status-pipeline"] });
       setNewLabel(""); setNewFarbe("gray");
-      toast({ title: "Status hinzugef\u00fcgt" });
+      toast({ title: "Status hinzugefügt" });
     },
   });
 
@@ -1715,7 +1715,7 @@ function StatusPipelineTab() {
       apiRequest("DELETE", `/api/einstellungen/status-pipeline/${id}`).then(r => r.json()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/einstellungen/status-pipeline"] });
-      toast({ title: "Status gel\u00f6scht" });
+      toast({ title: "Status gelöscht" });
     },
   });
 
@@ -1751,7 +1751,7 @@ function StatusPipelineTab() {
     <Card className="p-6 space-y-6">
       <div>
         <h3 className="font-semibold text-base mb-1">Status-Pipeline</h3>
-        <p className="text-sm text-muted-foreground">Ziehe die Status in die gew\u00fcnschte Reihenfolge. \u201eStorniert\u201c ist fix und nicht \u00e4nderbar.</p>
+        <p className="text-sm text-muted-foreground">Ziehe die Status in die gewünschte Reihenfolge. „Storniert“ ist fix und nicht änderbar.</p>
       </div>
 
       {isLoading ? (
@@ -1815,14 +1815,14 @@ function StatusPipelineTab() {
             <GripVertical className="h-4 w-4 text-muted-foreground shrink-0" />
             <span className="w-3 h-3 rounded-full shrink-0 bg-red-500" />
             <span className="flex-1 text-sm font-medium">Storniert</span>
-            <span className="text-xs text-muted-foreground italic">Fix \u2014 nicht \u00e4nderbar</span>
+            <span className="text-xs text-muted-foreground italic">Fix — nicht änderbar</span>
           </div>
         </div>
       )}
 
-      {/* Neuen Status hinzuf\u00fcgen */}
+      {/* Neuen Status hinzufügen */}
       <div className="border-t pt-4">
-        <p className="text-sm font-medium mb-3">Neuen Status hinzuf\u00fcgen</p>
+        <p className="text-sm font-medium mb-3">Neuen Status hinzufügen</p>
         <div className="flex gap-2 flex-wrap">
           <Input
             placeholder="z.B. Montage, Abnahme ..."
@@ -1847,7 +1847,7 @@ function StatusPipelineTab() {
             disabled={!newLabel.trim() || addMut.isPending}
             onClick={() => addMut.mutate({ label: newLabel.trim(), reihenfolge: localOrder.length + 1, farbe: newFarbe })}
           >
-            <Plus className="h-4 w-4 mr-1" /> Hinzuf\u00fcgen
+            <Plus className="h-4 w-4 mr-1" /> Hinzufügen
           </Button>
         </div>
       </div>

@@ -700,7 +700,7 @@ export default function PdfVorlagenTab() {
                   <textarea
                     value={vorlage.slogan}
                     onChange={(e) => updateVorlage({ slogan: e.target.value })}
-                    placeholder={"z.B. Qualit\u00e4t & Verl\u00e4sslichkeit\nIhr Partner f\u00fcr Metallbau"}
+                    placeholder={"z.B. Qualität & Verlässlichkeit\nIhr Partner für Metallbau"}
                     rows={2}
                     className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gray-300 resize-y"
                   />
