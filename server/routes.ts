@@ -4187,6 +4187,88 @@ export async function registerRoutes(
     } catch (e) { res.status(500).json({ message: asError(e) }); }
   });
 
+  // ─── Auftrag-Kategorien CRUD (tenant-scoped) ─────────────────────────────────
+  // Kategorien sind pro Mandant frei definierbar. Neue Mandanten starten mit
+  // leerer Liste und legen ihre eigenen Kategorien an (z.B. Sanitär/Heizung,
+  // Garten, Büro, ...). Schneggenburger behält seine bestehenden Kategorien.
+  app.get("/api/auftrag-kategorien", async (req, res) => {
+    try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      const { data, error } = await identity.client
+        .from("auftrag_kategorien")
+        .select("*")
+        .eq("tenant_id", identity.tenantId)
+        .order("reihenfolge", { ascending: true })
+        .order("name", { ascending: true });
+      if (error) throw error;
+      res.json(data || []);
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+  app.post("/api/auftrag-kategorien", async (req, res) => {
+    try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      if (!isAdminIdentity(identity)) return res.status(403).json({ message: "Nur Administratoren." });
+      const { name, reihenfolge } = req.body ?? {};
+      if (!name || typeof name !== "string" || !name.trim()) {
+        return res.status(400).json({ message: "Name erforderlich." });
+      }
+      const { data, error } = await identity.client
+        .from("auftrag_kategorien")
+        .insert({
+          tenant_id: identity.tenantId,
+          name: name.trim(),
+          reihenfolge: Number(reihenfolge) || 0,
+        })
+        .select().single();
+      if (error) {
+        // Doppelter Name pro Tenant → 409 statt 500
+        const msg = String((error as { message?: string }).message || "");
+        if (msg.includes("duplicate") || msg.includes("unique")) {
+          return res.status(409).json({ message: "Kategorie mit diesem Namen existiert bereits." });
+        }
+        throw error;
+      }
+      res.json(data);
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
+  app.delete("/api/auftrag-kategorien/:id", async (req, res) => {
+    try {
+      const identity = dashboardPreferenceIdentity(req);
+      if (!identity) return res.status(401).json({ message: "Authentifizierung erforderlich." });
+      if (!isAdminIdentity(identity)) return res.status(403).json({ message: "Nur Administratoren." });
+      // Prüfen, ob die Kategorie noch von Aufträgen verwendet wird
+      const { data: kat } = await identity.client
+        .from("auftrag_kategorien")
+        .select("name")
+        .eq("id", req.params.id)
+        .eq("tenant_id", identity.tenantId)
+        .maybeSingle();
+      if (!kat) return res.status(404).json({ message: "Kategorie nicht gefunden." });
+      const { count } = await identity.client
+        .from("auftraege")
+        .select("id", { count: "exact", head: true })
+        .eq("tenant_id", identity.tenantId)
+        .eq("kategorie", kat.name);
+      if ((count ?? 0) > 0) {
+        return res.status(409).json({
+          message: `Kategorie wird von ${count} Auftrag/Aufträgen genutzt und kann nicht gelöscht werden.`,
+          count,
+        });
+      }
+      const { error } = await identity.client
+        .from("auftrag_kategorien")
+        .delete()
+        .eq("id", req.params.id)
+        .eq("tenant_id", identity.tenantId);
+      if (error) throw error;
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ message: asError(e) }); }
+  });
+
   // ─── Stundensätze CRUD ────────────────────────────────────────────────────────
   app.get("/api/stundensaetze", async (req, res) => {
     try {

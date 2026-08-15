@@ -299,7 +299,7 @@ export function registerSuperAdminRoutes(app: Express): void {
       if (tenantError) throw tenantError;
       tenantId = tenant.id;
       const adminPasswortHash = await bcrypt.hash(adminPasswort, 12);
-      const [{ error: settingsError }, { error: userError }, { error: membershipError }, { error: stundensaetzeError }] = await Promise.all([
+      const [{ error: settingsError }, { error: userError }, { error: membershipError }, { error: stundensaetzeError }, { error: statusPipelineError }] = await Promise.all([
         client.from("einstellungen").insert([
           { tenant_id: tenant.id, schluessel: "firmenname", wert: name.trim() },
           { tenant_id: tenant.id, schluessel: "firmenlogo", wert: "" },
@@ -317,18 +317,29 @@ export function registerSuperAdminRoutes(app: Express): void {
           { ort: "Werkstatt", maschinenpark: "Mittlere Maschinen", satz: 20, bezeichnung: "Mittlere Maschinen (Biegemaschine...)", grundsatz: 115, tenant_id: tenant.id },
           { ort: "Werkstatt", maschinenpark: "Grosse Maschinen", satz: 90, bezeichnung: "Grosse Maschinen (CNC, Laser...)", grundsatz: 115, tenant_id: tenant.id },
         ]),
+        client.from("auftrag_status_pipeline").insert([
+          { tenant_id: tenant.id, label: "Anfrage", reihenfolge: 1, farbe: "orange" },
+          { tenant_id: tenant.id, label: "Angebot", reihenfolge: 2, farbe: "blue" },
+          { tenant_id: tenant.id, label: "Bestätigt", reihenfolge: 3, farbe: "purple" },
+          { tenant_id: tenant.id, label: "In Arbeit", reihenfolge: 4, farbe: "teal" },
+          { tenant_id: tenant.id, label: "Rechnung", reihenfolge: 5, farbe: "indigo" },
+          { tenant_id: tenant.id, label: "Abgeschlossen", reihenfolge: 6, farbe: "green" },
+        ]),
       ]);
-      if (settingsError || userError || membershipError || stundensaetzeError) throw new Error(settingsError?.message || userError?.message || membershipError?.message || stundensaetzeError?.message);
+      if (settingsError || userError || membershipError || stundensaetzeError || statusPipelineError) {
+        throw new Error(settingsError?.message || userError?.message || membershipError?.message || stundensaetzeError?.message || statusPipelineError?.message);
+      }
       await logAuditEvent(req, "tenant.create", `Neue Firma '${tenant.name}' angelegt`, { tenantId: tenant.id, betroffeneEntitaet: "tenant", entitaetId: tenant.id });
       await logAuditEvent(req, "user.create", `Administrator '${email}' für '${tenant.name}' angelegt`, { tenantId: tenant.id, betroffeneEntitaet: "user", entitaetId: authUserId });
       return res.status(201).json({ tenant, admin: { email, benutzerId: authUserId } });
     } catch (error) {
       const client = getServiceRoleClient();
       if (tenantId) {
-        await client.from("app_benutzer").delete().eq("tenant_id", tenantId);
-        await client.from("tenant_memberships").delete().eq("tenant_id", tenantId);
-        await client.from("einstellungen").delete().eq("tenant_id", tenantId);
+        await client.from("auftrag_status_pipeline").delete().eq("tenant_id", tenantId);
         await client.from("stundensaetze").delete().eq("tenant_id", tenantId);
+        await client.from("einstellungen").delete().eq("tenant_id", tenantId);
+        await client.from("tenant_memberships").delete().eq("tenant_id", tenantId);
+        await client.from("app_benutzer").delete().eq("tenant_id", tenantId);
         await client.from("tenants").delete().eq("id", tenantId);
       }
       if (authUserId) await client.auth.admin.deleteUser(authUserId);

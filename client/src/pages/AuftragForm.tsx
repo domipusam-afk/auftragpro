@@ -34,7 +34,6 @@ import {
   STATUS_LABEL,
   STATUS_ORDER,
   PRIORITAETEN,
-  KATEGORIEN,
 } from "@shared/schema";
 import { FileSpreadsheet, Coins } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -54,6 +53,12 @@ interface Kunde {
   adresse: string;
   plz: string;
   ort: string;
+}
+
+interface AuftragKategorie {
+  id: string;
+  name: string;
+  reihenfolge: number;
 }
 
 const empty = {
@@ -93,6 +98,11 @@ export default function AuftragForm({ id }: Props) {
   const { data: kunden = [] } = useQuery<Kunde[]>({
     queryKey: ["/api/kunden"],
     queryFn: () => apiRequest("GET", "/api/kunden").then((r) => r.json()),
+  });
+
+  const { data: kategorien = [] } = useQuery<AuftragKategorie[]>({
+    queryKey: ["/api/auftrag-kategorien"],
+    queryFn: () => apiRequest("GET", "/api/auftrag-kategorien").then((r) => r.json()),
   });
 
   useEffect(() => {
@@ -261,23 +271,25 @@ export default function AuftragForm({ id }: Props) {
               </select>
               <p className="text-xs text-muted-foreground mt-1">Für Wartungsverträge, Jahresservice etc.</p>
             </div>
-            <div>
-              <Label>Kategorie</Label>
-              <Select
-                value={form.kategorie || "none"}
-                onValueChange={(v) => setField("kategorie", v === "none" ? "" : v)}
-              >
-                <SelectTrigger data-testid="select-kategorie" className="mt-1">
-                  <SelectValue placeholder="Wählen…" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">—</SelectItem>
-                  {KATEGORIEN.map((k) => (
-                    <SelectItem key={k} value={k}>{k}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {kategorien.length > 0 && (
+              <div>
+                <Label>Kategorie</Label>
+                <Select
+                  value={form.kategorie || "none"}
+                  onValueChange={(v) => setField("kategorie", v === "none" ? "" : v)}
+                >
+                  <SelectTrigger data-testid="select-kategorie" className="mt-1">
+                    <SelectValue placeholder="Wählen…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">—</SelectItem>
+                    {kategorien.map((k) => (
+                      <SelectItem key={k.id} value={k.name}>{k.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div>
               <Label>Verantwortlicher</Label>
               <MitarbeiterSelect

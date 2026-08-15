@@ -84,7 +84,7 @@ import type {
   Offerte,
   OffertePosition,
 } from "@shared/schema";
-import { STATUS_LABEL, STATUS_ORDER } from "@shared/schema";
+import { STATUS_LABEL } from "@shared/schema";
 import { STATUS_BADGE, PRIO_BADGE, formatCHF, formatDate, formatDateTime, parseZahl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { downloadPdf as triggerPdfDownload } from "@/lib/pdf";
@@ -126,10 +126,15 @@ function StatusPipeline({
     staleTime: 60_000,
   });
 
-  // Wenn DB noch lädt, Fallback auf hardcoded ORDER
-  const steps = pipeline.length > 0
-    ? pipeline
-    : STATUS_ORDER.filter(s => s !== "storniert").map((s, i) => ({ id: s, label: STATUS_LABEL[s], reihenfolge: i + 1, farbe: "gray" }));
+  if (pipeline.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+        Keine Status-Pipeline konfiguriert. Bitte in Einstellungen → Status-Pipeline anlegen.
+      </div>
+    );
+  }
+
+  const steps = pipeline;
 
   // Aktuellen Index bestimmen — per label-Vergleich (case-insensitive)
   const currentLabel = STATUS_LABEL[current] ?? current;

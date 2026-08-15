@@ -11,7 +11,7 @@ import {
   Upload, Download, Trash, FileText, CheckCircle2, AlertTriangle, Info,
   Lock, Eye, EyeOff, DollarSign, Clock, Save, Building2, Mail, Phone,
   Shield, ShieldCheck, Smartphone, Copy, Check, Server, Percent, Image,
-  GripVertical, Plus, Pencil, X, GitBranch, LayoutDashboard, Bell, ChevronUp, ChevronDown,
+  GripVertical, Plus, Pencil, X, GitBranch, LayoutDashboard, Bell, ChevronUp, ChevronDown, Tag,
 } from "lucide-react";
 import { formatDate } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -38,6 +38,12 @@ interface Stundensatz {
   satz: number;
   grundsatz: number | null;
   bezeichnung: string | null;
+}
+
+interface AuftragKategorie {
+  id: string;
+  name: string;
+  reihenfolge: number;
 }
 
 type EinstellungMap = Record<string, string>;
@@ -640,6 +646,122 @@ function StundensaetzeTab() {
                   );
                 })}
               </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ─── Tab: Kategorien ──────────────────────────────────────────────────────────
+
+function KategorienTab() {
+  const { toast } = useToast();
+  const [name, setName] = useState("");
+  const { data: kategorien = [], isLoading } = useQuery<AuftragKategorie[]>({
+    queryKey: ["/api/auftrag-kategorien"],
+    queryFn: () => apiRequest("GET", "/api/auftrag-kategorien").then((r) => r.json()),
+  });
+
+  const createMut = useMutation({
+    mutationFn: (body: { name: string; reihenfolge: number }) =>
+      apiRequest("POST", "/api/auftrag-kategorien", body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auftrag-kategorien"] });
+      setName("");
+      toast({ title: "Kategorie hinzugefügt ✓" });
+    },
+    onError: (err: unknown) => toast({
+      title: "Fehler beim Anlegen",
+      description: err instanceof Error ? err.message : "Unbekannter Fehler",
+      variant: "destructive",
+    }),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/auftrag-kategorien/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auftrag-kategorien"] });
+      toast({ title: "Kategorie gelöscht ✓" });
+    },
+    onError: (err: unknown) => toast({
+      title: "Fehler beim Löschen",
+      description: err instanceof Error ? err.message : "Unbekannter Fehler",
+      variant: "destructive",
+    }),
+  });
+
+  function addKategorie() {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      toast({ title: "Bitte einen Kategorienamen eingeben", variant: "destructive" });
+      return;
+    }
+    createMut.mutate({ name: trimmedName, reihenfolge: kategorien.length + 1 });
+  }
+
+  return (
+    <Card className="p-6 bg-card">
+      <div className="flex items-center gap-2 mb-4">
+        <Tag className="h-5 w-5" style={{ color: "hsl(var(--primary))" }} />
+        <h2 className="font-semibold" style={{ fontFamily: "var(--font-display)" }}>Kategorien</h2>
+      </div>
+      <p className="text-sm text-muted-foreground mb-4">
+        Kategorien helfen, Aufträge für diesen Mandanten übersichtlich zu gruppieren.
+      </p>
+
+      <div className="flex gap-2 mb-4">
+        <Input
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              addKategorie();
+            }
+          }}
+          placeholder="z.B. Sanitär"
+          data-testid="input-neue-kategorie"
+        />
+        <Button
+          type="button"
+          onClick={addKategorie}
+          disabled={createMut.isPending}
+          data-testid="button-kategorie-hinzufuegen"
+        >
+          <Plus className="h-4 w-4 mr-1.5" />
+          Hinzufügen
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <Skeleton className="h-24" />
+      ) : kategorien.length === 0 ? (
+        <p className="text-sm text-muted-foreground rounded-lg border border-dashed p-4">
+          Noch keine Kategorien angelegt.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {kategorien.map((kategorie) => (
+            <div key={kategorie.id} className="flex items-center gap-3 p-3 rounded-lg border bg-muted/20">
+              <span className="flex-1 text-sm font-medium">{kategorie.name}</span>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  if (confirm(`Kategorie "${kategorie.name}" wirklich löschen?`)) {
+                    deleteMut.mutate(kategorie.id);
+                  }
+                }}
+                disabled={deleteMut.isPending}
+                className="h-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                data-testid={`button-kategorie-loeschen-${kategorie.id}`}
+                title="Löschen"
+              >
+                <Trash className="h-3.5 w-3.5" />
+              </Button>
             </div>
           ))}
         </div>
@@ -1772,6 +1894,10 @@ export default function Einstellungen() {
             <DollarSign className="h-4 w-4 shrink-0" />
             <span>Stundensätze</span>
           </TabsTrigger>
+          <TabsTrigger value="kategorien" className="flex flex-col sm:flex-row items-center gap-1 text-xs p-2 sm:px-3 sm:py-1.5 h-auto">
+            <Tag className="h-4 w-4 shrink-0" />
+            <span>Kategorien</span>
+          </TabsTrigger>
           <TabsTrigger value="pdf-vorlagen" className="flex flex-col sm:flex-row items-center gap-1 text-xs p-2 sm:px-3 sm:py-1.5 h-auto">
             <FileText className="h-4 w-4 shrink-0" />
             <span>PDF-Vorlagen</span>
@@ -1814,6 +1940,9 @@ export default function Einstellungen() {
           <StundensaetzeTab />
         </TabsContent>
 
+        <TabsContent value="kategorien">
+          <KategorienTab />
+        </TabsContent>
 
         <TabsContent value="pdf-vorlagen">
           <PdfVorlagenTab />
