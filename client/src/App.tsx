@@ -137,7 +137,7 @@ function MitarbeiterOnboardingHinweis() {
 function OnboardingGate() {
   const { user, isAdmin } = useAuth();
   const [location] = useLocation();
-  const { data: onboarding, isLoading } = useQuery<OnboardingStatus>({
+  const { data: onboarding } = useQuery<OnboardingStatus>({
     queryKey: ["/api/onboarding/status"],
     queryFn: async () => {
       const response = await apiRequest("GET", "/api/onboarding/status");
@@ -146,17 +146,7 @@ function OnboardingGate() {
     enabled: !!user,
   });
 
-  if (isLoading || !onboarding) {
-    return (
-      <Layout>
-        <main className="flex min-h-[50vh] items-center justify-center text-sm text-muted-foreground">
-          Grundeinstellungen werden geprüft …
-        </main>
-      </Layout>
-    );
-  }
-
-  const onboardingOffen = onboarding.abgeschlossen === false && user?.ist_super_admin !== true;
+  const onboardingOffen = onboarding?.abgeschlossen === false && user?.ist_super_admin !== true;
   if (onboardingOffen && !isAdmin) {
     return <Layout><MitarbeiterOnboardingHinweis /></Layout>;
   }

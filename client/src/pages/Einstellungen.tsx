@@ -11,7 +11,7 @@ import {
   Upload, Download, Trash, FileText, CheckCircle2, AlertTriangle, Info,
   Lock, Eye, EyeOff, DollarSign, Clock, Save, Building2, Mail, Phone,
   Shield, ShieldCheck, Smartphone, Copy, Check, Server, Percent, Image,
-  GripVertical, Plus, Pencil, X, GitBranch, LayoutDashboard, Bell, ChevronUp, ChevronDown, Tag,
+  GripVertical, Plus, Pencil, X, GitBranch, LayoutDashboard, Bell, ChevronUp, ChevronDown, Tag, Loader2,
 } from "lucide-react";
 import { formatDate } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -1856,7 +1856,7 @@ function StatusPipelineTab() {
 }
 
 export default function Einstellungen() {
-  const { data: einstellungenList = [] } = useEinstellungen();
+  const { data: einstellungenList = [], isLoading: einstellungenLoading } = useEinstellungen();
   const search = useSearch();
   const requestedTab = new URLSearchParams(search).get("tab");
   const initialTab = requestedTab === "dashboard" ? "dashboard" : "allgemein";
@@ -1865,6 +1865,17 @@ export default function Einstellungen() {
   const settings: EinstellungMap = {};
   for (const e of einstellungenList) {
     settings[e.schluessel] = e.wert;
+  }
+
+  if (einstellungenLoading && einstellungenList.length === 0) {
+    return (
+      <div className="p-4 md:p-8 max-w-4xl mx-auto">
+        <div className="flex min-h-[50vh] items-center justify-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin" />
+          Einstellungen werden geladen …
+        </div>
+      </div>
+    );
   }
 
   return (
