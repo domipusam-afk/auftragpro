@@ -9,7 +9,7 @@ import bcrypt from "bcryptjs";
 import * as OTPAuth from "otpauth";
 import QRCode from "qrcode";
 import { fileURLToPath } from "url";
-import { finanzenSummen, berechneVorkalkulationsAngebotspreis, rechnungBruttoBetrag, MWST_SATZ_RECHNUNG } from "../shared/schema";
+import { finanzenSummen, berechneVorkalkulationsAngebotspreis, rechnungBruttoBetrag } from "../shared/schema";
 import { setLegacySessionCookie } from "./legacy-session";
 import { getAuthMode } from "./auth-context"; import { STATUS_GESAMT_EXCLUDED, STATUS_IN_BEARBEITUNG } from "../shared/dashboardStatus";
 import { createDownloadToken, validateAndConsumeDownloadToken } from "./download-tokens";
@@ -289,6 +289,12 @@ export async function registerRoutes(
 
   function einstellungenMap(rows: Array<{ schluessel: string; wert: string | null }>): Record<string, string> {
     return Object.fromEntries(rows.map((row) => [row.schluessel, row.wert || ""]));
+  }
+
+  function mwstSatzAusSettings(sMap: Record<string, string>): number {
+    const mwstSatzRaw = sMap.mwst_satz;
+    const mwstPctParsed = Number.parseFloat(mwstSatzRaw ?? "");
+    return Number.isFinite(mwstPctParsed) && mwstPctParsed >= 0 ? mwstPctParsed : 8.1;
   }
 
   function firmennameAusSettings(settings: Record<string, string>): string {
@@ -1023,7 +1029,8 @@ export async function registerRoutes(
       .eq("schluessel", "mwst_satz")
       .maybeSingle();
     if (error) throw error;
-    return parseFloat(settingsArr?.wert || "8.1");
+    const mwstPctParsed = Number.parseFloat(settingsArr?.wert ?? "");
+    return Number.isFinite(mwstPctParsed) && mwstPctParsed >= 0 ? mwstPctParsed : 8.1;
   };
 
   // Rechnungsbetrag und Zahlungsstatus je Auftrag direkt aus der Tabelle "rechnungen"
@@ -1783,7 +1790,7 @@ export async function registerRoutes(
     kundenNr?: string;
     anrede?: string;
     skontoText?: string;
-  }, vorlageOverride?: any): Promise<string> {
+  }, tenantId: string, vorlageOverride?: any): Promise<string> {
     // Vorlage aus DB laden (mit Retry + Logo-Fallback aus Offerte-Vorlage)
     // vorlageOverride: wird z.B. von der Live-Vorschau genutzt, damit dort
     // NIE in die Datenbank geschrieben werden muss — die echte gespeicherte
@@ -1793,7 +1800,7 @@ export async function registerRoutes(
       vd = vorlageOverride;
     } else {
       for (let attempt = 0; attempt < 3; attempt++) {
-        const { data: vdTry, error: vdErr } = await supabase.from("pdf_vorlagen").select("*").eq("doc_typ", docTyp).single();
+        const { data: vdTry, error: vdErr } = await supabase.from("pdf_vorlagen").select("*").eq("tenant_id", tenantId).eq("doc_typ", docTyp).single();
         if (vdTry) { vd = vdTry; break; }
         if (vdErr) console.warn(`[PDF] Vorlage Laden Versuch ${attempt+1} (doc_typ=${docTyp}):`, vdErr.message);
         if (attempt < 2) await new Promise(r => setTimeout(r, 600));
@@ -1803,7 +1810,7 @@ export async function registerRoutes(
     const v = vd || {};
     // Logo-Fallback: wenn aktuelle Vorlage kein Logo hat, hole es aus der Offerte-Vorlage
     if (!v.logo_data_url && docTyp !== "offerte") {
-      const { data: offVorlage } = await supabase.from("pdf_vorlagen").select("logo_data_url,logo_scale,logo_pos,logo_offset_x,logo_offset_y").eq("doc_typ", "offerte").single();
+      const { data: offVorlage } = await supabase.from("pdf_vorlagen").select("logo_data_url,logo_scale,logo_pos,logo_offset_x,logo_offset_y").eq("tenant_id", tenantId).eq("doc_typ", "offerte").single();
       if (offVorlage?.logo_data_url) {
         v.logo_data_url = offVorlage.logo_data_url;
         if (!v.logo_scale) v.logo_scale = offVorlage.logo_scale;
@@ -1818,7 +1825,7 @@ export async function registerRoutes(
     const design     = v.design       || "A";
     const logoScale  = v.logo_scale   || 100;
     const logoUrl    = v.logo_data_url || data.firmenlogo || null;
-    const slogan     = v.slogan       || "Ihr Partner für Metallbau & Schreinerei";
+    const slogan     = v.slogan       || "";
     const logoPos    = v.logo_pos     || "links";
     // Freie Logo-Positionierung im Header (0-100%, ersetzt Links/Rechts-Umschalter).
     // 0/0 = oben-links im Header-Bereich. Fallback: wenn (noch) nicht gesetzt, alte Position
@@ -2807,7 +2814,7 @@ export async function registerRoutes(
       const empPlzOrt  = kundePlzOrt;
       const positionen: any[] = Array.isArray(rechnung.positionen) ? rechnung.positionen : [];
       const subtotal    = positionen.reduce((s: number, p: any) => s + Number(p.total ?? p.betrag ?? (Number(p.menge||p.anzahl||1)*Number(p.einzelpreis||p.preis||0))), 0);
-      const mwstPct     = 8.1;
+      const mwstPct     = mwstSatzAusSettings(sMap);
       const mwstBetrag  = subtotal * (mwstPct / 100);
       const totalInkl   = subtotal + mwstBetrag;
 
@@ -2862,7 +2869,7 @@ export async function registerRoutes(
         anrede: await getKundenAnrede(auftrag?.kunde || ""),
         extraHtmlFullWidth: qrInlineBlock,
         skontoText,
-      });
+      }, identity.tenantId);
 
       const pdfBuf = await renderRechnungPdfFromHtml(html);
       res.setHeader("Content-Type", "application/pdf");
@@ -3062,11 +3069,11 @@ export async function registerRoutes(
         for (const a of (auftraege || [])) auftraegeMap[a.id] = a;
       }
 
-      const mwstSatz = MWST_SATZ_RECHNUNG;
       const exportSettingsRows = tenantId
         ? await supabase.from("einstellungen").select("schluessel,wert").eq("tenant_id", tenantId)
         : { data: [] as Array<{ schluessel: string; wert: string | null }> };
       const sMap = einstellungenMap(exportSettingsRows.data || []);
+      const mwstSatz = mwstSatzAusSettings(sMap);
 
       // Banana Buchhaltung Format:
       // Datum (DD.MM.YYYY) ; BelegNr ; Beschreibung ; Konto ; Gegenkonto ; Betrag Netto CHF ; MwSt-Satz % ; MwSt-Betrag CHF ; Betrag Brutto CHF
@@ -3090,14 +3097,14 @@ export async function registerRoutes(
 
       // === AUSGANGSRECHNUNGEN ===
       // rechnungen.betrag ist in der DB bereits NETTO (Positionssumme exkl. MWST) —
-      // dieselbe Umrechnungslogik wie bei der Rechnungsliste/PDF-Erzeugung (netto × 1.081).
+      // dieselbe Umrechnungslogik wie bei der Rechnungsliste/PDF-Erzeugung.
       csvLines.push(`=== Ausgangsrechnungen ===`);
       let totalNettoAusgang = 0;
       let totalMwstAusgang = 0;
       let totalBruttoAusgang = 0;
       for (const r of (rechnungen || [])) {
         const netto  = Number(r.betrag) || 0;
-        const brutto = rechnungBruttoBetrag(netto);
+        const brutto = Math.round(netto * (1 + mwstSatz / 100) * 100) / 100;
         const mwst   = Math.round((brutto - netto) * 100) / 100;
         const auftrag = auftraegeMap[r.auftrag_id] || {};
         const datum  = r.erstellt
@@ -5029,7 +5036,7 @@ export async function registerRoutes(
 
       const positionen: any[] = rechnung?.positionen && Array.isArray(rechnung.positionen) ? rechnung.positionen : [];
       const subtotal   = positionen.reduce((s: number, p: any) => s + Number(p.total ?? (Number(p.menge||0)*Number(p.einzelpreis||0))), 0);
-      const mwstPct    = 8.1;
+      const mwstPct    = mwstSatzAusSettings(sMap);
       const mwstBetrag = subtotal * (mwstPct / 100);
       const mahngebuehr = Number(mahnung.mahngebuehr || 0);
       const totalInkl  = subtotal + mwstBetrag + mahngebuehr;
@@ -5070,7 +5077,7 @@ export async function registerRoutes(
         ansprechpersonIntern: (req.body as any)?.ansprechpersonIntern || rechnung?.ansprechperson_intern || auftrag?.verantwortlicher || "",
         kundenNr: await getKundenNr(empfaenger),
         anrede: await getKundenAnrede(empfaenger),
-      });
+      }, identity.tenantId);
 
       const pdfBuf = await renderRechnungPdfFromHtml(html);
       res.setHeader("Content-Type", "application/pdf");
@@ -5192,12 +5199,16 @@ export async function registerRoutes(
   // ═══════════════════════════════════════════════════════════════════════════
 
   /** Bruttobetrag einer Offerte — identisch zur Rechenweise im Offerte-PDF. */
-  function offerteBrutto(offerte: any): number {
+  function offerteBrutto(offerte: any, fallbackMwstSatz = 8.1): number {
     const positionen: any[] = Array.isArray(offerte.positionen) ? offerte.positionen : [];
     const subtotal = positionen.reduce((s: number, p: any) =>
       s + Number(p.total ?? (Number(p.menge || 0) * Number(p.einzelpreis || 0))), 0);
     const netto = subtotal - subtotal * ((Number(offerte.rabatt_prozent) || 0) / 100);
-    return Math.round(netto * (1 + (Number(offerte.mwst_prozent) || 8.1) / 100) * 100) / 100;
+    const gespeicherterMwstSatz = Number.parseFloat(String(offerte.mwst_prozent ?? ""));
+    const mwstSatz = Number.isFinite(gespeicherterMwstSatz) && gespeicherterMwstSatz >= 0
+      ? gespeicherterMwstSatz
+      : fallbackMwstSatz;
+    return Math.round(netto * (1 + mwstSatz / 100) * 100) / 100;
   }
 
   // Schreibt den Bruttobetrag der massgeblichen Offerte nach auftraege.angebots_betrag.
@@ -5223,7 +5234,7 @@ export async function registerRoutes(
     // desselben Angebots, deshalb wird die neueste genommen und nicht summiert.
     const massgeblich = neueste(angenommen) || neueste(offen) || neueste(offerten);
 
-    const brutto = offerteBrutto(massgeblich);
+    const brutto = offerteBrutto(massgeblich, identity ? await ladeMwstSatz(identity) : undefined);
     let auftragQuery = client.from("auftraege").update({ angebots_betrag: brutto }).eq("id", auftragId);
     if (identity) auftragQuery = auftragQuery.eq("tenant_id", identity.tenantId);
     const { error: schreibFehler } = await auftragQuery;
@@ -5294,6 +5305,10 @@ export async function registerRoutes(
       }, 0);
       const nextNr = prefix + String(maxSeq + 1).padStart(4, "0"); // z.B. O260001
       const body = req.body;
+      const mwstSatzAusBody = Number.parseFloat(String(body.mwst_prozent ?? ""));
+      const mwstSatz = Number.isFinite(mwstSatzAusBody) && mwstSatzAusBody >= 0
+        ? mwstSatzAusBody
+        : await ladeMwstSatz(identity);
       const eintrag = {
         id: uid(),
         auftrag_id: req.params.auftr_id,
@@ -5309,7 +5324,7 @@ export async function registerRoutes(
         intro_text: body.intro_text || "Wir danken fuer Ihre Anfrage und erlauben uns, Ihnen fuer die beschriebenen Arbeiten folgende Offerte zu unterbreiten.",
         positionen: body.positionen || [],
         rabatt_prozent: body.rabatt_prozent ?? 0,
-        mwst_prozent: body.mwst_prozent ?? 8.1,
+        mwst_prozent: mwstSatz,
         liefertermin: body.liefertermin || "nach Absprache",
         zahlungsbedingungen: body.zahlungsbedingungen || "30 Tage netto",
         gueltigkeit: body.gueltigkeit || "30 Tage",
@@ -5466,7 +5481,10 @@ export async function registerRoutes(
       const rabattPct    = Number(offerte.rabatt_prozent) || 0;
       const rabattBetrag = subtotal * (rabattPct / 100);
       const totalExkl    = subtotal - rabattBetrag;
-      const mwstPct      = Number(offerte.mwst_prozent) || 8.1;
+      const gespeicherterMwstSatz = Number.parseFloat(String(offerte.mwst_prozent ?? ""));
+      const mwstPct      = Number.isFinite(gespeicherterMwstSatz) && gespeicherterMwstSatz >= 0
+        ? gespeicherterMwstSatz
+        : mwstSatzAusSettings(sMap);
       const mwstBetrag   = totalExkl * (mwstPct / 100);
       const totalInkl    = totalExkl + mwstBetrag;
 
@@ -5512,7 +5530,7 @@ export async function registerRoutes(
         ansprechpersonExtern: bodyExtern || offerte.ansprechperson_extern || auftrag?.ansprechperson || "",
         kundenNr: await getKundenNr(offerte.empfaenger_name || offerte.anrede || auftrag?.kunde || ""),
         anrede: await getKundenAnrede(offerte.empfaenger_name || offerte.anrede || auftrag?.kunde || ""),
-      });
+      }, identity.tenantId);
 
       const pdfBuf = await renderRechnungPdfFromHtml(html);
       res.setHeader("Content-Type", "application/pdf");
@@ -5539,7 +5557,10 @@ export async function registerRoutes(
       const rabattPct    = Number(offerte.rabatt_prozent) || 0;
       const rabattBetrag = subtotal * (rabattPct / 100);
       const totalExkl    = subtotal - rabattBetrag;
-      const mwstPct      = Number(offerte.mwst_prozent) || 8.1;
+      const gespeicherterMwstSatz = Number.parseFloat(String(offerte.mwst_prozent ?? ""));
+      const mwstPct      = Number.isFinite(gespeicherterMwstSatz) && gespeicherterMwstSatz >= 0
+        ? gespeicherterMwstSatz
+        : mwstSatzAusSettings(sMap);
       const mwstBetrag   = totalExkl * (mwstPct / 100);
       const totalInkl    = totalExkl + mwstBetrag;
 
@@ -5583,7 +5604,7 @@ export async function registerRoutes(
         ansprechpersonExtern: offerte.ansprechperson_extern || auftrag?.ansprechperson || "",
         kundenNr: await getKundenNr(offerte.empfaenger_name || offerte.anrede || auftrag?.kunde || ""),
         anrede: await getKundenAnrede(offerte.empfaenger_name || offerte.anrede || auftrag?.kunde || ""),
-      });
+      }, identity.tenantId);
 
       const pdfBuf = await renderRechnungPdfFromHtml(html);
       res.setHeader("Content-Type", "application/pdf");
@@ -5690,7 +5711,7 @@ export async function registerRoutes(
         total: nettoLohn,
         showTotals: false,
         extraHtml,
-      });
+      }, identity.tenantId);
 
       const pdfBuf = await renderRechnungPdfFromHtml(html);
       res.setHeader("Content-Type", "application/pdf");
@@ -5768,7 +5789,7 @@ export async function registerRoutes(
         subtotal: 0, mwstPct: 0, mwstBetrag: 0, total: 0,
         showTotals: false,
         extraHtml,
-      });
+      }, identity.tenantId);
 
       const pdfBuf = await renderRechnungPdfFromHtml(html);
       res.setHeader("Content-Type", "application/pdf");
@@ -7762,7 +7783,7 @@ export async function registerRoutes(
         ansprechpersonIntern: ansprechpersonInternLS,
         kundenNr: await getKundenNr(auftrag.kunde_name || auftrag.kunde || ""),
         anrede: await getKundenAnrede(auftrag.kunde_name || auftrag.kunde || ""),
-      });
+      }, identity.tenantId);
 
       const pdfBuf = await renderRechnungPdfFromHtml(html);
       res.setHeader("Content-Type", "application/pdf");
@@ -7796,7 +7817,7 @@ export async function registerRoutes(
       }
 
       const subtotal   = positionen.reduce((s: number, p: any) => s + Number(p.total ?? (Number(p.menge||0)*Number(p.einzelpreis||0))), 0);
-      const mwstPct    = 8.1;
+      const mwstPct    = mwstSatzAusSettings(sMap);
       const mwstBetrag = subtotal * (mwstPct / 100);
       const totalInkl  = subtotal + mwstBetrag;
 
@@ -7829,7 +7850,7 @@ export async function registerRoutes(
         ansprechpersonIntern: ansprechpersonInternAB,
         kundenNr: await getKundenNr(auftrag.kunde_name || auftrag.kunde || ""),
         anrede: await getKundenAnrede(auftrag.kunde_name || auftrag.kunde || ""),
-      });
+      }, identity.tenantId);
 
       const pdfBuf = await renderRechnungPdfFromHtml(html);
       res.setHeader("Content-Type", "application/pdf");
@@ -7991,7 +8012,7 @@ export async function registerRoutes(
           id: dt,
           doc_typ: dt,
           design: "A",
-          slogan: "Ihr Partner für Metallbau & Schreinerei",
+          slogan: "",
           header_color: sMap.farbe_primaer || "#44546a",
           footer_color: "#1a3a6b",
           logo_pos: "links",
@@ -8113,7 +8134,7 @@ export async function registerRoutes(
         { bezeichnung: "Lieferung & Montage", beschreibung: "", menge: 1, einheit: "Pos.", einzelpreis: 40, total: 40 },
       ];
       const subtotal = 1003;
-      const mwstPct  = 8.1;
+      const mwstPct  = mwstSatzAusSettings(sMap);
       const mwstBetrag = Math.round(subtotal * mwstPct) / 100;
       // Bei Mahnung addiert die echte Route die Mahngebühr zum Total (siehe ~Zeile 4635).
       // Muss nach musterMahngebuehr berechnet werden, siehe Neuzuweisung unten.
@@ -8253,7 +8274,7 @@ export async function registerRoutes(
         ansprechpersonIntern: "Max Muster",
         ansprechpersonExtern: "Max Muster",
         ...(qrInlineBlock ? { extraHtmlFullWidth: qrInlineBlock } : {}),
-      }, previewVorlage);
+      }, identity.tenantId, previewVorlage);
 
       // PDF rendern — Datenbank wurde zu keinem Zeitpunkt verändert.
       // WICHTIG: renderRechnungPdfFromHtml() ist die einzige Render-Funktion, die den
@@ -8613,7 +8634,7 @@ export async function registerRoutes(
       const bis = bisDate.toISOString().slice(0, 10);
 
       const sMap = einstellungenMap(await ladeTenantEinstellungen(identity));
-      const mwstSatz = parseFloat(sMap.mwst_satz || "8.1");
+      const mwstSatz = mwstSatzAusSettings(sMap);
 
       // Ausgangsrechnungen — nur bezahlte (vereinnahmte Entgelte)
       const { data: ausgang } = await identity.client
@@ -8692,6 +8713,11 @@ export async function registerRoutes(
     try {
       const { von, bis, typ } = query;
       let lines: string[] = [];
+      const exportSettingsRows = tenantId
+        ? await supabase.from("einstellungen").select("schluessel,wert").eq("tenant_id", tenantId)
+        : { data: [] as Array<{ schluessel: string; wert: string | null }> };
+      const sMap = einstellungenMap(exportSettingsRows.data || []);
+      const mwstSatz = mwstSatzAusSettings(sMap);
 
       if (!typ || typ === "ausgangsrechnungen") {
         // Rechnungen mit Auftrag JOIN um Kundenname zu holen
@@ -8709,17 +8735,17 @@ export async function registerRoutes(
           return res.status(500).json({ message: "FIBU-Export der Ausgangsrechnungen fehlgeschlagen." });
         }
         // rechnungen.betrag ist in der DB NETTO (Positionssumme exkl. MWST) —
-        // dieselbe Umrechnung wie bei Rechnungsliste/PDF (netto × 1.081 = brutto).
+        // dieselbe Umrechnung wie bei Rechnungsliste/PDF.
         lines.push("Typ;Nummer;Datum;Faellig;Empfaenger;Betrag_Netto_CHF;MWST_Satz_Prozent;MWST_Betrag_CHF;Betrag_Brutto_CHF;Bezahlt_am;Status");
         for (const r of (rechnungen || [])) {
           const netto = Number(r.betrag) || 0;
-          const brutto = rechnungBruttoBetrag(netto);
+          const brutto = Math.round(netto * (1 + mwstSatz / 100) * 100) / 100;
           const mwst = Math.round((brutto - netto) * 100) / 100;
           // Datum: erstellt als ISO-Datum (nur Datumsteil)
           const datumStr = r.erstellt ? String(r.erstellt).slice(0, 10) : "";
           // Empfaenger: aus Auftrag.kunde (JOIN)
           const empfaenger = ((r as any).auftraege?.kunde || "").replace(/;/g, " ");
-          lines.push(`Ausgangsrechnung;${r.nr || ""};${datumStr};${r.faellig_datum || ""};${empfaenger};${netto.toFixed(2)};${MWST_SATZ_RECHNUNG.toFixed(1)};${mwst.toFixed(2)};${brutto.toFixed(2)};${r.bezahlt_am || ""};${r.bezahlt_am ? "Bezahlt" : "Offen"}`);
+          lines.push(`Ausgangsrechnung;${r.nr || ""};${datumStr};${r.faellig_datum || ""};${empfaenger};${netto.toFixed(2)};${mwstSatz.toFixed(1)};${mwst.toFixed(2)};${brutto.toFixed(2)};${r.bezahlt_am || ""};${r.bezahlt_am ? "Bezahlt" : "Offen"}`);
         }
       }
 
@@ -8741,11 +8767,11 @@ export async function registerRoutes(
         lines.push("Typ;Nummer;Datum;Faellig;Lieferant;Betrag_Netto_CHF;MWST_Satz_Prozent;MWST_Betrag_CHF;Betrag_Brutto_CHF;Status");
         for (const e of (eingang || [])) {
           const brutto = Number(e.betrag) || 0;
-          const netto = Math.round((brutto / (1 + MWST_SATZ_RECHNUNG / 100)) * 100) / 100;
+          const netto = Math.round((brutto / (1 + mwstSatz / 100)) * 100) / 100;
           const mwst = Math.round((brutto - netto) * 100) / 100;
           const datumStr = (e.datum || e.erstellt || "");
           const datumFmt = datumStr ? String(datumStr).slice(0, 10) : "";
-          lines.push(`Eingangsrechnung;${e.id || ""};${datumFmt};${e.faellig_datum || ""};${(e.lieferant || "").replace(/;/g, " ")};${netto.toFixed(2)};${MWST_SATZ_RECHNUNG.toFixed(1)};${mwst.toFixed(2)};${brutto.toFixed(2)};${e.status || "offen"}`);
+          lines.push(`Eingangsrechnung;${e.id || ""};${datumFmt};${e.faellig_datum || ""};${(e.lieferant || "").replace(/;/g, " ")};${netto.toFixed(2)};${mwstSatz.toFixed(1)};${mwst.toFixed(2)};${brutto.toFixed(2)};${e.status || "offen"}`);
         }
       }
 

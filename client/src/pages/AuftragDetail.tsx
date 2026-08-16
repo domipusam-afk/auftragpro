@@ -1238,7 +1238,7 @@ function OffertenTab({ id, auftrag, vorlage, onVorlageUebernommen, preiseSichtba
             </div>
             {rabatt > 0 && <div className="flex justify-between text-red-600"><span>Rabatt {rabatt}%</span><span>- {fmtCHF(zwischentotal * rabatt / 100)}</span></div>}
             <div className="flex justify-between font-semibold"><span>Total exkl. MwSt.</span><span>{fmtCHF(totalExkl)}</span></div>
-            <div className="flex justify-between text-muted-foreground"><span>MwSt. 8.1%</span><span>{fmtCHF(mwstBetrag)}</span></div>
+            <div className="flex justify-between text-muted-foreground"><span>MwSt. {mwstSatz.toFixed(1)}%</span><span>{fmtCHF(mwstBetrag)}</span></div>
             <div className="flex justify-between font-bold text-base border-t pt-1"><span>Total inkl. MwSt.</span><span>{fmtCHF(totalInkl)}</span></div>
           </div>
 

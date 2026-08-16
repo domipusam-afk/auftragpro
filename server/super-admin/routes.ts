@@ -299,7 +299,7 @@ export function registerSuperAdminRoutes(app: Express): void {
       if (tenantError) throw tenantError;
       tenantId = tenant.id;
       const adminPasswortHash = await bcrypt.hash(adminPasswort, 12);
-      const [{ error: settingsError }, { error: userError }, { error: membershipError }, { error: stundensaetzeError }, { error: statusPipelineError }] = await Promise.all([
+      const [{ error: settingsError }, { error: userError }, { error: membershipError }, { error: stundensaetzeError }, { error: statusPipelineError }, { error: pdfVorlagenError }] = await Promise.all([
         client.from("einstellungen").insert([
           { tenant_id: tenant.id, schluessel: "firmenname", wert: name.trim() },
           { tenant_id: tenant.id, schluessel: "firmenlogo", wert: "" },
@@ -332,9 +332,45 @@ export function registerSuperAdminRoutes(app: Express): void {
           { tenant_id: tenant.id, label: "Rechnung", reihenfolge: 5, farbe: "indigo" },
           { tenant_id: tenant.id, label: "Abgeschlossen", reihenfolge: 6, farbe: "green" },
         ]),
+        client.from("pdf_vorlagen").insert([
+          "offerte", "rechnung", "mahnung", "lieferschein",
+          "auftragsbestaetigung", "lohnabrechnung", "stundenabrechnung",
+          "vorkalkulation", "nachkalkulation",
+        ].map((docTyp) => ({
+          tenant_id: tenant.id,
+          doc_typ: docTyp,
+          design: "A",
+          slogan: "",
+          header_color: "#01696F",
+          footer_color: "#1a3a6b",
+          logo_pos: "links",
+          zahlungsfrist: docTyp === "mahnung" ? "10" : "30",
+          mahngebuehr: "30.00",
+          einleitung: "",
+          schluss: "",
+          show_contact: true,
+          show_page_num: true,
+          logo_data_url: null,
+          logo_scale: 100,
+          logo_offset_x: 100,
+          logo_offset_y: 0,
+          slogan_offset_x: 0,
+          watermark_data_url: null,
+          watermark_opacity: 15,
+          watermark_size: 60,
+          watermark_pos: "bottom",
+          absender_pos_h: "links",
+          absender_top_mm: 55,
+          absender_left_mm: 0,
+          block_positions: {},
+          ansprechperson_aktiv: true,
+          ansprechperson_label: "Ansprechperson",
+          ansprechperson_quelle: "manuell",
+          positionstexte: { pos: "Pos.", beschreibung: "Beschreibung", menge: "Menge", einheit: "Einheit", preis: "Preis", total: "Total" },
+        }))),
       ]);
-      if (settingsError || userError || membershipError || stundensaetzeError || statusPipelineError) {
-        throw new Error(settingsError?.message || userError?.message || membershipError?.message || stundensaetzeError?.message || statusPipelineError?.message);
+      if (settingsError || userError || membershipError || stundensaetzeError || statusPipelineError || pdfVorlagenError) {
+        throw new Error(settingsError?.message || userError?.message || membershipError?.message || stundensaetzeError?.message || statusPipelineError?.message || pdfVorlagenError?.message);
       }
       await logAuditEvent(req, "tenant.create", `Neue Firma '${tenant.name}' angelegt`, { tenantId: tenant.id, betroffeneEntitaet: "tenant", entitaetId: tenant.id });
       await logAuditEvent(req, "user.create", `Administrator '${email}' für '${tenant.name}' angelegt`, { tenantId: tenant.id, betroffeneEntitaet: "user", entitaetId: authUserId });
@@ -342,6 +378,7 @@ export function registerSuperAdminRoutes(app: Express): void {
     } catch (error) {
       const client = getServiceRoleClient();
       if (tenantId) {
+        await client.from("pdf_vorlagen").delete().eq("tenant_id", tenantId);
         await client.from("auftrag_status_pipeline").delete().eq("tenant_id", tenantId);
         await client.from("stundensaetze").delete().eq("tenant_id", tenantId);
         await client.from("einstellungen").delete().eq("tenant_id", tenantId);
