@@ -22,6 +22,8 @@ interface LegacyUserRow {
   id: string;
   rolle: string;
   berechtigungen: unknown;
+  ist_super_admin?: boolean;
+  tenant_status?: string | null;
 }
 
 export interface LegacySessionDependencies {
@@ -86,15 +88,26 @@ function getCookieValue(cookieHeader: string | undefined, name: string): string 
 }
 
 async function getActiveLegacyUser(userId: string): Promise<LegacyUserRow | null> {
+  // tenants!left liefert den Firmenstatus mit. Super-Admins ohne tenant_id
+  // bleiben durch den Left-Join zugreifbar; sie sind der einzige
+  // Rettungsanker, wenn eine Firma versehentlich gesperrt wurde.
   const { data, error } = await supabase
     .from("app_benutzer")
-    .select("id, rolle, berechtigungen")
+    .select("id, rolle, berechtigungen, ist_super_admin, tenants:tenant_id(status)")
     .eq("id", userId)
     .eq("aktiv", true)
     .maybeSingle();
 
   if (error || !data) return null;
-  return data as LegacyUserRow;
+  const row = data as Record<string, unknown>;
+  const tenants = row.tenants as { status?: string } | null | undefined;
+  return {
+    id: String(row.id),
+    rolle: String(row.rolle ?? ""),
+    berechtigungen: row.berechtigungen,
+    ist_super_admin: row.ist_super_admin === true,
+    tenant_status: tenants?.status ?? null,
+  };
 }
 
 /**
@@ -126,11 +139,19 @@ export function createLegacySessionContext(
     try {
       const user = await loadUser(userId);
       if (user) {
-        req.legacyAuth = {
-          userId: user.id,
-          rolle: user.rolle,
-          berechtigungen: user.berechtigungen,
-        };
+        // Nur aktive Firmen dürfen die Session weiterreichen. Super-Admins
+        // sind ausgenommen, damit sie eine gesperrte Firma wieder freigeben
+        // können und nicht ausgesperrt werden.
+        const tenantOk = user.ist_super_admin === true
+          || !user.tenant_status
+          || user.tenant_status === "aktiv";
+        if (tenantOk) {
+          req.legacyAuth = {
+            userId: user.id,
+            rolle: user.rolle,
+            berechtigungen: user.berechtigungen,
+          };
+        }
       }
     } catch {
       // Shadow mode must never turn a transient user lookup problem into an

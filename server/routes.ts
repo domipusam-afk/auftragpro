@@ -247,6 +247,32 @@ export async function registerRoutes(
     return e.count;
   }
 
+  const FIRMA_GESPERRT_MSG = "Ihre Firma wurde gesperrt. Bitte kontaktieren Sie den Systemadministrator.";
+  const FIRMA_ARCHIVIERT_MSG = "Ihre Firma wurde archiviert. Ein Login ist nicht mehr möglich.";
+
+  // Zentrale Firmenstatus-Prüfung. Super-Admins sind ausgenommen, damit sie
+  // eine gesperrte Firma über die System-Verwaltung wieder freigeben können.
+  // Nicht-Super-Admins dürfen nur bei tenant_status='aktiv' rein. Bei
+  // DB-Fehlern wird sicherheitshalber abgelehnt, damit keine versehentlichen
+  // Freigaben entstehen, wenn der Status nicht ermittelbar ist.
+  async function pruefeFirmenStatus(userId: string, istSuperAdmin: boolean): Promise<{ ok: true } | { ok: false; message: string }> {
+    if (istSuperAdmin) return { ok: true };
+    try {
+      const client = getAuthMode() === "supabase" ? getServiceRoleClient() : supabase;
+      const { data } = await client
+        .from("app_benutzer")
+        .select("tenants:tenant_id(status)")
+        .eq("id", userId)
+        .maybeSingle();
+      const status = (data as { tenants?: { status?: string } } | null)?.tenants?.status;
+      if (!status || status === "aktiv") return { ok: true };
+      if (status === "archiviert") return { ok: false, message: FIRMA_ARCHIVIERT_MSG };
+      return { ok: false, message: FIRMA_GESPERRT_MSG };
+    } catch {
+      return { ok: false, message: FIRMA_GESPERRT_MSG };
+    }
+  }
+
   // Sperrt das Konto dauerhaft in der DB, sobald MAX_VERSUCHE erreicht ist.
   // Nutzt den Service-Role-Client, da zu diesem Zeitpunkt noch keine
   // authentifizierte Identität existiert (Login ist ja gerade gescheitert).
@@ -407,6 +433,11 @@ export async function registerRoutes(
           return res.status(403).json({ ok: false, message: "Für dieses Supabase-Konto ist kein aktiver AuftragsPro-Benutzer vorhanden" });
         }
 
+        const firmaCheck = await pruefeFirmenStatus(user.id, user.ist_super_admin === true);
+        if (!firmaCheck.ok) {
+          return res.status(423).json({ ok: false, message: firmaCheck.message, firmaGesperrt: true });
+        }
+
         loginVersuche.delete(key);
         // Transitional fallback only; Etappe 13 removes this legacy cookie.
         setLegacySessionCookie(res, user.id);
@@ -436,6 +467,11 @@ export async function registerRoutes(
       const pwOk = await bcrypt.compare(passwort, user.passwort_hash);
       if (!pwOk) {
         return fehlversuch();
+      }
+
+      const firmaCheck = await pruefeFirmenStatus(user.id, user.ist_super_admin === true);
+      if (!firmaCheck.ok) {
+        return res.status(423).json({ ok: false, message: firmaCheck.message, firmaGesperrt: true });
       }
 
       // Login erfolgreich → Fehlversuche zurücksetzen
@@ -614,6 +650,14 @@ export async function registerRoutes(
         .single();
 
       if (!user) return res.status(401).json({ ok: false, message: "Benutzer nicht gefunden" });
+
+      // Firmenstatus auch nach 2FA prüfen — gesperrte/archivierte Firmen dürfen
+      // sich nicht über den 2FA-Zwischenschritt einloggen. Super-Admins sind
+      // ausgenommen.
+      const firmaCheck2fa = await pruefeFirmenStatus(userId, user.ist_super_admin === true);
+      if (!firmaCheck2fa.ok) {
+        return res.status(423).json({ ok: false, message: firmaCheck2fa.message, firmaGesperrt: true });
+      }
 
       // Check backup codes first
       if (user.backup_codes && user.backup_codes.includes(code.toUpperCase())) {
