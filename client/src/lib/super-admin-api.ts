@@ -49,7 +49,7 @@ export async function superAdminRequest<T>(
 }
 
 export interface SuperAdminSessionStatus { passwortGesetzt: boolean; sessionAktiv: boolean; sessionAblaufIn?: number; }
-export interface Tenant { id: string; name: string; slug: string; status: "aktiv" | "inaktiv"; erstellt_am?: string; aktualisiert_am?: string; mitarbeiterAnzahl?: number; aktiveMitarbeiter?: number; letzteAktivitaet?: string; }
+export interface Tenant { id: string; name: string; slug: string; status: "aktiv" | "gesperrt"; erstellt_am?: string; aktualisiert_am?: string; mitarbeiterAnzahl?: number; aktiveMitarbeiter?: number; letzteAktivitaet?: string; }
 export interface AdminUser { id: string; email: string; name: string; rolle: "admin" | "mitarbeiter"; aktiv: boolean; erstellt?: string; aktualisiert?: string; }
 export interface AuditEntry { id: string; benutzer_id: string; benutzerName?: string; aktion: string; tenant_id: string | null; beschreibung: string; ip_adresse: string | null; zeitstempel: string; }
 

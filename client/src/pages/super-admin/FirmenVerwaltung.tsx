@@ -198,7 +198,7 @@ export default function FirmenVerwaltung() {
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["super-admin", "tenants"] });
       queryClient.invalidateQueries({ queryKey: ["super-admin", "overview"] });
-      toast({ title: variables.active ? "Firma aktiviert" : "Firma deaktiviert" });
+      toast({ title: variables.active ? "Firma freigegeben" : "Firma gesperrt" });
     },
     onError: (error: Error) => {
       toast({
@@ -213,7 +213,7 @@ export default function FirmenVerwaltung() {
     <div className="space-y-6">
       <PageHeader
         title="Firmen"
-        description="Mandanten anlegen, umbenennen sowie aktivieren oder deaktivieren."
+        description="Mandanten anlegen, umbenennen sowie freigeben oder sperren."
       >
         <Button onClick={() => setDialog(undefined)} data-testid="button-create-tenant">
           <Plus className="h-4 w-4" />
@@ -276,7 +276,7 @@ export default function FirmenVerwaltung() {
                             disabled={statusMutation.isPending}
                             onClick={() => statusMutation.mutate({ id: tenant.id, active: !isActive })}
                           >
-                            {isActive ? "Deaktivieren" : "Aktivieren"}
+                            {isActive ? "Sperren" : "Freigeben"}
                           </Button>
                           <Button
                             size="sm"

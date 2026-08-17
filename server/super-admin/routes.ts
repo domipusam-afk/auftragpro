@@ -13,7 +13,7 @@ import {
   setAdminSessionCookie,
 } from "./require-admin-session";
 
-type TenantStatus = "aktiv" | "inaktiv";
+type TenantStatus = "aktiv" | "gesperrt";
 type TenantRole = "admin" | "mitarbeiter";
 
 const ADMIN_SESSION_FAILURE_WINDOW_MS = 15 * 60 * 1000;
@@ -95,7 +95,14 @@ const TENANT_DELETE_TABLES = [
 ] as const;
 
 function message(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object") {
+    const err = error as Record<string, unknown>;
+    if (typeof err.message === "string") return err.message;
+    if (typeof err.details === "string") return err.details;
+    try { return JSON.stringify(error); } catch { /* fallthrough */ }
+  }
+  return String(error);
 }
 
 async function deleteTenantRows(table: string, tenantId: string): Promise<void> {
@@ -490,7 +497,7 @@ export function registerSuperAdminRoutes(app: Express): void {
         updates.slug = resolvedSlug;
       }
       if (status !== undefined) {
-        if (status !== "aktiv" && status !== "inaktiv") return res.status(400).json({ message: "Status muss aktiv oder inaktiv sein." });
+        if (status !== "aktiv" && status !== "gesperrt") return res.status(400).json({ message: "Status muss aktiv oder gesperrt sein." });
         updates.status = status as TenantStatus;
       }
       if (Object.keys(updates).length === 1) return res.status(400).json({ message: "Keine gültigen Änderungen übermittelt." });
@@ -547,19 +554,19 @@ export function registerSuperAdminRoutes(app: Express): void {
 
   const setTenantStatus = (status: TenantStatus) => async (req: Request, res: Response) => {
     try {
-      if (status === "inaktiv" && String(req.params.id) === SYSTEM_TENANT_ID) {
-        return res.status(403).json({ message: "System-Firma kann nicht deaktiviert werden" });
+      if (status === "gesperrt" && String(req.params.id) === SYSTEM_TENANT_ID) {
+        return res.status(403).json({ message: "System-Firma kann nicht gesperrt werden" });
       }
       const tenant = await tenantOr404(res, String(req.params.id));
       if (!tenant) return;
       const { data, error } = await getServiceRoleClient().from("tenants").update({ status, aktualisiert_am: new Date().toISOString() }).eq("id", tenant.id).select("id, name, slug, status").single();
       if (error) throw error;
-      await logAuditEvent(req, status === "aktiv" ? "tenant.activate" : "tenant.deactivate", `Firma '${tenant.name}' ${status === "aktiv" ? "aktiviert" : "deaktiviert"}`, { tenantId: tenant.id, betroffeneEntitaet: "tenant", entitaetId: tenant.id });
+      await logAuditEvent(req, status === "aktiv" ? "tenant.activate" : "tenant.deactivate", `Firma '${tenant.name}' ${status === "aktiv" ? "freigegeben" : "gesperrt"}`, { tenantId: tenant.id, betroffeneEntitaet: "tenant", entitaetId: tenant.id });
       return res.json({ tenant: data });
     } catch (error) { return res.status(500).json({ message: message(error) }); }
   };
   app.post("/api/super-admin/tenants/:id/activate", ...securedRoute(setTenantStatus("aktiv")));
-  app.post("/api/super-admin/tenants/:id/deactivate", ...securedRoute(setTenantStatus("inaktiv")));
+  app.post("/api/super-admin/tenants/:id/deactivate", ...securedRoute(setTenantStatus("gesperrt")));
 
   app.get("/api/super-admin/tenants/:tenantId/benutzer", ...securedRoute(async (req, res) => {
     try {
