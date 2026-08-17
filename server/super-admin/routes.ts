@@ -22,9 +22,89 @@ const verifyFailures = new Map<string, number[]>();
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const SYSTEM_TENANT_ID = "cbb89e60-d328-4daf-a5a5-be56f488e897";
+
+/**
+ * Alle Tabellen mit tenant_id, abgeleitet aus den Tenant-Migrationen.
+ * Kindtabellen stehen vor ihren Eltern, damit vorhandene Foreign Keys den
+ * Löschvorgang nicht blockieren.
+ */
+const TENANT_DELETE_TABLES = [
+  "super_admin_audit_log",
+  "dashboard_user_preferences",
+  "auftrag_schritt_fotos",
+  "auftrag_schritte",
+  "auftrag_kommentare",
+  "auftrag_positionen",
+  "verlauf",
+  "notizen",
+  "dokument_daten",
+  "dokumente",
+  "foto_dokumentation",
+  "formulare",
+  "chat_nachrichten",
+  "rechnungsvorlagen",
+  "mahnungen",
+  "zeiteintraege",
+  "eingangsrechnungen",
+  "offerten",
+  "rechnungen",
+  "tagesrapporte",
+  "reklamationen",
+  "liefertermine",
+  "garantien",
+  "aufgaben",
+  "vorkalkulation_stunden",
+  "vorkalkulation_material",
+  "vorkalkulation_hilfsmaterial",
+  "vorkalkulation_hauptmaterial_flaeche",
+  "vorkalkulation_fremdleistungen",
+  "vorkalkulation_soek",
+  "vorkalkulation_config",
+  "vk_hauptmaterial",
+  "vk_hilfsmaterial",
+  "vk_fremdleistungen",
+  "vk_stunden",
+  "vk_soek",
+  "nk_positionen",
+  "nk_stunden",
+  "nachkalkulation_stunden",
+  "nachkalkulation_material",
+  "nachkalkulation_fremdleistungen",
+  "nachkalkulation_soek",
+  "kalkulationen",
+  "vorkalkulation",
+  "nachkalkulation",
+  "lager_buchungen",
+  "lager_artikel",
+  "materialbestellungen",
+  "pdf_vorlagen",
+  "auftrag_status_pipeline",
+  "stundensaetze",
+  "einstellungen",
+  "termine",
+  "plantafel",
+  "ferien",
+  "subunternehmer",
+  "lieferanten",
+  "kunden",
+  "mitarbeiter",
+  "auftraege",
+  "tenant_memberships",
+  "app_benutzer",
+] as const;
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+async function deleteTenantRows(table: string, tenantId: string): Promise<void> {
+  try {
+    const { error } = await getServiceRoleClient().from(table).delete().eq("tenant_id", tenantId);
+    if (error) console.warn(`[TENANT_DELETE] ${table} konnte nicht bereinigt werden: ${error.message}`);
+  } catch (error) {
+    console.warn(`[TENANT_DELETE] ${table} konnte nicht bereinigt werden: ${message(error)}`);
+  }
 }
 
 function normalizeEmail(value: unknown): string | null {
@@ -423,8 +503,53 @@ export function registerSuperAdminRoutes(app: Express): void {
     } catch (error) { return res.status(500).json({ message: message(error) }); }
   }));
 
+  app.delete("/api/super-admin/tenants/:id", ...securedRoute(async (req, res) => {
+    const tenantId = String(req.params.id);
+    if (tenantId === SYSTEM_TENANT_ID) {
+      return res.status(403).json({ message: "System-Firma kann nicht gelöscht werden" });
+    }
+
+    try {
+      const tenant = await tenantOr404(res, tenantId);
+      if (!tenant) return;
+
+      const client = getServiceRoleClient();
+      const { data: tenantUsers, error: tenantUsersError } = await client
+        .from("app_benutzer")
+        .select("id")
+        .eq("tenant_id", tenant.id);
+      if (tenantUsersError) throw tenantUsersError;
+
+      for (const table of TENANT_DELETE_TABLES) {
+        await deleteTenantRows(table, tenant.id);
+      }
+
+      const { error: deleteTenantError } = await client.from("tenants").delete().eq("id", tenant.id);
+      if (deleteTenantError) throw deleteTenantError;
+
+      for (const user of tenantUsers || []) {
+        const { error: authUserError } = await client.auth.admin.deleteUser(user.id);
+        if (authUserError) {
+          console.warn(`[TENANT_DELETE] Auth-Konto ${user.id} konnte nicht gelöscht werden: ${authUserError.message}`);
+        }
+      }
+
+      await logAuditEvent(req, "tenant.delete", `Firma '${tenant.name}' unwiderruflich gelöscht`, {
+        betroffeneEntitaet: "tenant",
+        entitaetId: tenant.id,
+        metadaten: { tenantId: tenant.id, tenantName: tenant.name },
+      });
+      return res.json({ ok: true });
+    } catch (error) {
+      return res.status(500).json({ message: message(error) });
+    }
+  }));
+
   const setTenantStatus = (status: TenantStatus) => async (req: Request, res: Response) => {
     try {
+      if (status === "inaktiv" && String(req.params.id) === SYSTEM_TENANT_ID) {
+        return res.status(403).json({ message: "System-Firma kann nicht deaktiviert werden" });
+      }
       const tenant = await tenantOr404(res, String(req.params.id));
       if (!tenant) return;
       const { data, error } = await getServiceRoleClient().from("tenants").update({ status, aktualisiert_am: new Date().toISOString() }).eq("id", tenant.id).select("id, name, slug, status").single();

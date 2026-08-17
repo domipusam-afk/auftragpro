@@ -65,6 +65,7 @@ export const superAdminApi = {
   createTenant: (data: { name: string; slug: string; adminEmail: string; adminName: string; adminPasswort: string }) => superAdminRequest<{ tenant: Tenant; admin: { email: string; benutzerId: string } }>("POST", "/tenants", data),
   updateTenant: (id: string, data: Partial<Pick<Tenant, "name" | "slug" | "status">>) => superAdminRequest<{ tenant: Tenant }>("PATCH", `/tenants/${id}`, data),
   setTenantStatus: (id: string, active: boolean) => superAdminRequest<{ tenant: Tenant }>("POST", `/tenants/${id}/${active ? "activate" : "deactivate"}`),
+  deleteTenant: (id: string) => superAdminRequest<{ ok: boolean }>("DELETE", `/tenants/${id}`),
   users: (tenantId: string) => superAdminRequest<AdminUser[]>("GET", `/tenants/${tenantId}/benutzer`),
   createUser: (tenantId: string, data: { email: string; name: string; rolle: "admin" | "mitarbeiter"; passwort: string }) => superAdminRequest<{ benutzer: AdminUser; temporaeresPasswort: string }>("POST", `/tenants/${tenantId}/benutzer`, data),
   updateUser: (tenantId: string, userId: string, data: Partial<Pick<AdminUser, "name" | "rolle" | "aktiv">>) => superAdminRequest<{ benutzer: AdminUser }>("PATCH", `/tenants/${tenantId}/benutzer/${userId}`, data),
