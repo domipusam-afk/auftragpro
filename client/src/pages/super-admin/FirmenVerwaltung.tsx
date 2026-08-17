@@ -188,15 +188,24 @@ function DeleteTenantDialog({ tenant, onClose }: { tenant: Tenant; onClose: () =
 export default function FirmenVerwaltung() {
   const [dialog, setDialog] = useState<Tenant | undefined | false>(false);
   const [tenantToDelete, setTenantToDelete] = useState<Tenant | null>(null);
+  const { toast } = useToast();
   const { data: tenants = [], isLoading } = useQuery({
     queryKey: ["super-admin", "tenants"],
     queryFn: superAdminApi.tenants,
   });
   const statusMutation = useMutation({
     mutationFn: ({ id, active }: { id: string; active: boolean }) => superAdminApi.setTenantStatus(id, active),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["super-admin", "tenants"] });
       queryClient.invalidateQueries({ queryKey: ["super-admin", "overview"] });
+      toast({ title: variables.active ? "Firma aktiviert" : "Firma deaktiviert" });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Status konnte nicht geändert werden",
+        description: error.message || "Bitte Admin-Freigabe prüfen und erneut versuchen.",
+        variant: "destructive",
+      });
     },
   });
 
